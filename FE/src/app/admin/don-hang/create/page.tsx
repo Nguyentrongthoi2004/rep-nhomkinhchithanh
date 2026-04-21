@@ -4,6 +4,37 @@ import { useState } from "react";
 import { User, Target, Calculator, FileDown, Receipt, Save, ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { apiData } from "@/lib/api";
+
+// --- HELPER FUNCTIONS ---
+const calculateBOM = (widthHole: number, heightHole: number) => {
+  if (!widthHole || !heightHole) return null;
+  
+  // Khung bao cửa đi XF55
+  const frameXingfaWidth = widthHole;
+  const frameXingfaHeight = heightHole;
+  
+  // Cánh cửa đi XF55 (Công thức chuẩn)
+  const doorWingWidth = (widthHole - 87) / 2;
+  const doorWingHeight = heightHole - 46;
+
+  // Kính (Trừ nẹp)
+  const glassWidth = doorWingWidth - 120; // Giả lập trừ nẹp
+  const glassHeight = doorWingHeight - 120; // Giả lập trừ nẹp
+
+  return {
+    phoiNhom: [
+      { code: "XF55-C3328", name: "Khung bao đứng", length: frameXingfaHeight, qty: 2, mavt: 24 },
+      { code: "XF55-C3328", name: "Khung bao ngang", length: frameXingfaWidth, qty: 1, mavt: 24 },
+      { code: "XF55-C3303", name: "Cánh dọc", length: doorWingHeight, qty: 4, mavt: 27 },
+      { code: "XF55-C3303", name: "Cánh ngang", length: doorWingWidth, qty: 4, mavt: 27 },
+    ],
+    kinh: [
+      { name: "Kính cường lực 8mm", w: glassWidth, h: glassHeight, qty: 2, mavt: 12 }
+    ],
+    sqm: (widthHole/1000) * (heightHole/1000)
+  };
+};
 
 export default function CreateOrderBOMPage() {
   // Input States
@@ -18,37 +49,6 @@ export default function CreateOrderBOMPage() {
   // Quotation States
   const [margin, setMargin] = useState(15); 
   const [laborCost, setLaborCost] = useState(350000);
-
-  // Derived BOM Calculations (Hardcoded Logic for Xingfa 55 Double Door Open)
-  // W: Width of hole, H: Height of hole
-  const calculateBOM = (w: number, h: number) => {
-    if (!w || !h) return null;
-    
-    // Khung bao cửa đi XF55
-    const kb_ngang = w;
-    const kb_doc = h;
-    
-    // Cánh cửa đi XF55 (Công thức chuẩn)
-    const canh_ngang = (w - 87) / 2;
-    const canh_doc = h - 46;
-
-    // Kính (Trừ nẹp)
-    const kinh_ngang = canh_ngang - 120; // Giả lập trừ nẹp
-    const kinh_doc = canh_doc - 120; // Giả lập trừ nẹp
-
-    return {
-      phoiNhom: [
-        { code: "XF55-C3328", name: "Khung bao đứng", length: kb_doc, qty: 2, mavt: 24 },
-        { code: "XF55-C3328", name: "Khung bao ngang", length: kb_ngang, qty: 1, mavt: 24 },
-        { code: "XF55-C3303", name: "Cánh dọc", length: canh_doc, qty: 4, mavt: 27 },
-        { code: "XF55-C3303", name: "Cánh ngang", length: canh_ngang, qty: 4, mavt: 27 },
-      ],
-      kinh: [
-        { name: "Kính cường lực 8mm", w: kinh_ngang, h: kinh_doc, qty: 2, mavt: 12 }
-      ],
-      sqm: (w/1000) * (h/1000)
-    };
-  };
 
   const bom = (typeof width === 'number' && typeof height === 'number') 
     ? calculateBOM(width, height) 
@@ -66,9 +66,8 @@ export default function CreateOrderBOMPage() {
     setIsSubmitting(true);
     try {
       const allItems = [...bom.phoiNhom, ...bom.kinh];
-      const res = await fetch("/api/admin/orders", {
+      const data = await apiData<{ madh: number; message: string }>("/api/admin/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
            customer,
            phone,
@@ -76,9 +75,6 @@ export default function CreateOrderBOMPage() {
            items: allItems
         })
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
 
       alert(`Khởi tạo thành công Đơn Hàng #${data.madh}`);
       router.push("/admin/don-hang");
@@ -100,7 +96,12 @@ export default function CreateOrderBOMPage() {
       <div className="flex justify-between items-center bg-[#0a0a0c] p-4 lg:p-6 rounded-2xl border border-white/5 shadow-sm">
         <div className="flex items-center">
           <Link href="/admin/don-hang">
-            <button className="p-2 hover:bg-white/10 rounded-lg mr-4 text-gray-400 transition-colors">
+            <button
+              type="button"
+              title="Quay lại danh sách đơn hàng"
+              aria-label="Quay lại danh sách đơn hàng"
+              className="p-2 hover:bg-white/10 rounded-lg mr-4 text-gray-400 transition-colors"
+            >
               <ArrowLeft className="w-5 h-5" />
             </button>
           </Link>
@@ -146,7 +147,10 @@ export default function CreateOrderBOMPage() {
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">Số điện thoại</label>
                   <input 
-                    type="text" 
+                    type="tel"
+                    title="Số điện thoại khách hàng"
+                    aria-label="Số điện thoại khách hàng"
+                    placeholder="VD: 0912 345 678"
                     value={phone} onChange={(e) => setPhone(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 focus:border-orange-500 rounded-lg p-3 text-sm text-white outline-none transition-all"
                   />
@@ -154,7 +158,9 @@ export default function CreateOrderBOMPage() {
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">Hẹn giao (Dự kiến)</label>
                   <input 
-                    type="date" 
+                    type="date"
+                    title="Ngày hẹn giao dự kiến"
+                    aria-label="Ngày hẹn giao dự kiến"
                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none"
                   />
                 </div>
@@ -173,6 +179,8 @@ export default function CreateOrderBOMPage() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1.5">Chọn mẫu thiết kế (Hệ Nhôm)</label>
                 <select 
+                  title="Chọn mẫu thiết kế cửa"
+                  aria-label="Chọn mẫu thiết kế cửa"
                   value={doorType} onChange={(e) => setDoorType(e.target.value)}
                   className="w-full bg-[#111318] border border-white/10 focus:border-orange-500 rounded-lg p-3 text-sm outline-none font-semibold text-blue-400"
                 >
@@ -290,7 +298,10 @@ export default function CreateOrderBOMPage() {
                       Đơn giá gia công (VNĐ/m²)
                     </label>
                     <input 
-                      type="number" 
+                      type="number"
+                      title="Đơn giá gia công"
+                      aria-label="Đơn giá gia công mỗi mét vuông"
+                      placeholder="VNĐ / m²"
                       value={laborCost} onChange={(e) => setLaborCost(Number(e.target.value))}
                       className="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-2.5 text-sm text-white outline-none"
                     />
@@ -302,6 +313,8 @@ export default function CreateOrderBOMPage() {
                     </label>
                     <input 
                       type="range" min="0" max="50" step="5"
+                      title="Biên lợi nhuận kỳ vọng"
+                      aria-label="Biên lợi nhuận kỳ vọng"
                       value={margin} onChange={(e) => setMargin(Number(e.target.value))}
                       className="w-full accent-blue-500"
                     />

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Plus, UserPlus, Users, Edit2, ShieldAlert, KeyRound, Loader2, Ban } from "lucide-react";
+import { apiData, apiJson } from "@/lib/api";
 
 interface Employee {
   mand: number;
@@ -37,11 +38,7 @@ export default function NhanSuPage() {
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/users');
-      const json = await res.json();
-      if (json.data) {
-        setEmployees(json.data);
-      }
+      setEmployees(await apiData<Employee[]>("/api/admin/users"));
     } catch (err) {
       console.error("Lỗi kéo nhân sự:", err);
     } finally {
@@ -66,23 +63,16 @@ export default function NhanSuPage() {
     }
 
     try {
-      const res = await fetch("/api/admin/users", {
+      const data = await apiData<{ message: string }>("/api/admin/users", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData)
       });
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        setErrorMsg(data.error || "Có lỗi xảy ra khi tạo tài khoản");
-      } else {
-        setSuccessMsg(data.message);
-        setFormData({ tenDangNhap: "", matKhau: "", hoTen: "", sdt: "", vaiTro: "WORKER" });
-        fetchEmployees(); // Tải lại bảng sau khi user đã tạo thành công
-        setTimeout(() => setIsModalOpen(false), 2000);
-      }
-    } catch {
-      setErrorMsg("Lỗi kêt nối Server!");
+      setSuccessMsg(data.message);
+      setFormData({ tenDangNhap: "", matKhau: "", hoTen: "", sdt: "", vaiTro: "WORKER" });
+      fetchEmployees();
+      setTimeout(() => setIsModalOpen(false), 2000);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "Lỗi kêt nối Server!");
     } finally {
       setIsSubmitting(false);
     }
@@ -94,16 +84,13 @@ export default function NhanSuPage() {
     
     setActionLoading(mand);
     try {
-      const res = await fetch(`/api/admin/users/${mand}`, {
+      await apiJson(`/api/admin/users/${mand}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "CHANGE_STATUS", payload: { trangthai: newStatus } })
       });
-      const data = await res.json();
-      if (!res.ok) alert(data.error);
-      else fetchEmployees();
-    } catch {
-      alert("Lỗi kết nối");
+      fetchEmployees();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Lỗi kết nối");
     } finally {
       setActionLoading(null);
     }
@@ -118,20 +105,15 @@ export default function NhanSuPage() {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      const res = await fetch(`/api/admin/users/${selectedUser.mand}`, {
+      await apiJson(`/api/admin/users/${selectedUser.mand}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "CHANGE_PASSWORD", payload: { newPassword } })
       });
-      const data = await res.json();
-      if (!res.ok) setErrorMsg(data.error);
-      else {
-        setSuccessMsg("Đổi mật khẩu thành công!");
-        setNewPassword("");
-        setTimeout(() => setIsPasswordModalOpen(false), 2000);
-      }
-    } catch {
-      setErrorMsg("Lỗi kết nối Server");
+      setSuccessMsg("Đổi mật khẩu thành công!");
+      setNewPassword("");
+      setTimeout(() => setIsPasswordModalOpen(false), 2000);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "Lỗi kết nối Server");
     } finally {
       setIsSubmitting(false);
     }

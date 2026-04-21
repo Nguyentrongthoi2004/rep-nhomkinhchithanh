@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MiniERP Frontend
 
-## Getting Started
+Frontend của MiniERP Nhôm Kính Chí Thành, built với Next.js App Router.
 
-First, run the development server:
+## Vai trò của FE
+
+`FE/` chỉ giữ:
+
+- page, layout, component, styling
+- client auth với Supabase (`src/lib/supabase/client.ts`)
+- API client gọi sang backend riêng (`src/lib/api.ts`)
+
+`FE/` không còn giữ business API routes trong `src/app/api`.
+
+## Chạy local
+
+1. Điền biến môi trường trong `.env.local`
+2. Chạy backend ở `../BE`
+3. Chạy frontend:
 
 ```bash
+cd FE
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Frontend chạy ở [http://localhost:3000](http://localhost:3000) và gọi backend qua:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Cấu trúc chính
 
-## Learn More
+```text
+src/
+├─ app/                 # page + layout
+├─ components/          # shared UI/layout components
+├─ lib/
+│  ├─ api.ts            # helper fetch + Bearer token
+│  └─ supabase/         # browser/server auth clients
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Quy ước
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Page/component không query bảng nghiệp vụ trực tiếp từ browser.
+- Mọi gọi dữ liệu nghiệp vụ đi qua `apiData()` / `apiJson()`.
+- Backend chịu trách nhiệm auth, RBAC, validate, và truy cập Supabase service role.

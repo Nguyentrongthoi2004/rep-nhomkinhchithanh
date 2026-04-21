@@ -1,18 +1,96 @@
 "use client";
 
-import { Plus, Search, Edit2, Trash2, Layers } from "lucide-react";
-import { useState } from "react";
+import { Plus, Search, Edit2, Trash2, Layers, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { apiData, apiJson } from "@/lib/api";
 
-const BOCK_CATEGORIES = [
-  { id: 1, code: "CAT-N-XF", name: "Nhôm Xingfa Việt Nam", type: "NHOM", desc: "Các biên dạng Xingfa sản xuất tại VN" },
-  { id: 2, code: "CAT-N-GD", name: "Nhôm Topal Gấp Trượt", type: "NHOM", desc: "Hệ nhôm gấp trượt Topal" },
-  { id: 3, code: "CAT-K-CL", name: "Kính Cường Lực", type: "KINH", desc: "Kính cường lực các loại độ dày" },
-  { id: 4, code: "CAT-K-AT", name: "Kính An Toàn 2 Lớp", type: "KINH", desc: "Kính dán an toàn chống vỡ" },
-  { id: 5, code: "CAT-P-KL", name: "Phụ kiện Kinlong", type: "PHU_KIEN", desc: "Bản lề, tay nắm, khóa Kinlong nhập khẩu" },
-];
+interface DanhMuc {
+  madm: number;
+  tendm: string;
+  mota: string;
+  trangthai: string;
+}
 
 export default function CategoryPage() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [categories, setCategories] = useState<DanhMuc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string>("");
+
+  // Modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editing, setEditing] = useState<DanhMuc | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState({ tendm: "", mota: "", trangthai: "HOAT_DONG" });
+
+  const fetchCategories = useCallback(async () => {
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      setCategories(await apiData<DanhMuc[]>("/api/admin/categories"));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
+
+  const filtered = categories.filter((c) =>
+    c.tendm.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.mota?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const openAddModal = () => {
+    setEditing(null);
+    setFormData({ tendm: "", mota: "", trangthai: "HOAT_DONG" });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (cat: DanhMuc) => {
+    setEditing(cat);
+    setFormData({ tendm: cat.tendm || "", mota: cat.mota || "", trangthai: cat.trangthai || "HOAT_DONG" });
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (cat: DanhMuc) => {
+    if (!confirm(`Xóa danh mục "${cat.tendm}"?`)) return;
+    try {
+      await apiJson(`/api/admin/categories/${cat.madm}`, { method: "DELETE" });
+      fetchCategories();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.tendm.trim()) return alert("Vui lòng nhập tên danh mục");
+
+    setIsSubmitting(true);
+    try {
+      const url = editing ? `/api/admin/categories/${editing.madm}` : "/api/admin/categories";
+      const method = editing ? "PATCH" : "POST";
+      await apiJson(url, {
+        method,
+        body: JSON.stringify({
+          tendm: formData.tendm.trim(),
+          mota: formData.mota?.trim() || null,
+          trangthai: formData.trangthai,
+        }),
+      });
+      setIsModalOpen(false);
+      fetchCategories();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -27,11 +105,20 @@ export default function CategoryPage() {
           <p className="text-gray-400 text-sm mt-1 ml-9">Quản lý cách phân nhóm vật tư trong hệ thống.</p>
         </div>
         
-        <button className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg flex items-center font-medium transition-colors shadow-[0_0_15px_-3px_rgba(37,99,235,0.4)]">
+        <button
+          onClick={openAddModal}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg flex items-center font-medium transition-colors shadow-[0_0_15px_-3px_rgba(37,99,235,0.4)]"
+        >
           <Plus className="w-5 h-5 mr-2" />
           Tạo Danh Mục Mới
         </button>
       </div>
+
+      {errorMsg && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-300">
+          {errorMsg}
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="flex items-center space-x-4">
@@ -45,7 +132,10 @@ export default function CategoryPage() {
             className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
           />
         </div>
-        <select className="bg-[#0a0a0c] border border-white/10 text-gray-300 text-sm rounded-lg px-4 py-2.5 outline-none focus:border-blue-500">
+        <select
+          aria-label="Lọc danh mục"
+          className="bg-[#0a0a0c] border border-white/10 text-gray-300 text-sm rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
+        >
           <option value="ALL">Tất cả phân loại</option>
           <option value="NHOM">Nhôm</option>
           <option value="KINH">Kính</option>
@@ -54,52 +144,68 @@ export default function CategoryPage() {
       </div>
 
       {/* Data Table */}
-      <div className="bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg">
+      <div className="bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg relative">
+        {loading ? (
+           <div className="p-10 flex justify-center text-gray-400"><Loader2 className="animate-spin w-8 h-8" /></div>
+        ) : (
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-white/5 border-b border-white/10 text-xs uppercase tracking-wider text-gray-400">
               <th className="p-4 font-semibold w-16 text-center">STT</th>
-              <th className="p-4 font-semibold">Mã Nhóm</th>
+              <th className="p-4 font-semibold w-32">Mã Nội Bộ</th>
               <th className="p-4 font-semibold">Tên Gọi</th>
-              <th className="p-4 font-semibold w-32">Phân Loại</th>
+              <th className="p-4 font-semibold w-40">Trạng Thái</th>
               <th className="p-4 font-semibold">Ghi Chủ</th>
               <th className="p-4 font-semibold w-24 text-right">Thao Tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {BOCK_CATEGORIES.map((cat, idx) => (
-              <tr key={cat.id} className="hover:bg-white/[0.02] transition-colors group">
+            {filtered.map((cat, idx) => (
+              <tr key={cat.madm} className="hover:bg-white/2 transition-colors group">
                 <td className="p-4 text-center text-sm text-gray-500 font-mono">{idx + 1}</td>
-                <td className="p-4 text-sm font-mono text-gray-300">{cat.code}</td>
-                <td className="p-4 text-sm font-semibold text-gray-200">{cat.name}</td>
+                <td className="p-4 text-sm font-mono text-gray-300">DM-{cat.madm.toString().padStart(3, '0')}</td>
+                <td className="p-4 text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">{cat.tendm}</td>
                 <td className="p-4">
                   <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${
-                    cat.type === 'NHOM' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
-                    cat.type === 'KINH' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' : 
-                    'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                    cat.trangthai === 'HOAT_DONG' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                    'bg-red-500/10 text-red-400 border-red-500/20'
                   }`}>
-                    {cat.type}
+                    {cat.trangthai}
                   </span>
                 </td>
-                <td className="p-4 text-sm text-gray-500 truncate max-w-[200px]">{cat.desc}</td>
+                <td className="p-4 text-sm text-gray-500 truncate max-w-[200px]">{cat.mota || "Chưa có mô tả"}</td>
                 <td className="p-4 text-right">
                   <div className="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors">
+                    <button
+                      onClick={() => openEditModal(cat)}
+                      className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
+                      title="Sửa danh mục"
+                      aria-label="Sửa danh mục"
+                    >
                       <Edit2 className="w-4 h-4" />
                     </button>
-                    <button className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
+                    <button
+                      onClick={() => handleDelete(cat)}
+                      className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
+                      title="Xóa danh mục"
+                      aria-label="Xóa danh mục"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={6} className="p-6 text-center text-gray-500">Chưa có danh mục nào</td></tr>
+            )}
           </tbody>
         </table>
+        )}
         
         {/* Pagination mock */}
         <div className="p-4 border-t border-white/5 flex items-center justify-between text-sm text-gray-500">
-          <span>Hiển thị 1 đến 5 trong số 5 danh mục</span>
+          <span>Hiển thị danh sách tự động</span>
           <div className="flex space-x-1">
             <button className="px-3 py-1 bg-white/5 border border-white/10 rounded hover:bg-white/10 transition-colors disabled:opacity-50" disabled>Trước</button>
             <button className="px-3 py-1 bg-blue-600 text-white border border-blue-500 rounded hover:bg-blue-500 transition-colors">1</button>
@@ -107,6 +213,75 @@ export default function CategoryPage() {
           </div>
         </div>
       </div>
+
+      {/* ADD / EDIT MODAL */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+            <div className="px-6 py-5 border-b border-white/5 flex justify-between items-center bg-[#0a0a0c]">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <Layers className="w-5 h-5 mr-2 text-purple-400" />
+                {editing ? "Sửa Danh Mục" : "Tạo Danh Mục"}
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-white p-1 rounded-md transition-colors">
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm text-gray-400 font-medium">
+                  Tên danh mục <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={formData.tendm}
+                  onChange={(e) => setFormData((p) => ({ ...p, tendm: e.target.value }))}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-200 focus:outline-none focus:border-blue-500"
+                  placeholder="VD: Nhôm, Kính, Phụ kiện..."
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-gray-400 font-medium">Mô tả</label>
+                <textarea
+                  value={formData.mota}
+                  onChange={(e) => setFormData((p) => ({ ...p, mota: e.target.value }))}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-200 focus:outline-none focus:border-blue-500 min-h-[90px]"
+                  placeholder="Ghi chú ngắn..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-gray-400 font-medium">Trạng thái</label>
+                <select
+                  value={formData.trangthai}
+                  onChange={(e) => setFormData((p) => ({ ...p, trangthai: e.target.value }))}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-200 focus:outline-none focus:border-blue-500"
+                  aria-label="Trạng thái danh mục"
+                >
+                  <option value="HOAT_DONG">HOAT_DONG</option>
+                  <option value="NGUNG">NGUNG</option>
+                </select>
+              </div>
+
+              <div className="pt-4 mt-6 border-t border-white/5 flex justify-end space-x-3">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/5 transition-colors">
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50 flex items-center"
+                >
+                  {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+                  {editing ? "Lưu cập nhật" : "Tạo mới"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

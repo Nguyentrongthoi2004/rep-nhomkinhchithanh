@@ -7,7 +7,11 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-screen bg-[#050505] text-gray-200 font-sans overflow-hidden">
+    <div className="flex h-screen admin-metal-bg text-gray-200 font-sans overflow-hidden relative">
+      {/* Metallic background layers */}
+      <div className="admin-metal-glow" />
+      <div className="admin-metal-noise" />
+
       {/* Sidebar - Fixed Left */}
       <AdminSidebar />
 
@@ -18,8 +22,8 @@ export default function AdminLayout({
         <AdminHeader />
 
         {/* Dynamic Content Area (The actual page content) */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-6 selection:bg-blue-500/30">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-6 selection:bg-blue-500/30 relative z-10">
+          <div className="max-w-7xl mx-auto relative">
             {children}
           </div>
         </main>

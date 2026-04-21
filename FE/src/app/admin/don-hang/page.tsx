@@ -1,9 +1,9 @@
 "use client";
 
-import { Plus, Search, Filter, FileText, ClipboardList, TrendingUp, Loader2 } from "lucide-react";
+import { Plus, Search, Filter, FileText, ClipboardList, TrendingUp, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useCallback, useEffect, useState } from "react";
+import { apiData, apiJson } from "@/lib/api";
 
 interface Order {
   madh: number;
@@ -19,36 +19,30 @@ export default function OrderListPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchOrders() {
-      const supabase = createClient();
-      try {
-        const { data, error } = await supabase
-          .from("donhang")
-          .select(`
-            madh,
-            ngaytao,
-            trangthai,
-            tonggiatri,
-            khachhang:makh (hoten),
-            chitietdh (mactdh)
-          `)
-          .order("madh", { ascending: false });
-
-        if (error) throw error;
-        setOrders((data as unknown as Order[]) || []);
-      } catch (err: unknown) {
-        if (err instanceof Error) {
-          console.error("Lỗi lấy đơn hàng:", err.message);
-        } else {
-          console.error("Lỗi lấy đơn hàng:", String(err));
-        }
-      } finally {
-        setLoading(false);
-      }
+  const reloadOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      setOrders(await apiData<Order[]>("/api/admin/orders"));
+    } catch (err: unknown) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    fetchOrders();
   }, []);
+
+  useEffect(() => {
+    reloadOrders();
+  }, [reloadOrders]);
+
+  const handleDeleteOrder = async (madh: number) => {
+    if (!confirm(`Xóa đơn hàng DH-${madh}? (Sẽ xóa cả BOM chi tiết)`)) return;
+    try {
+      await apiJson(`/api/admin/orders/${madh}`, { method: "DELETE" });
+      reloadOrders();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch(status) {
@@ -120,7 +114,11 @@ export default function OrderListPage() {
             className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all shadow-inner"
           />
         </div>
-        <button className="p-2.5 bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+        <button
+          title="Bộ lọc"
+          aria-label="Bộ lọc"
+          className="p-2.5 bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
+        >
           <Filter className="w-5 h-5" />
         </button>
       </div>
@@ -165,11 +163,24 @@ export default function OrderListPage() {
                       {getStatusBadge(order.trangthai)}
                     </td>
                     <td className="p-4 text-right">
-                      <Link href={`/admin/don-hang/create`}>
-                        <button className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors" title="Xem chi tiết">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link href={`/admin/don-hang/create`}>
+                          <button className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors" title="Xem chi tiết" aria-label="Xem chi tiết">
                           <FileText className="w-4 h-4" />
+                          </button>
+                        </Link>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteOrder(order.madh);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
+                          title="Xóa đơn hàng"
+                          aria-label="Xóa đơn hàng"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                      </Link>
+                      </div>
                     </td>
                   </tr>
                 ))

@@ -9,6 +9,7 @@ import {
   Box, 
   Scissors, 
   Users, 
+  ShieldCheck,
   Settings,
   Hexagon
 } from "lucide-react";
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { name: "Kho phôi & Vật tư", href: "/admin/kho", icon: Box },
   { name: "Bản vẽ & Sản xuất", href: "/admin/san-xuat", icon: Scissors },
   { name: "Nhân sự", href: "/admin/nhan-su", icon: Users },
+  { name: "Yêu cầu cấp quyền", href: "/admin/yeu-cau-cap-quyen", icon: ShieldCheck },
   { name: "Cấu hình", href: "/admin/cau-hinh", icon: Settings },
 ];
 
@@ -27,13 +29,19 @@ export default function AdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 h-screen bg-[#0a0a0c] border-r border-white/5 flex flex-col shrink-0">
+    <aside className="w-64 h-screen admin-metal-panel border-r border-white/5 flex flex-col shrink-0 relative overflow-hidden">
+      <div className="admin-metal-shine" />
       {/* Logo Area */}
       <div className="h-16 flex items-center px-6 border-b border-white/5">
-        <Hexagon className="w-6 h-6 text-gray-300 mr-2" />
-        <span className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-200 to-gray-400">
-          MiniERP
-        </span>
+        <div className="brand-mark">
+          <div className="brand-icon flex items-center justify-center">
+            <Hexagon className="w-5 h-5 text-slate-100 drop-shadow-[0_0_18px_rgba(255,255,255,0.18)]" />
+          </div>
+          <div className="leading-tight">
+            <div className="brand-name text-[15px]">Nhôm Kính Chí Thành</div>
+            <div className="text-[10px] text-slate-400 font-semibold tracking-widest uppercase">ERP</div>
+          </div>
+        </div>
       </div>
 
       {/* Navigation */}

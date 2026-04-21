@@ -2,7 +2,7 @@
 
 import { Plus, Search, Edit2, Trash2, Box, Filter, ArrowDownToLine, Loader2, Save } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { apiData, apiJson } from "@/lib/api";
 
 interface VatTu {
   mavt: number;
@@ -38,38 +38,33 @@ export default function MaterialPage() {
     dongianhap: 0,
   });
 
-  const fetchInitData = useCallback(async () => {
+  const fetchMaterialList = useCallback(async () => {
     setLoading(true);
     try {
-      const supabase = createClient();
-      
-      const { data: vtData, error: vtError } = await supabase
-        .from("vattu")
-        .select(`
-          mavt, 
-          madm,
-          tenvt, 
-          donvitinh, 
-          chieudaimacdinh, 
-          dongianhap, 
-          danhmuc:madm (tendm)
-        `)
-        .order("mavt", { ascending: true });
-        
-      if (vtError) console.error("Lỗi khi kéo vật tư:", vtError.message);
-      else setMaterials((vtData as unknown as VatTu[]) || []);
+      setMaterials(await apiData<VatTu[]>("/api/admin/materials"));
+    } catch (err: unknown) {
+      console.error("Exception fetching materials:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-      const { data: dmData } = await supabase.from("danhmuc").select("madm, tendm").order("madm");
+  const fetchCategoriesList = useCallback(async () => {
+    try {
+      const dmData = await apiData<DanhMuc[]>("/api/admin/categories");
       if (dmData) {
         setCategories(dmData);
         setFormData(prev => prev.madm === 0 && dmData.length > 0 ? { ...prev, madm: dmData[0].madm } : prev); 
       }
     } catch (err: unknown) {
-      console.error("Exception fetching data:", err);
-    } finally {
-      setLoading(false);
+      console.error("Exception fetching categories:", err);
     }
   }, []);
+
+  const fetchInitData = useCallback(async () => {
+    await fetchCategoriesList();
+    await fetchMaterialList();
+  }, [fetchCategoriesList, fetchMaterialList]);
 
   useEffect(() => {
     fetchInitData();
@@ -111,10 +106,8 @@ export default function MaterialPage() {
   const handleDelete = async (id: number, name: string) => {
     if (!confirm(`Bạn có chắc chắn muốn xóa mã vật tư: ${name}?`)) return;
     try {
-      const supabase = createClient();
-      const { error } = await supabase.from("vattu").delete().eq("mavt", id);
-      if (error) throw error;
-      fetchInitData();
+      await apiJson(`/api/admin/materials/${id}`, { method: "DELETE" });
+      fetchMaterialList();
     } catch (err: unknown) {
       if (err instanceof Error) {
         alert("Lỗi khi xóa: " + err.message);
@@ -133,7 +126,6 @@ export default function MaterialPage() {
 
     setIsSubmitting(true);
     try {
-      const supabase = createClient();
       const payload = {
         tenvt: formData.tenvt,
         madm: formData.madm,
@@ -143,14 +135,18 @@ export default function MaterialPage() {
       };
 
       if (editingItem) {
-        const { error } = await supabase.from("vattu").update(payload).eq("mavt", editingItem.mavt);
-        if (error) throw error;
+        await apiJson(`/api/admin/materials/${editingItem.mavt}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
       } else {
-        const { error } = await supabase.from("vattu").insert([payload]);
-        if (error) throw error;
+        await apiJson("/api/admin/materials", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
       }
       setIsModalOpen(false);
-      fetchInitData();
+      fetchMaterialList();
     } catch (err: unknown) {
       if (err instanceof Error) {
         alert("Lỗi lưu dữ liệu: " + err.message);
@@ -203,7 +199,12 @@ export default function MaterialPage() {
               className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all shadow-inner"
             />
           </div>
-          <button className="p-2.5 bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+          <button
+            type="button"
+            title="Bộ lọc vật tư"
+            aria-label="Bộ lọc vật tư"
+            className="p-2.5 bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
+          >
             <Filter className="w-5 h-5" />
           </button>
         </div>
@@ -260,10 +261,22 @@ export default function MaterialPage() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end space-x-2">
-                        <button onClick={() => openEditModal(item)} className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors">
+                        <button
+                          type="button"
+                          title={`Sửa vật tư ${item.tenvt}`}
+                          aria-label={`Sửa vật tư ${item.tenvt}`}
+                          onClick={() => openEditModal(item)}
+                          className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
+                        >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDelete(item.mavt, item.tenvt)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
+                        <button
+                          type="button"
+                          title={`Xoá vật tư ${item.tenvt}`}
+                          aria-label={`Xoá vật tư ${item.tenvt}`}
+                          onClick={() => handleDelete(item.mavt, item.tenvt)}
+                          className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
+                        >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -309,6 +322,8 @@ export default function MaterialPage() {
                 <div className="space-y-2">
                   <label className="text-sm text-gray-400 font-medium">Danh mục<span className="text-red-500 ml-1">*</span></label>
                   <select 
+                    title="Chọn danh mục vật tư"
+                    aria-label="Chọn danh mục vật tư"
                     value={formData.madm} onChange={e => setFormData({...formData, madm: Number(e.target.value)})}
                     className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-200 focus:outline-none focus:border-emerald-500"
                   >
@@ -331,6 +346,9 @@ export default function MaterialPage() {
                   <label className="text-sm text-gray-400 font-medium">Giá nhập cư bản (VNĐ)<span className="text-red-500 ml-1">*</span></label>
                   <input 
                     type="number" required min="0"
+                    title="Giá nhập cơ bản"
+                    aria-label="Giá nhập cơ bản"
+                    placeholder="VD: 120000"
                     value={formData.dongianhap} onChange={e => setFormData({...formData, dongianhap: Number(e.target.value)})}
                     className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-200 focus:outline-none focus:border-emerald-500"
                   />

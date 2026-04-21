@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Box, Eye, EyeOff } from "lucide-react";
+import { Loader2, Box, Eye, EyeOff, Send, ShieldCheck } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { apiData, apiJson } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -13,6 +15,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isRequestOpen, setIsRequestOpen] = useState(false);
+  const [requestLoading, setRequestLoading] = useState(false);
+  const [requestMsg, setRequestMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [requestForm, setRequestForm] = useState({
+    hoten: "",
+    sdt: "",
+    tendangnhap: "",
+    vaitro: "WORKER",
+    ghichu: "",
+  });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,20 +53,12 @@ export default function LoginPage() {
       }
 
       // Nếu user đăng nhập bằng Gmail Master Admin, server sẽ tự tạo hồ sơ nghiệp vụ (nguoidung) 1 lần.
-      // (Route này dùng Service Role key nhưng có kiểm chứng session qua cookie)
+      // (BE dùng Bearer token từ session Supabase hiện tại)
       try {
-        await fetch("/api/auth/ensure-profile", { method: "POST" });
+        await apiJson("/api/auth/ensure-profile", { method: "POST" });
       } catch {}
 
-      // Vừa đăng nhập hệ thống bảo mật xong, truy xuất sang bảng Nghiệp vụ (nguoidung) lấy vai trò.
-      const { data: profile } = await supabase
-        .from("nguoidung")
-        .select("vaitro")
-        .eq("tendangnhap", loginIdentifier)
-        // Nếu không tìm thấy bằng identifier thường, có thể là do email đầy đủ.
-        // Thực chất tendangnhap của Master Admin là đủ luôn email:
-        // Do đó .eq() ở trên sẽ trúng nhomkinhchithanh2026@gmail.com
-        .single();
+      const profile = await apiData<{ vaitro: string }>("/api/auth/me");
 
       // Redirect based on role
       if (profile?.vaitro === "ADMIN") {
@@ -69,17 +73,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#050505] text-white font-sans overflow-hidden antialiased">
+    <div className="flex h-screen w-full login-metal-bg text-white font-sans overflow-hidden antialiased relative">
+      <div className="admin-metal-glow" />
       {/* Left Pane - Form */}
-      <div className="w-full lg:w-[45%] flex flex-col p-6 sm:p-10 lg:p-14 relative z-10 bg-[#0a0a0c]">
+      <div className="w-full lg:w-[45%] flex flex-col p-6 sm:p-10 lg:p-14 relative z-10 admin-metal-panel">
+        <div className="admin-metal-shine" />
         
         {/* Top Header */}
         <div className="flex justify-between items-center w-full max-w-[420px] mx-auto mb-8">
           <div className="flex items-center gap-2.5">
-            <div className="bg-slate-400/10 p-2 rounded-xl border border-slate-500/20">
-              <Box className="w-6 h-6 text-slate-300" />
+            <div className="brand-icon flex items-center justify-center">
+              <Box className="w-5 h-5 text-slate-100 drop-shadow-[0_0_18px_rgba(255,255,255,0.18)]" />
             </div>
-            <span className="font-bold text-xl tracking-tight text-slate-100">MiniERP<span className="text-slate-500">.</span></span>
+            <span className="brand-name text-xl">Nhôm Kính Chí Thành</span>
           </div>
           <div className="flex items-center gap-2 text-sm text-zinc-300 bg-white/5 hover:bg-white/10 cursor-pointer px-4 py-2 rounded-full border border-white/5 transition-colors">
             <span>Tiếng Việt</span>
@@ -96,19 +102,9 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-6">
             
-            {/* Third party logins (Mock aesthetic) */}
-            <div className="flex gap-3">
-              <button type="button" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl h-12 flex items-center justify-center transition-colors text-sm font-medium text-zinc-300 shadow-inner shadow-white/5">
-                Quét mã RFID
-              </button>
-              <button type="button" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl h-12 flex items-center justify-center transition-colors text-sm font-medium text-zinc-300 shadow-inner shadow-white/5">
-                Quét vân tay
-              </button>
-            </div>
-
-            <div className="flex items-center gap-4 py-2">
+            <div className="flex items-center gap-4 py-1">
               <div className="flex-1 h-px bg-linear-to-r from-transparent to-white/10" />
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-widest">hoặc bằng tài khoản</span>
+              <span className="text-xs font-medium text-zinc-500 uppercase tracking-widest">đăng nhập</span>
               <div className="flex-1 h-px bg-linear-to-l from-transparent to-white/10" />
             </div>
 
@@ -175,7 +171,17 @@ export default function LoginPage() {
           </form>
           
           <div className="mt-8 text-center text-sm text-zinc-500 flex justify-center gap-1">
-            Không có tài khoản? <span className="text-slate-300 hover:underline cursor-pointer">Xin cấp quyền</span>
+            Không có tài khoản?{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setRequestMsg(null);
+                setIsRequestOpen(true);
+              }}
+              className="text-slate-200 hover:text-white underline underline-offset-4"
+            >
+              Xin cấp quyền
+            </button>
           </div>
         </div>
 
@@ -189,6 +195,152 @@ export default function LoginPage() {
         </div>
       </div>
 
+      {/* Request Access Modal */}
+      {isRequestOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden relative">
+            <div className="admin-metal-shine" />
+            <div className="px-6 py-5 border-b border-white/5 flex justify-between items-center bg-[#0a0a0c] relative z-10">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <ShieldCheck className="w-5 h-5 mr-2 text-slate-300" />
+                Xin cấp quyền tài khoản
+              </h3>
+              <button
+                onClick={() => setIsRequestOpen(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-md transition-colors"
+                aria-label="Đóng"
+                title="Đóng"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form
+              className="p-6 space-y-4 relative z-10"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setRequestMsg(null);
+                if (!requestForm.hoten.trim() || !requestForm.tendangnhap.trim()) {
+                  setRequestMsg({ type: "err", text: "Vui lòng nhập Họ tên và Tên đăng nhập." });
+                  return;
+                }
+                setRequestLoading(true);
+                try {
+                  await apiJson("/api/auth/request-access", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      hoten: requestForm.hoten.trim(),
+                      sdt: requestForm.sdt.trim() || null,
+                      tendangnhap: requestForm.tendangnhap.trim(),
+                      vaitro: requestForm.vaitro,
+                      ghichu: requestForm.ghichu.trim() || null,
+                    }),
+                  });
+                  setRequestMsg({ type: "ok", text: "Đã gửi yêu cầu. Vui lòng chờ Admin duyệt và cấp mật khẩu." });
+                  setRequestForm({ hoten: "", sdt: "", tendangnhap: "", vaitro: "WORKER", ghichu: "" });
+                } catch (err: unknown) {
+                  setRequestMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
+                } finally {
+                  setRequestLoading(false);
+                }
+              }}
+            >
+              {requestMsg && (
+                <div
+                  className={`text-sm font-medium rounded-lg px-4 py-3 border ${
+                    requestMsg.type === "ok"
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                      : "bg-red-500/10 border-red-500/20 text-red-300"
+                  }`}
+                >
+                  {requestMsg.text}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400 font-medium">
+                    Họ tên <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    value={requestForm.hoten}
+                    onChange={(e) => setRequestForm((p) => ({ ...p, hoten: e.target.value }))}
+                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-slate-500/60"
+                    placeholder="Nguyễn Văn A"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400 font-medium">SĐT</label>
+                  <input
+                    value={requestForm.sdt}
+                    onChange={(e) => setRequestForm((p) => ({ ...p, sdt: e.target.value }))}
+                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-slate-500/60"
+                    placeholder="09..."
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400 font-medium">
+                    Tên đăng nhập <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    value={requestForm.tendangnhap}
+                    onChange={(e) => setRequestForm((p) => ({ ...p, tendangnhap: e.target.value }))}
+                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-slate-500/60 font-mono"
+                    placeholder="vd: tho_cat_01"
+                    required
+                  />
+                  <p className="text-[11px] text-gray-500">Sẽ dùng để tạo email dạng `{`tenDangNhap@minierp.local`}`.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400 font-medium">Vai trò mong muốn</label>
+                  <select
+                    value={requestForm.vaitro}
+                    onChange={(e) => setRequestForm((p) => ({ ...p, vaitro: e.target.value }))}
+                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-slate-500/60"
+                    aria-label="Vai trò"
+                  >
+                    <option value="WORKER">WORKER</option>
+                    <option value="ADMIN">ADMIN</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-gray-400 font-medium">Ghi chú</label>
+                <textarea
+                  value={requestForm.ghichu}
+                  onChange={(e) => setRequestForm((p) => ({ ...p, ghichu: e.target.value }))}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-slate-500/60 min-h-[90px]"
+                  placeholder="VD: xin cấp quyền quản lý kho..."
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsRequestOpen(false)}
+                  className="px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/5 border border-white/10 transition-colors"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  disabled={requestLoading}
+                  className="px-5 py-2.5 rounded-xl text-sm font-bold bg-linear-to-b from-slate-200 to-slate-400 hover:from-white hover:to-slate-300 text-black transition-colors disabled:opacity-70 flex items-center"
+                >
+                  {requestLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin text-black" /> : <Send className="w-4 h-4 mr-2" />}
+                  Gửi yêu cầu
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Right Pane - Image Hero */}
       <div className="hidden lg:flex flex-1 relative items-center justify-center bg-[#050505] overflow-hidden border-l border-white/10">
         {/* Glow effect matching the silver theme */}
@@ -197,10 +349,13 @@ export default function LoginPage() {
         <div className="absolute top-0 left-0 right-0 h-32 bg-linear-to-b from-[#050505] to-transparent z-10 pointer-events-none" />
         
         {/* Background Image (Silver/Aluminum Glass Theme) */}
-        <img 
-          src="/hero_bg.png" 
-          alt="Aluminum and Glass Architecture" 
+        <Image
+          src="/hero_bg.png"
+          alt="Aluminum and Glass Architecture"
+          fill
+          sizes="55vw"
           className="absolute inset-0 w-full h-full object-cover opacity-90 contrast-125 grayscale-20"
+          priority
         />
 
         {/* Right Pane Content */}

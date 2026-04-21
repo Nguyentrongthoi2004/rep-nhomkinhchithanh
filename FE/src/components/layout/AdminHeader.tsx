@@ -19,7 +19,8 @@ export default function AdminHeader() {
   };
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 bg-[#0a0a0c]/80 backdrop-blur-md border-b border-white/5 sticky top-0 z-20">
+    <header className="h-16 flex items-center justify-between px-6 admin-metal-panel/70 backdrop-blur-md border-b border-white/5 sticky top-0 z-20 overflow-hidden">
+      <div className="admin-metal-shine" />
       
       {/* Search Bar Placeholder */}
       <div className="flex-1 max-w-md">
@@ -29,15 +30,19 @@ export default function AdminHeader() {
           </div>
           <input
             type="text"
-            className="bg-white/5 border border-white/10 text-sm rounded-lg text-gray-200 focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2 transition-all placeholder-gray-600 focus:bg-white/10"
+            className="bg-white/5 border border-white/10 text-sm rounded-lg text-gray-200 focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2 transition-all placeholder-gray-600 focus:bg-white/10 relative z-10"
             placeholder="Tìm kiếm mã đơn hàng, vật tư..."
           />
         </div>
       </div>
 
       {/* Right Side Actions */}
-      <div className="flex items-center space-x-4">
-        <button className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/5 transition-colors relative">
+      <div className="flex items-center space-x-4 relative z-10">
+        <button
+          className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/5 transition-colors relative"
+          title="Thông báo"
+          aria-label="Thông báo"
+        >
           <Bell className="w-5 h-5" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-[#0a0a0c]"></span>
         </button>
@@ -49,7 +54,7 @@ export default function AdminHeader() {
             <p className="text-sm font-medium text-gray-200">Quản trị viên</p>
             <p className="text-xs text-gray-500">admin@nhomkinh.com</p>
           </div>
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 border border-white/10 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-full bg-linear-to-br from-gray-700 to-gray-900 border border-white/10 flex items-center justify-center">
             <User className="w-5 h-5 text-gray-400" />
           </div>
         </div>

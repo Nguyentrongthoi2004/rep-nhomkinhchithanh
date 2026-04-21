@@ -1,7 +1,31 @@
 "use client";
 
-import { Scissors, Play, Settings, Ruler, Archive, CheckCircle2 } from "lucide-react";
+import { Scissors, Play, Ruler, Archive, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
+
+const WIDTH_BUCKET_CLASS: Record<number, string> = {
+  0: "w-0",
+  5: "w-[5%]",
+  10: "w-[10%]",
+  15: "w-[15%]",
+  20: "w-[20%]",
+  25: "w-[25%]",
+  30: "w-[30%]",
+  35: "w-[35%]",
+  40: "w-[40%]",
+  45: "w-[45%]",
+  50: "w-[50%]",
+  55: "w-[55%]",
+  60: "w-[60%]",
+  65: "w-[65%]",
+  70: "w-[70%]",
+  75: "w-[75%]",
+  80: "w-[80%]",
+  85: "w-[85%]",
+  90: "w-[90%]",
+  95: "w-[95%]",
+  100: "w-full",
+};
 
 // Mock Data from BOM (Phase 3)
 const MOCK_CUT_LIST = [
@@ -108,11 +132,12 @@ export default function CuttingOptimizationPage() {
                   {optimizedBar.map((seg, idx) => {
                     // Calculate % width for flex basis
                     const pct = (seg.length / stockLength) * 100;
+                    const pctBucket = Math.max(0, Math.min(100, Math.round(pct / 5) * 5));
+                    const widthClass = WIDTH_BUCKET_CLASS[pctBucket] ?? "w-0";
                     return (
                       <div 
                         key={idx} 
-                        style={{ width: `${pct}%` }}
-                        className={`h-full ${seg.color} border-r border-black/40 flex flex-col justify-center items-center transition-all hover:brightness-125 hover:z-10 relative`}
+                        className={`h-full ${widthClass} ${seg.color} border-r border-black/40 flex flex-col justify-center items-center transition-all hover:brightness-125 hover:z-10 relative`}
                         title={seg.type === 'kerf' ? `Hao hụt lưỡi cưa: ${seg.length}mm` : `${seg.name || 'Segment'}: ${seg.length}mm`}
                       >
                          {/* Show label only if segment is wide enough */}
@@ -122,7 +147,7 @@ export default function CuttingOptimizationPage() {
                            </>
                          )}
                          {seg.type === 'waste' && pct > 3 && (
-                            <span className="text-[#333] text-[10px] font-bold rotate-[-90deg] uppercase tracking-widest leading-none">ĐỂ-XÊ CÒN XÀI {seg.length}</span>
+                            <span className="text-[#333] text-[10px] font-bold -rotate-90 uppercase tracking-widest leading-none">ĐỂ-XÊ CÒN XÀI {seg.length}</span>
                          )}
                          {seg.type === 'kerf' && (
                            <div className="absolute -top-6 text-[8px] text-gray-500 font-bold whitespace-nowrap">4mm</div>

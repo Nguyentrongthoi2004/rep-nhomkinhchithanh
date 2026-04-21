@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, Ruler, Save, ShieldAlert, Cpu } from "lucide-react";
+import { Ruler, Save, ShieldAlert, Cpu } from "lucide-react";
 
 export default function ConfigPage() {
   const [kerf, setKerf] = useState(4);
@@ -54,8 +54,12 @@ export default function ConfigPage() {
           </div>
           
           <div className="relative">
+            {/* EdgeTools/axe in this project expects explicit accessible names. */}
             <input 
               type="number" 
+              title="Độ hở lưỡi cưa (mm)"
+              aria-label="Độ hở lưỡi cưa (mm)"
+              placeholder="VD: 4"
               value={kerf}
               onChange={(e) => setKerf(Number(e.target.value))}
               className="bg-white/5 border border-white/10 text-3xl font-bold text-white rounded-xl w-full p-4 pl-6 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -69,6 +73,8 @@ export default function ConfigPage() {
           <div className="mt-6 pt-6 border-t border-white/5">
             <input 
               type="range" 
+              title="Chỉnh độ hở lưỡi cưa"
+              aria-label="Chỉnh độ hở lưỡi cưa"
               min="2" max="10" step="0.5" 
               value={kerf} 
               onChange={(e) => setKerf(Number(e.target.value))}
@@ -96,6 +102,9 @@ export default function ConfigPage() {
           <div className="relative">
             <input 
               type="number" 
+              title="Lề an toàn biên (mm)"
+              aria-label="Lề an toàn biên (mm)"
+              placeholder="VD: 20"
               value={safeMargin}
               onChange={(e) => setSafeMargin(Number(e.target.value))}
               className="bg-white/5 border border-white/10 text-3xl font-bold text-white rounded-xl w-full p-4 pl-6 focus:ring-2 focus:ring-red-500 outline-none transition-all"
@@ -109,6 +118,8 @@ export default function ConfigPage() {
           <div className="mt-6 pt-6 border-t border-white/5">
             <input 
               type="range" 
+              title="Chỉnh lề an toàn biên"
+              aria-label="Chỉnh lề an toàn biên"
               min="0" max="50" step="5" 
               value={safeMargin} 
               onChange={(e) => setSafeMargin(Number(e.target.value))}

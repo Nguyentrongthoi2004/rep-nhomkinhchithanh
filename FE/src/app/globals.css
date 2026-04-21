@@ -24,3 +24,183 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ===== MiniERP: Metallic admin theme ===== */
+
+@keyframes metalShimmer {
+  0% {
+    transform: translateX(-60%) skewX(-18deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.22;
+  }
+  55% {
+    opacity: 0.06;
+  }
+  100% {
+    transform: translateX(160%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes metalPulse {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+.admin-metal-bg {
+  background:
+    radial-gradient(1200px 700px at 15% 10%, rgba(255, 255, 255, 0.10), transparent 55%),
+    radial-gradient(900px 600px at 85% 15%, rgba(148, 163, 184, 0.14), transparent 60%),
+    radial-gradient(1100px 720px at 60% 90%, rgba(56, 189, 248, 0.10), transparent 55%),
+    linear-gradient(180deg, #050507 0%, #07070a 55%, #050507 100%);
+}
+
+.admin-metal-panel {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.04) 35%, rgba(255, 255, 255, 0.07)),
+    linear-gradient(180deg, rgba(10, 10, 12, 0.90), rgba(10, 10, 12, 0.72));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 20px 60px -40px rgba(0, 0, 0, 0.9);
+}
+
+.admin-metal-shine {
+  position: absolute;
+  inset: -40% -60%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.0) 20%,
+    rgba(255, 255, 255, 0.14) 38%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0.14) 62%,
+    rgba(255, 255, 255, 0.0) 80%,
+    transparent 100%
+  );
+  filter: blur(0.8px);
+  animation: metalShimmer 12.5s ease-in-out infinite;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.55;
+}
+
+.admin-metal-noise {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.035;
+  pointer-events: none;
+  mask-image: radial-gradient(circle at 50% 20%, black 0%, transparent 70%);
+}
+
+.admin-metal-glow {
+  position: absolute;
+  inset: -30%;
+  background:
+    radial-gradient(closest-side at 40% 40%, rgba(255, 255, 255, 0.16), transparent 60%),
+    radial-gradient(closest-side at 70% 30%, rgba(148, 163, 184, 0.16), transparent 62%),
+    radial-gradient(closest-side at 65% 75%, rgba(56, 189, 248, 0.10), transparent 62%);
+  opacity: 0.22;
+  animation: metalPulse 8.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.login-metal-bg {
+  background:
+    radial-gradient(900px 600px at 20% 20%, rgba(255, 255, 255, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 80% 20%, rgba(148, 163, 184, 0.14), transparent 60%),
+    linear-gradient(180deg, #050507 0%, #07070a 60%, #050507 100%);
+}
+
+/* Brand */
+.brand-mark {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-icon {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 10px 24px -14px rgba(255, 255, 255, 0.25),
+    0 14px 40px -22px rgba(56, 189, 248, 0.35);
+  overflow: hidden;
+}
+
+.brand-icon::after {
+  content: "";
+  position: absolute;
+  inset: -40% -60%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.0) 35%, rgba(255, 255, 255, 0.35) 50%, rgba(255, 255, 255, 0.0) 65%, transparent 100%);
+  transform: translateX(-80%) skewX(-18deg);
+  animation: metalShimmer 10.5s ease-in-out infinite;
+  opacity: 0.7;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.brand-name {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, #f8fafc, #cbd5e1 35%, #94a3b8 70%, #e2e8f0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 22px rgba(255, 255, 255, 0.08);
+}
+
+.worker-progress {
+  width: 100%;
+  height: 6px;
+  display: block;
+  overflow: hidden;
+  appearance: none;
+  border: none;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.worker-progress::-webkit-progress-bar {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 9999px;
+}
+
+.worker-progress::-webkit-progress-value {
+  border-radius: 9999px;
+}
+
+.worker-progress::-moz-progress-bar {
+  border-radius: 9999px;
+}
+
+.worker-progress--new::-webkit-progress-value,
+.worker-progress--new::-moz-progress-bar {
+  background: rgb(56, 189, 248);
+}
+
+.worker-progress--usable::-webkit-progress-value,
+.worker-progress--usable::-moz-progress-bar {
+  background: rgb(52, 211, 153);
+}
+
+.worker-progress--scrap::-webkit-progress-value,
+.worker-progress--scrap::-moz-progress-bar {
+  background: rgba(244, 63, 94, 0.6);
+}
