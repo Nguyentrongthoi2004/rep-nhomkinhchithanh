@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   ClipboardList, Users, UserPlus, Loader2, ChevronDown, ChevronRight,
   CheckCircle2, Clock, AlertCircle, X, Package, Ruler
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-
-const supabase = createClient();
 
 // ─── Types (khớp 100% với schema Supabase) ───
 interface Worker {
@@ -53,6 +51,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 };
 
 export default function AdminPhanCongPage() {
+  const supabase = useMemo(() => createClient(), []);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -107,7 +106,7 @@ export default function AdminPhanCongPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

@@ -1,14 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   User, Bell, ChevronRight, Zap, Target, CreditCard, Clock,
   Activity, Scissors, ClipboardList, Package
 } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-
-const supabase = createClient();
 
 interface WorkerInfo {
   hoten: string;
@@ -24,6 +22,7 @@ interface Assignment {
 }
 
 export default function WorkerDashboard() {
+  const supabase = useMemo(() => createClient(), []);
   const [greeting] = useState(() => {
     const hour = new Date().getHours();
     if (hour >= 12 && hour < 18) return "Chào buổi chiều";
@@ -65,7 +64,7 @@ export default function WorkerDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [supabase]);
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
