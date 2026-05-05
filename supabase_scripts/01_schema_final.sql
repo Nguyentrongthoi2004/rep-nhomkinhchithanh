@@ -23,6 +23,14 @@ CREATE TYPE loai_su_kien            AS ENUM ('CAT', 'LOI', 'BO_DI');
 CREATE TYPE loai_giao_dich          AS ENUM ('DAT_COC', 'TAM_UNG', 'HOAN_TAT', 'HUY_DON');
 CREATE TYPE phuong_thuc_thanh_toan  AS ENUM ('TIEN_MAT', 'CHUYEN_KHOAN');
 
+-- Bổ sung: trạng thái yêu cầu cấp quyền
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'trang_thai_yeu_cau') THEN
+    CREATE TYPE trang_thai_yeu_cau AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+  END IF;
+END $$;
+
 -- =====================
 -- BƯỚC 2: TẠO 15 BẢNG
 -- =====================
@@ -55,6 +63,24 @@ CREATE TABLE nguoidung (
     sdt             VARCHAR(15),
     trangthai       trang_thai_nguoi_dung NOT NULL DEFAULT 'DANG_LAM'
 );
+
+-- ─── Bảng 3b: yeucaucapquyen ────────────────────────────────────
+-- Yêu cầu cấp quyền tài khoản (để admin duyệt)
+CREATE TABLE IF NOT EXISTS yeucaucapquyen (
+  mayc        SERIAL PRIMARY KEY,
+  hoten       VARCHAR(100) NOT NULL,
+  sdt         VARCHAR(15),
+  tendangnhap VARCHAR(80) NOT NULL,
+  vaitro      vai_tro_nguoi_dung NOT NULL DEFAULT 'WORKER',
+  ghichu      TEXT,
+  trangthai   trang_thai_yeu_cau NOT NULL DEFAULT 'PENDING',
+  ngaytao     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ngayduyet   TIMESTAMPTZ,
+  nguoiduyet  INT REFERENCES nguoidung(mand) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_yeucau_trangthai ON yeucaucapquyen(trangthai);
+CREATE INDEX IF NOT EXISTS idx_yeucau_tendangnhap ON yeucaucapquyen(tendangnhap);
 
 -- ─── Bảng 4: khachhang ─────────────────────────────────────────
 -- Hồ sơ khách hàng, tra cứu nhanh qua Số Điện Thoại

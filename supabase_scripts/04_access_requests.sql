@@ -18,9 +18,9 @@ CREATE TABLE IF NOT EXISTS yeucaucapquyen (
   vaitro      vai_tro_nguoi_dung NOT NULL DEFAULT 'WORKER',
   ghichu      TEXT,
   trangthai   trang_thai_yeu_cau NOT NULL DEFAULT 'PENDING',
-  createdat   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  decidedat   TIMESTAMPTZ,
-  decidedby   INT REFERENCES nguoidung(mand) ON DELETE SET NULL
+  ngaytao     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ngayduyet   TIMESTAMPTZ,
+  nguoiduyet  INT REFERENCES nguoidung(mand) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_yeucau_trangthai ON yeucaucapquyen(trangthai);

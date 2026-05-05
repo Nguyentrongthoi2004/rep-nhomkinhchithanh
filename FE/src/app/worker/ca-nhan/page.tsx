@@ -118,10 +118,10 @@ export default function WorkerCaNhanPage() {
     .toUpperCase();
 
   return (
-    <div className="space-y-4 pb-4">
+    <div className="space-y-4 pb-4 px-5 pt-6">
       {/* Profile Hero */}
-      <section className="relative overflow-hidden rounded-3xl admin-metal-panel border border-white/10 px-5 py-6">
-        <div className="admin-metal-shine" />
+      <section className="relative overflow-hidden rounded-3xl bg-linear-to-br from-[#12141a] to-[#0a0a0c] border border-white/10 px-5 py-6 shadow-xl">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex items-center gap-4">
           <div className="relative shrink-0 w-16 h-16 rounded-2xl bg-linear-to-br from-sky-400/30 to-sky-700/30 border border-sky-400/30 flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_10px_30px_-16px_rgba(56,189,248,0.4)]">
             <span className="text-xl font-extrabold text-white">{initials}</span>

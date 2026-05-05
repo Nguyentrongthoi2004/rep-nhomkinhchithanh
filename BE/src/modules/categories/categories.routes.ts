@@ -6,6 +6,7 @@ import { asyncHandler } from "@/lib/asyncHandler";
 import { categoriesController } from "./categories.controller";
 import {
   categoryIdParamSchema,
+  categoriesListPagedQuerySchema,
   createCategorySchema,
   updateCategorySchema,
 } from "./categories.schema";
@@ -16,6 +17,12 @@ export const categoriesRouter = Router();
 categoriesRouter.use(authMiddleware, requireRole("ADMIN"));
 
 categoriesRouter.get("/", asyncHandler(categoriesController.list));
+
+categoriesRouter.get(
+  "/paged",
+  validate(categoriesListPagedQuerySchema, "query"),
+  asyncHandler(categoriesController.listPaged),
+);
 
 categoriesRouter.get(
   "/:id",

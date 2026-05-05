@@ -4,8 +4,19 @@ import type { UpdateTaskDto } from "./worker-tasks.schema";
 
 const TABLE = "phancong";
 
-const SELECT =
-  "mapc, trangthai, matho, madh, donhang:madh(madh, ngaytao, trangthai, khachhang:makh(hoten))";
+const SELECT = `
+  mapc,
+  trangthai,
+  matho,
+  madh,
+  donhang:madh(
+    madh,
+    ngaytao,
+    trangthai,
+    khachhang:makh(hoten),
+    chitietdh(mactdh, mota, chieudaicat, soluong, vattu:mavt(tenvt, donvitinh))
+  )
+`;
 
 export const workerTasksService = {
   async listForWorker(matho: number) {

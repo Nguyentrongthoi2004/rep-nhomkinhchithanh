@@ -9,8 +9,17 @@ const ORDER_SELECT = `
   ngaytao,
   trangthai,
   tonggiatri,
-  khachhang:makh ( hoten ),
-  chitietdh ( mactdh )
+  khachhang:makh ( makh, hoten, sdt, diachi ),
+  chitietdh (
+    mactdh,
+    mavt,
+    mota,
+    chieudaicat,
+    soluong,
+    dongiadongbang,
+    thanhtien,
+    vattu:mavt ( tenvt, donvitinh )
+  )
 `;
 
 const BRIEF_SELECT = `
@@ -47,6 +56,13 @@ export const ordersService = {
     return data ?? [];
   },
 
+  async getById(id: number) {
+    const { data, error } = await supabaseAdmin.from("donhang").select(ORDER_SELECT).eq("madh", id).maybeSingle();
+    if (error) throw HttpError.internal(error.message);
+    if (!data) throw HttpError.notFound(`Order ${id} not found`);
+    return data;
+  },
+
   async listBrief() {
     const { data, error } = await supabaseAdmin.from("donhang").select(BRIEF_SELECT).order("madh", { ascending: false });
     if (error) throw HttpError.internal(error.message);
@@ -54,7 +70,7 @@ export const ordersService = {
   },
 
   async create(dto: CreateOrderDto) {
-    const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone);
+    const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null);
 
     const { data: order, error: orderErr } = await supabaseAdmin
       .from("donhang")
@@ -74,8 +90,8 @@ export const ordersService = {
         mota: buildOrderItemDescription(item),
         chieudaicat: getStoredCutLength(item),
         soluong: item.qty,
-        dongiadongbang: 0,
-        thanhtien: 0,
+        dongiadongbang: item.unitPrice ?? 0,
+        thanhtien: (item.unitPrice ?? 0) * item.qty,
       }));
 
       const { error: detailErr } = await supabaseAdmin.from("chitietdh").insert(detailPayload);
@@ -107,18 +123,21 @@ export const ordersService = {
     if (error) throw HttpError.internal(error.message);
   },
 
-  async getOrCreateCustomer(customerName: string, phone: string) {
+  async getOrCreateCustomer(customerName: string, phone: string, address: string | null) {
     const { data: existing, error: findErr } = await supabaseAdmin
       .from("khachhang")
       .select("makh")
       .eq("sdt", phone)
       .maybeSingle();
     if (findErr) throw HttpError.internal(findErr.message);
-    if (existing) return existing.makh as number;
+    if (existing) {
+      await supabaseAdmin.from("khachhang").update({ hoten: customerName, diachi: address }).eq("makh", existing.makh);
+      return existing.makh as number;
+    }
 
     const { data, error } = await supabaseAdmin
       .from("khachhang")
-      .insert({ hoten: customerName, sdt: phone })
+      .insert({ hoten: customerName, sdt: phone, diachi: address })
       .select("makh")
       .single();
     if (error) throw HttpError.internal(error.message);

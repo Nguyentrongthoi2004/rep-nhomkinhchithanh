@@ -1,5 +1,6 @@
 import { HttpError } from "@/lib/http";
 import { generatePassword, toAuthEmail } from "@/lib/identity";
+import { sendAccessApprovedEmail } from "@/lib/mailer";
 import { supabaseAdmin } from "@/lib/supabase";
 import type {
   CreateAccessRequestDto,
@@ -22,7 +23,14 @@ export const accessRequestsService = {
       .from("yeucaucapquyen")
       .select("*")
       .order("mayc", { ascending: false });
-    if (error) throw HttpError.internal(error.message);
+    if (error) {
+      if (String(error.message || "").includes("Could not find the table")) {
+        throw HttpError.internal(
+          "Thiếu bảng yeucaucapquyen trên Supabase. Hãy chạy script supabase_scripts/04_access_requests.sql rồi thử lại.",
+        );
+      }
+      throw HttpError.internal(error.message);
+    }
     return data ?? [];
   },
 
@@ -39,7 +47,14 @@ export const accessRequestsService = {
       })
       .select("*")
       .single();
-    if (error) throw HttpError.internal(error.message);
+    if (error) {
+      if (String(error.message || "").includes("Could not find the table")) {
+        throw HttpError.internal(
+          "Thiếu bảng yeucaucapquyen trên Supabase. Hãy chạy script supabase_scripts/04_access_requests.sql rồi thử lại.",
+        );
+      }
+      throw HttpError.internal(error.message);
+    }
     return data;
   },
 
@@ -57,8 +72,8 @@ export const accessRequestsService = {
         .update({
           trangthai: "REJECTED",
           ghichu: dto.payload?.ghichu ?? null,
-          decidedat: new Date().toISOString(),
-          decidedby: decidedBy,
+          ngayduyet: new Date().toISOString(),
+          nguoiduyet: decidedBy,
         })
         .eq("mayc", id);
       if (error) throw HttpError.internal(error.message);
@@ -99,12 +114,30 @@ export const accessRequestsService = {
       .from("yeucaucapquyen")
       .update({
         trangthai: "APPROVED",
-        decidedat: new Date().toISOString(),
-        decidedby: decidedBy,
+        ngayduyet: new Date().toISOString(),
+        nguoiduyet: decidedBy,
       })
       .eq("mayc", id);
     if (updateErr) throw HttpError.internal(updateErr.message);
 
-    return { success: true, credential: { email, password } };
+    let mail: { ok: true; messageId: string; previewUrl: string | null } | { ok: false; error: string } = {
+      ok: true,
+      messageId: "",
+      previewUrl: null,
+    };
+    try {
+      const info = await sendAccessApprovedEmail({
+        to: email,
+        hoTen: String(row.hoten || login),
+        vaiTro: String(row.vaitro || "WORKER"),
+        login,
+        password,
+      });
+      mail = { ok: true, messageId: info.messageId, previewUrl: info.previewUrl };
+    } catch (err: unknown) {
+      mail = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    return { success: true, credential: { email, password }, mail };
   },
 };

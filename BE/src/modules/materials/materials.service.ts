@@ -1,6 +1,10 @@
 import { HttpError } from "@/lib/http";
 import { supabaseAdmin } from "@/lib/supabase";
-import type { CreateMaterialDto, UpdateMaterialDto } from "./materials.schema";
+import type {
+  CreateMaterialDto,
+  MaterialsListQuery,
+  UpdateMaterialDto,
+} from "./materials.schema";
 
 const TABLE = "vattu";
 const SELECT = `
@@ -14,17 +18,63 @@ const SELECT = `
   danhmuc:madm ( tendm )
 `;
 
+function sanitizeIlikeTerm(raw: string) {
+  return raw.replace(/[%_\\]/g, "").trim().slice(0, 120);
+}
+
+export type MaterialsPageResult = {
+  items: unknown[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 export const materialsService = {
-  async list() {
-    const { data, error } = await supabaseAdmin.from(TABLE).select(SELECT).order("mavt", { ascending: true });
+  async listPaged(query: MaterialsListQuery): Promise<MaterialsPageResult> {
+    const { page, pageSize, madm, sortBy, order } = query;
+    const ascending = order === "asc";
+
+    let qb = supabaseAdmin.from(TABLE).select(SELECT, { count: "exact" });
+
+    const qSafe = query.q !== undefined ? sanitizeIlikeTerm(query.q) : "";
+    if (qSafe) {
+      const fromVtCode = /^vt-?\s*(\d+)$/i.exec(qSafe)?.[1];
+      const mavtParsed = fromVtCode
+        ? parseInt(fromVtCode, 10)
+        : /^\d+$/.test(qSafe)
+          ? parseInt(qSafe, 10)
+          : null;
+      if (mavtParsed !== null && Number.isFinite(mavtParsed)) {
+        qb = qb.or(`tenvt.ilike.%${qSafe}%,mavt.eq.${mavtParsed}`);
+      } else {
+        qb = qb.ilike("tenvt", `%${qSafe}%`);
+      }
+    }
+
+    if (madm !== undefined) {
+      qb = qb.eq("madm", madm);
+    }
+
+    const fromIdx = (page - 1) * pageSize;
+    const toIdx = fromIdx + pageSize - 1;
+
+    const { data, error, count } = await qb
+      .order(sortBy, { ascending, nullsFirst: false })
+      .range(fromIdx, toIdx);
+
     if (error) throw HttpError.internal(error.message);
-    return data ?? [];
+    return {
+      items: data ?? [],
+      total: count ?? 0,
+      page,
+      pageSize,
+    };
   },
 
   async listOptions() {
     const { data, error } = await supabaseAdmin
       .from(TABLE)
-      .select("mavt, tenvt, chieudaimacdinh")
+      .select("mavt, tenvt, donvitinh, chieudaimacdinh, dongianhap, dongiaban, danhmuc:madm(tendm)")
       .order("mavt", { ascending: true });
     if (error) throw HttpError.internal(error.message);
     return data ?? [];

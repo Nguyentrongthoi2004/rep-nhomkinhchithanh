@@ -19,8 +19,18 @@ function getSupabaseClient() {
   return browserSupabase;
 }
 
+/**
+ * Trên localhost luôn gọi Same-Origin `/api/...` để Next rewrite tới BE (xem `next.config.ts`).
+ * Tránh nhầm khi `.env` còn URL production → DB trống dù Supabase local đã có dữ liệu.
+ */
 function buildApiUrl(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return normalizedPath;
+    }
+  }
   return `${API_BASE_URL}${normalizedPath}`;
 }
 
@@ -36,10 +46,15 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
     headers.set("Authorization", `Bearer ${data.session.access_token}`);
   }
 
-  return fetch(buildApiUrl(path), {
+  const url = buildApiUrl(path);
+  const crossOrigin =
+    /^https?:\/\//i.test(url) &&
+    typeof window !== "undefined" &&
+    !url.startsWith(`${window.location.protocol}//${window.location.host}`);
+  return fetch(url, {
     ...init,
     headers,
-    credentials: API_BASE_URL ? "omit" : "same-origin",
+    credentials: crossOrigin ? "omit" : "same-origin",
   });
 }
 

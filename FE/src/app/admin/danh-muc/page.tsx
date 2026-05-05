@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search, Edit2, Trash2, Layers, Loader2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Layers, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { apiData, apiJson } from "@/lib/api";
 
@@ -13,9 +13,12 @@ interface DanhMuc {
 
 export default function CategoryPage() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [categories, setCategories] = useState<DanhMuc[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [total, setTotal] = useState(0);
+  const [items, setItems] = useState<DanhMuc[]>([]);
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -27,23 +30,30 @@ export default function CategoryPage() {
     setLoading(true);
     setErrorMsg("");
     try {
-      setCategories(await apiData<DanhMuc[]>("/api/admin/categories"));
+      const qs = new URLSearchParams();
+      qs.set("page", String(page));
+      qs.set("pageSize", String(pageSize));
+      if (searchTerm.trim()) qs.set("q", searchTerm.trim());
+      const data = await apiData<{ items: DanhMuc[]; total: number; page: number; pageSize: number }>(`/api/admin/categories/paged?${qs.toString()}`);
+      setItems(data.items ?? []);
+      setTotal(data.total ?? 0);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrorMsg(msg);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, pageSize, searchTerm]);
 
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
 
-  const filtered = categories.filter((c) =>
-    c.tendm.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.mota?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const openAddModal = () => {
     setEditing(null);
@@ -160,9 +170,9 @@ export default function CategoryPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {filtered.map((cat, idx) => (
+            {items.map((cat, idx) => (
               <tr key={cat.madm} className="hover:bg-white/2 transition-colors group">
-                <td className="p-4 text-center text-sm text-gray-500 font-mono">{idx + 1}</td>
+                <td className="p-4 text-center text-sm text-gray-500 font-mono">{(page - 1) * pageSize + idx + 1}</td>
                 <td className="p-4 text-sm font-mono text-gray-300">DM-{cat.madm.toString().padStart(3, '0')}</td>
                 <td className="p-4 text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">{cat.tendm}</td>
                 <td className="p-4">
@@ -196,20 +206,57 @@ export default function CategoryPage() {
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && (
+            {items.length === 0 && (
               <tr><td colSpan={6} className="p-6 text-center text-gray-500">Chưa có danh mục nào</td></tr>
             )}
           </tbody>
         </table>
         )}
         
-        {/* Pagination mock */}
-        <div className="p-4 border-t border-white/5 flex items-center justify-between text-sm text-gray-500">
-          <span>Hiển thị danh sách tự động</span>
-          <div className="flex space-x-1">
-            <button className="px-3 py-1 bg-white/5 border border-white/10 rounded hover:bg-white/10 transition-colors disabled:opacity-50" disabled>Trước</button>
-            <button className="px-3 py-1 bg-blue-600 text-white border border-blue-500 rounded hover:bg-blue-500 transition-colors">1</button>
-            <button className="px-3 py-1 bg-white/5 border border-white/10 rounded hover:bg-white/10 transition-colors disabled:opacity-50" disabled>Sau</button>
+        <div className="p-4 border-t border-white/5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-500">
+          <div className="flex items-center gap-3">
+            <span>
+              Hiển thị{" "}
+              <strong className="text-gray-300">
+                {total === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)}
+              </strong>{" "}
+              trong <strong className="text-gray-300">{total}</strong> mục
+            </span>
+            <label className="inline-flex items-center gap-2">
+              <span className="sr-only">Số dòng mỗi trang</span>
+              <select
+                value={String(pageSize)}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="bg-white/5 border border-white/10 rounded px-2 py-1 text-gray-200"
+                aria-label="Số dòng mỗi trang"
+              >
+                <option value="10">10 / trang</option>
+                <option value="15">15 / trang</option>
+                <option value="25">25 / trang</option>
+                <option value="50">50 / trang</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="inline-flex items-center gap-1 px-3 py-2 bg-white/5 border border-white/10 rounded hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              <ChevronLeft className="w-4 h-4" /> Trước
+            </button>
+            <span className="px-2 text-gray-400">
+              Trang <strong className="text-gray-200">{Math.min(page, totalPages)}</strong>/{totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="inline-flex items-center gap-1 px-3 py-2 bg-white/5 border border-white/10 rounded hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              Sau <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </div>

@@ -12,7 +12,7 @@ type RequestRow = {
   vaitro: "ADMIN" | "WORKER";
   trangthai: "PENDING" | "APPROVED" | "REJECTED";
   ghichu: string | null;
-  createdat: string;
+  ngaytao: string;
 };
 
 export default function AccessRequestsPage() {
@@ -21,6 +21,7 @@ export default function AccessRequestsPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [credential, setCredential] = useState<{ email: string; password: string } | null>(null);
+  const [mailInfo, setMailInfo] = useState<{ ok: boolean; previewUrl?: string | null; error?: string } | null>(null);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -41,12 +42,18 @@ export default function AccessRequestsPage() {
   const approve = async (mayc: number) => {
     setActionLoading(mayc);
     setCredential(null);
+    setMailInfo(null);
     try {
-      const data = await apiData<{ success: boolean; credential?: { email: string; password: string } }>(`/api/admin/access-requests/${mayc}`, {
+      const data = await apiData<{
+        success: boolean;
+        credential?: { email: string; password: string };
+        mail?: { ok: boolean; previewUrl?: string | null; error?: string };
+      }>(`/api/admin/access-requests/${mayc}`, {
         method: "PATCH",
         body: JSON.stringify({ action: "APPROVE" }),
       });
       if (data?.credential) setCredential(data.credential);
+      if (data?.mail) setMailInfo(data.mail);
       fetchRows();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err));
@@ -105,6 +112,30 @@ export default function AccessRequestsPage() {
           <div className="font-mono text-emerald-100">Email: {credential.email}</div>
           <div className="font-mono text-emerald-100">Password: {credential.password}</div>
           <div className="text-xs text-emerald-300/80 mt-2">Lưu ý: mật khẩu không được lưu lại trong hệ thống.</div>
+        </div>
+      )}
+
+      {mailInfo && (
+        <div
+          className={`rounded-2xl p-5 text-sm border ${
+            mailInfo.ok ? "bg-sky-500/10 border-sky-500/20 text-sky-200" : "bg-amber-500/10 border-amber-500/20 text-amber-200"
+          }`}
+        >
+          <div className="font-bold mb-1">{mailInfo.ok ? "Đã gửi email cấp quyền" : "Gửi email thất bại"}</div>
+          {mailInfo.ok ? (
+            mailInfo.previewUrl ? (
+              <div className="text-xs">
+                Preview (dev):{" "}
+                <a className="underline underline-offset-2" href={mailInfo.previewUrl} target="_blank" rel="noreferrer">
+                  mở preview
+                </a>
+              </div>
+            ) : (
+              <div className="text-xs text-sky-300/80">Đã gửi qua SMTP cấu hình.</div>
+            )
+          ) : (
+            <div className="text-xs">{mailInfo.error || "Không rõ lỗi"}</div>
+          )}
         </div>
       )}
 
@@ -173,11 +204,11 @@ export default function AccessRequestsPage() {
                         </button>
                         <button
                           onClick={() => reject(r.mayc)}
-                          className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200 text-sm font-bold transition-colors flex items-center"
+                          className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/25 text-rose-200 text-sm font-bold transition-colors flex items-center"
                           title="Từ chối"
                           aria-label="Từ chối"
                         >
-                          <XCircle className="w-4 h-4 mr-2 text-red-300" /> Từ chối
+                          <XCircle className="w-4 h-4 mr-2 text-rose-300" /> Từ chối
                         </button>
                       </div>
                     )}

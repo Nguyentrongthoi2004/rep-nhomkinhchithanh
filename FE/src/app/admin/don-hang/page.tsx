@@ -1,9 +1,10 @@
 "use client";
 
-import { Plus, Search, Filter, FileText, ClipboardList, TrendingUp, Loader2, Trash2 } from "lucide-react";
+import { Plus, Search, Filter, FileText, ClipboardList, TrendingUp, Loader2, Trash2, Ban, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiData, apiJson } from "@/lib/api";
+import { formatOrderStatus } from "@/lib/order-status";
 
 interface Order {
   madh: number;
@@ -44,6 +45,18 @@ export default function OrderListPage() {
     }
   };
 
+  const updateStatus = async (madh: number, trangthai: string) => {
+    try {
+      await apiJson(`/api/admin/orders/${madh}`, {
+        method: "PATCH",
+        body: JSON.stringify({ trangthai }),
+      });
+      reloadOrders();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch(status) {
       case 'SẢN XUẤT': 
@@ -54,8 +67,12 @@ export default function OrderListPage() {
         return <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded">CHỜ DUYỆT GIÁ</span>;
       case 'HOÀN THÀNH': 
         return <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded">HOÀN THÀNH</span>;
-      default: 
-        return <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-gray-400 bg-gray-500/10 border border-gray-500/20 rounded">{status}</span>;
+      default:
+        return (
+          <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-gray-400 bg-gray-500/10 border border-gray-500/20 rounded">
+            {formatOrderStatus(status)}
+          </span>
+        );
     }
   }
 
@@ -148,7 +165,7 @@ export default function OrderListPage() {
               ) : (
                 filteredOrders.map((order) => (
                   <tr key={order.madh} className="hover:bg-white/2 transition-colors group cursor-pointer">
-                    <td className="p-4 text-sm font-bold text-orange-400 font-mono"><Link href={`/admin/don-hang/create`}>DH-{order.madh}</Link></td>
+                    <td className="p-4 text-sm font-bold text-orange-400 font-mono"><Link href={`/admin/don-hang/${order.madh}`}>DH-{order.madh}</Link></td>
                     <td className="p-4">
                       <p className="text-sm font-bold text-gray-200">{order.khachhang?.hoten || "Không tên"}</p>
                       <p className="text-xs text-gray-500 mt-1">Lập ngày: {new Date(order.ngaytao).toLocaleDateString("vi-VN")}</p>
@@ -164,11 +181,22 @@ export default function OrderListPage() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Link href={`/admin/don-hang/create`}>
+                        <Link href={`/admin/don-hang/${order.madh}`}>
                           <button className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors" title="Xem chi tiết" aria-label="Xem chi tiết">
                           <FileText className="w-4 h-4" />
                           </button>
                         </Link>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateStatus(order.madh, order.trangthai === "DA_HUY" ? "BAO_GIA_NHAP" : "DA_HUY");
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-amber-400 hover:bg-amber-400/10 rounded-md transition-colors"
+                          title={order.trangthai === "DA_HUY" ? "Mo lai don" : "Huy don"}
+                          aria-label={order.trangthai === "DA_HUY" ? "Mo lai don" : "Huy don"}
+                        >
+                          {order.trangthai === "DA_HUY" ? <RefreshCw className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

@@ -1,12 +1,17 @@
 import type { Request, Response } from "express";
 import { sendCreated, sendNoContent, sendOk } from "@/lib/http";
 import { categoriesService } from "./categories.service";
-import type { CreateCategoryDto, UpdateCategoryDto } from "./categories.schema";
+import type { CategoriesListPagedQuery, CreateCategoryDto, UpdateCategoryDto } from "./categories.schema";
 
 export const categoriesController = {
   async list(_req: Request, res: Response) {
     const rows = await categoriesService.list();
     sendOk(res, rows);
+  },
+
+  async listPaged(req: Request, res: Response) {
+    const query = req.query as unknown as CategoriesListPagedQuery;
+    sendOk(res, await categoriesService.listPaged(query));
   },
 
   async getById(req: Request, res: Response) {

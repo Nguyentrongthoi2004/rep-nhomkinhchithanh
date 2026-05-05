@@ -5,6 +5,8 @@ import { rawStockService } from "./raw-stock.service";
 import type {
   CreateBatchDto,
   CutActionDto,
+  RawStockGroupedByDayQuery,
+  RawStockListQuery,
   UpdateRawStockDto,
 } from "./raw-stock.schema";
 
@@ -12,6 +14,21 @@ export const rawStockController = {
   async list(_req: Request, res: Response) {
     const rows = await rawStockService.list();
     sendOk(res, rows);
+  },
+
+  /** Admin list with paging, filters and global summary counts for dashboard cards */
+  async groupedByImportDay(req: Request, res: Response) {
+    const q = req.query as unknown as RawStockGroupedByDayQuery;
+    sendOk(res, await rawStockService.groupedByImportDay(q));
+  },
+
+  async listAdmin(req: Request, res: Response) {
+    const q = req.query as unknown as RawStockListQuery;
+    const [summary, page] = await Promise.all([
+      rawStockService.getStockSummary(),
+      rawStockService.listPaged(q),
+    ]);
+    sendOk(res, { ...page, summary });
   },
 
   async getById(req: Request, res: Response) {

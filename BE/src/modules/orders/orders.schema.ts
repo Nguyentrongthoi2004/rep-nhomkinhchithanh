@@ -15,12 +15,13 @@ export const orderIdParamSchema = z.object({
 });
 
 export const createOrderItemSchema = z.object({
-  mavt: z.number().int().positive().optional(),
+  mavt: z.number().int().positive(),
   name: z.string().trim().min(1),
   length: z.number().nonnegative().optional(),
   w: z.number().nonnegative().optional(),
   h: z.number().nonnegative().optional(),
   qty: z.number().int().positive(),
+  unitPrice: z.number().nonnegative().optional(),
 }).superRefine((item, ctx) => {
   const hasLinearCut = item.length !== undefined;
   const hasSheetCut = item.w !== undefined && item.h !== undefined;
@@ -36,6 +37,7 @@ export const createOrderItemSchema = z.object({
 export const createOrderSchema = z.object({
   customer: z.string().trim().min(1).max(100),
   phone: z.string().trim().min(1).max(15),
+  address: z.string().trim().max(255).nullable().optional(),
   totalCost: z.number().nonnegative(),
   items: z.array(createOrderItemSchema).default([]),
 });

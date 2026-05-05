@@ -6,9 +6,11 @@ import { requireRole } from "@/middlewares/rbac";
 import { validate } from "@/middlewares/validate";
 import {
   createMaterialSchema,
+  materialsListQuerySchema,
   materialIdParamSchema,
   updateMaterialSchema,
   type CreateMaterialDto,
+  type MaterialsListQuery,
   type UpdateMaterialDto,
 } from "./materials.schema";
 import { materialsService } from "./materials.service";
@@ -18,8 +20,10 @@ materialsRouter.use(authMiddleware, requireRole("ADMIN"));
 
 materialsRouter.get(
   "/",
-  asyncHandler(async (_req, res) => {
-    sendOk(res, await materialsService.list());
+  validate(materialsListQuerySchema, "query"),
+  asyncHandler(async (req, res) => {
+    const q = req.query as unknown as MaterialsListQuery;
+    sendOk(res, await materialsService.listPaged(q));
   }),
 );
 

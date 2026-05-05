@@ -1,8 +1,12 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { HttpError } from "@/lib/http";
-import type { CreateCategoryDto, UpdateCategoryDto } from "./categories.schema";
+import type { CategoriesListPagedQuery, CreateCategoryDto, UpdateCategoryDto } from "./categories.schema";
 
 const TABLE = "danhmuc";
+
+function sanitizeIlikeTerm(raw: string) {
+  return raw.replace(/[%_\\]/g, "").trim().slice(0, 120);
+}
 
 export const categoriesService = {
   async list() {
@@ -13,6 +17,28 @@ export const categoriesService = {
 
     if (error) throw HttpError.internal(error.message);
     return data ?? [];
+  },
+
+  async listPaged(query: CategoriesListPagedQuery) {
+    const { page, pageSize } = query;
+    const qSafe = sanitizeIlikeTerm(query.q ?? "");
+
+    let qb = supabaseAdmin.from(TABLE).select("madm, tendm, mota, trangthai, ngaytao", { count: "exact" }).order("madm", { ascending: false });
+    if (qSafe) {
+      qb = qb.or(`tendm.ilike.%${qSafe}%,mota.ilike.%${qSafe}%`);
+    }
+
+    const fromIdx = (page - 1) * pageSize;
+    const toIdx = fromIdx + pageSize - 1;
+    const { data, error, count } = await qb.range(fromIdx, toIdx);
+    if (error) throw HttpError.internal(error.message);
+
+    return {
+      items: data ?? [],
+      total: count ?? 0,
+      page,
+      pageSize,
+    };
   },
 
   async getById(id: number) {

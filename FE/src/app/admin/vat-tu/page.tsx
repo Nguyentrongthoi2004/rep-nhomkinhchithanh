@@ -1,7 +1,19 @@
 "use client";
 
-import { Plus, Search, Edit2, Trash2, Box, Filter, ArrowDownToLine, Loader2, Save } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import {
+  Plus,
+  Search,
+  Edit2,
+  Trash2,
+  Box,
+  ArrowDownToLine,
+  Loader2,
+  Save,
+  ChevronLeft,
+  ChevronRight,
+  ArrowDownUp,
+} from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiData, apiJson } from "@/lib/api";
 
 interface VatTu {
@@ -19,11 +31,30 @@ interface DanhMuc {
   tendm: string;
 }
 
+interface MaterialsPaged {
+  items: VatTu[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+type MaterialsSortKey = "mavt" | "tenvt" | "dongianhap" | "madm" | "chieudaimacdinh";
+
 export default function MaterialPage() {
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<number | "">("");
+  const [sortBy, setSortBy] = useState<MaterialsSortKey>("mavt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [total, setTotal] = useState(0);
+
   const [materials, setMaterials] = useState<VatTu[]>([]);
   const [categories, setCategories] = useState<DanhMuc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+  const fetchMaterialsSeq = useRef(0);
 
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -38,22 +69,66 @@ export default function MaterialPage() {
     dongianhap: 0,
   });
 
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(searchInput.trim()), 320);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchDebounced]);
+
   const fetchMaterialList = useCallback(async () => {
+    const seq = ++fetchMaterialsSeq.current;
     setLoading(true);
+    setErrorMsg("");
     try {
-      setMaterials(await apiData<VatTu[]>("/api/admin/materials"));
+      const p = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        sortBy,
+        order: sortOrder,
+      });
+      if (categoryFilter !== "") {
+        if (Number.isFinite(categoryFilter) && categoryFilter > 0) {
+          p.set("madm", String(categoryFilter));
+        }
+      }
+      if (searchDebounced) {
+        p.set("q", searchDebounced);
+      }
+      const body = await apiData<MaterialsPaged | VatTu[]>(`/api/admin/materials?${p.toString()}`);
+      if (seq !== fetchMaterialsSeq.current) {
+        return;
+      }
+      if (Array.isArray(body)) {
+        setMaterials(body);
+        setTotal(body.length);
+      } else {
+        setMaterials(body.items ?? []);
+        setTotal(body.total ?? 0);
+      }
     } catch (err: unknown) {
+      if (seq !== fetchMaterialsSeq.current) {
+        return;
+      }
+      const detail = err instanceof Error ? err.message : String(err);
+      setErrorMsg(
+        `Không tải được danh sách (${detail}). Kiểm tra backend đã chạy (mặc định :4000) và file .env của BE trùng Supabase chỗ bạn đã INSERT SQL.`,
+      );
       console.error("Exception fetching materials:", err);
     } finally {
-      setLoading(false);
+      if (seq === fetchMaterialsSeq.current) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [page, pageSize, sortBy, sortOrder, categoryFilter, searchDebounced]);
 
   const fetchCategoriesList = useCallback(async () => {
     try {
       const dmData = await apiData<DanhMuc[]>("/api/admin/categories");
       if (dmData) {
-        setCategories(dmData);
+        setCategories([...dmData].sort((a, b) => a.madm - b.madm));
         setFormData(prev => prev.madm === 0 && dmData.length > 0 ? { ...prev, madm: dmData[0].madm } : prev); 
       }
     } catch (err: unknown) {
@@ -61,23 +136,19 @@ export default function MaterialPage() {
     }
   }, []);
 
-  const fetchInitData = useCallback(async () => {
-    await fetchCategoriesList();
-    await fetchMaterialList();
-  }, [fetchCategoriesList, fetchMaterialList]);
+  useEffect(() => {
+    void fetchCategoriesList();
+  }, [fetchCategoriesList]);
 
   useEffect(() => {
-    fetchInitData();
-  }, [fetchInitData]);
+    void fetchMaterialList();
+  }, [fetchMaterialList]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   };
 
-  const filteredMaterials = materials.filter(item => 
-    item.tenvt.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    `VT-${item.mavt}`.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const openAddModal = () => {
     setEditingItem(null);
@@ -186,31 +257,100 @@ export default function MaterialPage() {
         </div>
       </div>
 
+      {errorMsg && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-200">
+          {errorMsg}
+        </div>
+      )}
+
       {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3 flex-1">
-          <div className="relative max-w-md w-full">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="relative max-w-md w-full min-w-[200px]">
             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input 
+            <input
               type="text"
-              placeholder="Tìm kiếm vật tư theo mã hoặc tên..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Tìm theo tên hoặc mã (VD: VT-12)..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all shadow-inner"
             />
           </div>
+          <label className="flex items-center gap-2 text-sm text-gray-400 whitespace-nowrap">
+            <span className="hidden sm:inline">Danh mục</span>
+            <select
+              title="Lọc theo danh mục"
+              aria-label="Lọc theo danh mục"
+              value={categoryFilter === "" ? "" : String(categoryFilter)}
+              onChange={(e) => {
+                setCategoryFilter(e.target.value === "" ? "" : Number(e.target.value));
+                setPage(1);
+              }}
+              className="bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-emerald-500 min-w-[160px]"
+            >
+              <option value="">Tất cả danh mục</option>
+              {categories.map((c) => (
+                <option key={c.madm} value={String(c.madm)}>
+                  {c.tendm}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-400 whitespace-nowrap">
+            <ArrowDownUp className="w-4 h-4 text-emerald-500/80 shrink-0" aria-hidden />
+            <select
+              title="Sắp xếp"
+              aria-label="Tiêu chí sắp xếp"
+              value={sortBy}
+              onChange={(e) => {
+                setSortBy(e.target.value as MaterialsSortKey);
+                setPage(1);
+              }}
+              className="bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-emerald-500 min-w-[180px]"
+            >
+              <option value="tenvt">Tên</option>
+              <option value="mavt">Mã vật tư</option>
+              <option value="madm">Theo danh mục (mã DM)</option>
+              <option value="dongianhap">Giá nhập</option>
+              <option value="chieudaimacdinh">Chiều dài mặc định</option>
+            </select>
+          </label>
           <button
             type="button"
-            title="Bộ lọc vật tư"
-            aria-label="Bộ lọc vật tư"
-            className="p-2.5 bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
+            title={sortOrder === "asc" ? "Đang tăng dần — bấm để giảm" : "Đang giảm dần — bấm để tăng"}
+            onClick={() => {
+              setPage(1);
+              setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+            }}
+            className="px-3 py-2.5 rounded-lg text-sm border border-white/10 bg-white/5 text-gray-200 hover:bg-white/10 transition-colors whitespace-nowrap"
           >
-            <Filter className="w-5 h-5" />
+            {sortOrder === "asc" ? "↑ Tăng dần" : "↓ Giảm dần"}
           </button>
+          <label className="flex items-center gap-2 text-sm text-gray-400 whitespace-nowrap">
+            <span className="hidden sm:inline">Hiển thị</span>
+            <select
+              title="Số dòng mỗi trang"
+              aria-label="Số dòng mỗi trang"
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              className="bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-emerald-500"
+            >
+              <option value={10}>10 / trang</option>
+              <option value={15}>15 / trang</option>
+              <option value={20}>20 / trang</option>
+              <option value={25}>25 / trang</option>
+            </select>
+          </label>
         </div>
-        
-        <div className="text-sm text-gray-400">
-          Tổng cộng: <strong className="text-gray-200">{filteredMaterials.length} Mã</strong>
+
+        <div className="text-sm text-gray-400 whitespace-nowrap">
+          Tìm được:{" "}
+          <strong className="text-gray-200">
+            {total} mã · Trang {page}/{totalPages}
+          </strong>
         </div>
       </div>
 
@@ -236,16 +376,18 @@ export default function MaterialPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filteredMaterials.length === 0 ? (
+              {materials.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-8 text-center text-gray-500">
                     Không tìm thấy dữ liệu phù hợp.
                   </td>
                 </tr>
               ) : (
-                filteredMaterials.map((item, idx) => (
+                materials.map((item, idx) => (
                   <tr key={item.mavt} className="hover:bg-white/5 transition-colors group">
-                    <td className="p-4 text-center text-sm text-gray-500 font-mono">{idx + 1}</td>
+                    <td className="p-4 text-center text-sm text-gray-500 font-mono">
+                      {(page - 1) * pageSize + idx + 1}
+                    </td>
                     <td className="p-4 text-sm font-bold text-gray-200 tracking-tight">VT-{item.mavt}</td>
                     <td className="p-4 text-sm font-medium text-gray-300">{item.tenvt}</td>
                     <td className="p-4 text-sm text-gray-500">{item.danhmuc?.tendm || "Chưa phân loại"}</td>
@@ -288,6 +430,34 @@ export default function MaterialPage() {
           </table>
         )}
       </div>
+
+      {!loading && total > 0 && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2">
+          <p className="text-sm text-gray-500">
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} trong tổng {total} mã
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-200 disabled:opacity-40 disabled:pointer-events-none hover:bg-white/10"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Trước
+            </button>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-200 disabled:opacity-40 disabled:pointer-events-none hover:bg-white/10"
+            >
+              Sau
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ADD / EDIT MODAL */}
       {isModalOpen && (

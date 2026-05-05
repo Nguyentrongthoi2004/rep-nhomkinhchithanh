@@ -204,3 +204,15 @@ body {
 .worker-progress--scrap::-moz-progress-bar {
   background: rgba(244, 63, 94, 0.6);
 }
+
+/* In / PDF: nền phẳng, bớt gradient (file PDF gọn & dễ đọc hơn) */
+@media print {
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .admin-metal-bg {
+    background: #fff !important;
+  }
+}

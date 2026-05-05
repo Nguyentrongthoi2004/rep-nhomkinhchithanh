@@ -14,12 +14,21 @@ import {
 import { ordersService } from "./orders.service";
 
 export const ordersRouter = Router();
-ordersRouter.use(authMiddleware, requireRole("ADMIN"));
+ordersRouter.use(authMiddleware, requireRole("ADMIN", "WORKER"));
 
 ordersRouter.get(
   "/",
   asyncHandler(async (_req, res) => {
     sendOk(res, await ordersService.list());
+  }),
+);
+
+ordersRouter.get(
+  "/:id",
+  validate(orderIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    sendOk(res, await ordersService.getById(id));
   }),
 );
 
@@ -52,7 +61,7 @@ ordersRouter.delete(
 );
 
 export const ordersListRouter = Router();
-ordersListRouter.use(authMiddleware, requireRole("ADMIN"));
+ordersListRouter.use(authMiddleware, requireRole("ADMIN", "WORKER"));
 ordersListRouter.get(
   "/",
   asyncHandler(async (_req, res) => {

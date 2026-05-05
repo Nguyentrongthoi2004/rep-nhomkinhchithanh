@@ -1,137 +1,159 @@
 "use client";
 
-import { useState } from "react";
-import { Ruler, Save, ShieldAlert, Cpu } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Cpu, Loader2, Ruler, Save, ShieldAlert } from "lucide-react";
+import { apiData, apiJson } from "@/lib/api";
+
+type Rule = {
+  maqt: string;
+  tenqt: string;
+  giatri: number;
+};
 
 export default function ConfigPage() {
   const [kerf, setKerf] = useState(4);
   const [safeMargin, setSafeMargin] = useState(20);
+  const [minOffcut, setMinOffcut] = useState(200);
+  const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
+  const loadRules = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rules = await apiData<Rule[]>("/api/admin/rules");
+      setKerf(Number(rules.find((r) => r.maqt === "BLADE_KERF")?.giatri ?? 4));
+      setSafeMargin(Number(rules.find((r) => r.maqt === "SAFE_MARGIN")?.giatri ?? 20));
+      setMinOffcut(Number(rules.find((r) => r.maqt === "MIN_OFFCUT")?.giatri ?? 200));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRules();
+  }, [loadRules]);
+
+  const handleSave = async () => {
     setIsSaving(true);
-    setTimeout(() => {
+    try {
+      await Promise.all([
+        apiJson("/api/admin/rules/BLADE_KERF", {
+          method: "PUT",
+          body: JSON.stringify({ tenqt: "Do ho luoi cua", giatri: kerf }),
+        }),
+        apiJson("/api/admin/rules/SAFE_MARGIN", {
+          method: "PUT",
+          body: JSON.stringify({ tenqt: "Le an toan bien", giatri: safeMargin }),
+        }),
+        apiJson("/api/admin/rules/MIN_OFFCUT", {
+          method: "PUT",
+          body: JSON.stringify({ tenqt: "Do dai de-xe toi thieu", giatri: minOffcut }),
+        }),
+      ]);
+      loadRules();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
       setIsSaving(false);
-      // alert or toast can be added here
-    }, 1000);
+    }
   };
 
   return (
     <div className="space-y-6">
-      
-      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-100 flex items-center">
             <Cpu className="w-6 h-6 mr-3 text-blue-500" />
-            Cấu Hình Thuật Toán Cắt (1D-CSP)
+            Cau hinh thuat toan cat
           </h1>
-          <p className="text-gray-400 text-sm mt-1 ml-9">Thiết lập các hằng số vật lý của máy cắt tại xưởng để phần mềm tính toán tối ưu.</p>
+          <p className="text-gray-400 text-sm mt-1 ml-9">Cac hang so nay duoc luu vao bang quytac va dung khi tao so do cat.</p>
         </div>
-        
-        <button 
+
+        <button
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || loading}
           className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center font-medium transition-colors disabled:opacity-50"
         >
-          <Save className="w-4 h-4 mr-2" />
-          {isSaving ? "Đang lưu..." : "Lưu Cấu Hình"}
+          {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+          Luu cau hinh
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-        
-        {/* Kerf Configuration */}
-        <div className="bg-[#0a0a0c] border border-white/10 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-start mb-6">
-            <div className="p-3 bg-blue-500/10 rounded-xl mr-4 border border-blue-500/20">
-              <Ruler className="w-6 h-6 text-blue-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-gray-200">Độ Hở Lưỡi Cưa (Blade Kerf)</h3>
-              <p className="text-sm text-gray-400 mt-1">Phần nhôm bị hóa mùn cưa sau mỗi nhát cắt. Thường là 4mm đối với lưỡi nhôm hệ.</p>
-            </div>
-          </div>
-          
-          <div className="relative">
-            {/* EdgeTools/axe in this project expects explicit accessible names. */}
-            <input 
-              type="number" 
-              title="Độ hở lưỡi cưa (mm)"
-              aria-label="Độ hở lưỡi cưa (mm)"
-              placeholder="VD: 4"
-              value={kerf}
-              onChange={(e) => setKerf(Number(e.target.value))}
-              className="bg-white/5 border border-white/10 text-3xl font-bold text-white rounded-xl w-full p-4 pl-6 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              min="0"
-              max="10"
-              step="0.5"
-            />
-            <span className="absolute right-6 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-500">mm</span>
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-white/5">
-            <input 
-              type="range" 
-              title="Chỉnh độ hở lưỡi cưa"
-              aria-label="Chỉnh độ hở lưỡi cưa"
-              min="2" max="10" step="0.5" 
-              value={kerf} 
-              onChange={(e) => setKerf(Number(e.target.value))}
-              className="w-full accent-blue-500 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer"
-            />
-            <div className="flex justify-between text-xs text-gray-500 mt-2 font-medium">
-              <span>2mm (Lưỡi mỏng)</span>
-              <span>10mm (Lưỡi công nghiệp)</span>
-            </div>
-          </div>
+      {loading ? (
+        <div className="py-20 flex justify-center text-gray-400"><Loader2 className="w-8 h-8 animate-spin" /></div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+          <NumberCard
+            icon={<Ruler className="w-6 h-6 text-blue-400" />}
+            title="Blade kerf"
+            desc="Phan nhom bi hao sau moi nhat cat."
+            value={kerf}
+            onChange={setKerf}
+            min={0}
+            max={20}
+          />
+          <NumberCard
+            icon={<ShieldAlert className="w-6 h-6 text-red-400" />}
+            title="Safe margin"
+            desc="Le an toan tru hai dau thanh phoi."
+            value={safeMargin}
+            onChange={setSafeMargin}
+            min={0}
+            max={100}
+          />
+          <NumberCard
+            icon={<Ruler className="w-6 h-6 text-amber-400" />}
+            title="Min offcut"
+            desc="Do dai toi thieu de giu lai phoi du."
+            value={minOffcut}
+            onChange={setMinOffcut}
+            min={0}
+            max={1000}
+          />
         </div>
+      )}
+    </div>
+  );
+}
 
-        {/* Safe Margin Configuration */}
-        <div className="bg-[#0a0a0c] border border-white/10 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-start mb-6">
-            <div className="p-3 bg-red-500/10 rounded-xl mr-4 border border-red-500/20">
-              <ShieldAlert className="w-6 h-6 text-red-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-gray-200">Lề An Toàn Biên (Safe Margin)</h3>
-              <p className="text-sm text-gray-400 mt-1">Khoảng cách trừ hao ở hai đầu thanh phôi nguyên bản để tránh móp méo lúc bốc vác.</p>
-            </div>
-          </div>
-          
-          <div className="relative">
-            <input 
-              type="number" 
-              title="Lề an toàn biên (mm)"
-              aria-label="Lề an toàn biên (mm)"
-              placeholder="VD: 20"
-              value={safeMargin}
-              onChange={(e) => setSafeMargin(Number(e.target.value))}
-              className="bg-white/5 border border-white/10 text-3xl font-bold text-white rounded-xl w-full p-4 pl-6 focus:ring-2 focus:ring-red-500 outline-none transition-all"
-              min="0"
-              max="100"
-              step="5"
-            />
-            <span className="absolute right-6 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-500">mm</span>
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-white/5">
-            <input 
-              type="range" 
-              title="Chỉnh lề an toàn biên"
-              aria-label="Chỉnh lề an toàn biên"
-              min="0" max="50" step="5" 
-              value={safeMargin} 
-              onChange={(e) => setSafeMargin(Number(e.target.value))}
-              className="w-full accent-red-500 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer"
-            />
-            <div className="flex justify-between text-xs text-gray-500 mt-2 font-medium">
-              <span>0mm (Không gọt đầu)</span>
-              <span>50mm (Gọt sâu)</span>
-            </div>
-          </div>
+function NumberCard({
+  icon,
+  title,
+  desc,
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  value: number;
+  onChange: (value: number) => void;
+  min: number;
+  max: number;
+}) {
+  return (
+    <div className="bg-[#0a0a0c] border border-white/10 rounded-2xl p-6 shadow-lg">
+      <div className="flex items-start mb-6">
+        <div className="p-3 bg-white/5 rounded-xl mr-4 border border-white/10">{icon}</div>
+        <div>
+          <h3 className="text-lg font-bold text-gray-200">{title}</h3>
+          <p className="text-sm text-gray-400 mt-1">{desc}</p>
         </div>
-
+      </div>
+      <div className="relative">
+        <input
+          type="number"
+          title={title}
+          aria-label={title}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="bg-white/5 border border-white/10 text-3xl font-bold text-white rounded-xl w-full p-4 pr-16 focus:ring-2 focus:ring-blue-500 outline-none"
+          min={min}
+          max={max}
+        />
+        <span className="absolute right-6 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-500">mm</span>
       </div>
     </div>
   );

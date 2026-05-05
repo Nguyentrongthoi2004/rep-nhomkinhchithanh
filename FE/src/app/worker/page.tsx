@@ -1,335 +1,214 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useState, useEffect, useCallback } from "react";
 import {
-  QrCode,
-  ClipboardCheck,
-  ArrowRight,
-  AlertTriangle,
-  CheckCircle2,
-  TrendingUp,
-  Package,
-  Scissors,
-  Clock,
-  Flame,
-  Sparkles,
+  User, Bell, ChevronRight, Zap, Target, CreditCard, Clock,
+  Activity, Scissors, ClipboardList, Package
 } from "lucide-react";
-import { apiJson } from "@/lib/api";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-type TaskRow = {
+const supabase = createClient();
+
+interface WorkerInfo {
+  hoten: string;
+  sdt: string | null;
+  vaitro: string;
+}
+
+interface Assignment {
   mapc: number;
+  madh: number;
   trangthai: string;
-  donhang: {
-    madh: number;
-    ngaytao: string;
-    trangthai: string;
-    khachhang: { hoten: string } | null;
-  } | null;
-};
-
-type RawStock = {
-  maphoi: number;
-  chieudaihientai: number;
-  chieudaibandau: number;
-  trangthai: string;
-  vattu: { tenvt: string; donvitinh: string } | null;
-};
-
-function greetingByHour(hour: number) {
-  if (hour < 11) return { text: "Chào buổi sáng", shift: "Ca Sáng", icon: Sparkles };
-  if (hour < 14) return { text: "Chúc bữa trưa ngon miệng", shift: "Giữa ca", icon: Flame };
-  if (hour < 18) return { text: "Chào buổi chiều", shift: "Ca Chiều", icon: Flame };
-  return { text: "Chào buổi tối", shift: "Ca Tối", icon: Sparkles };
+  donhang: { khachhang: { hoten: string } | null } | null;
 }
 
 export default function WorkerDashboard() {
-  const supabase = useMemo(() => createClient(), []);
-  const [fullName, setFullName] = useState<string>("Công nhân");
-  const [tasks, setTasks] = useState<TaskRow[]>([]);
-  const [stocks, setStocks] = useState<RawStock[]>([]);
+  const [greeting] = useState(() => {
+    const hour = new Date().getHours();
+    if (hour >= 12 && hour < 18) return "Chào buổi chiều";
+    if (hour >= 18) return "Chào buổi tối";
+    return "Chào buổi sáng";
+  });
+
+  const [worker, setWorker] = useState<WorkerInfo | null>(null);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [now, setNow] = useState<Date>(new Date());
 
-  const loadProfile = useCallback(async () => {
-    const { data } = await supabase.auth.getUser();
-    const meta = (data.user?.user_metadata as Record<string, unknown>) || {};
-    const displayName =
-      (meta["hoten"] as string) ||
-      (meta["hoTen"] as string) ||
-      (meta["full_name"] as string) ||
-      data.user?.email?.split("@")[0] ||
-      "Công nhân";
-    setFullName(displayName);
-  }, [supabase]);
-
-  const loadAll = useCallback(async () => {
+  const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const [taskRes, stockRes] = await Promise.all([
-        apiJson<TaskRow[]>("/api/worker/tasks"),
-        apiJson<RawStock[]>("/api/worker/raw-stock"),
-      ]);
-      setTasks(taskRes.data || []);
-      setStocks(stockRes.data || []);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userEmail = sessionData.session?.user?.email;
+      if (!userEmail) { setLoading(false); return; }
+
+      const { data: userRow } = await supabase
+        .from("nguoidung")
+        .select("mand, hoten, sdt, vaitro")
+        .eq("tendangnhap", userEmail)
+        .single();
+
+      if (!userRow) { setLoading(false); return; }
+      setWorker(userRow as WorkerInfo);
+
+      const { data: aData } = await supabase
+        .from("phancong")
+        .select(`mapc, madh, trangthai, donhang(khachhang(hoten))`)
+        .eq("matho", userRow.mand)
+        .not("trangthai", "eq", "HOAN_THANH")
+        .order("mapc", { ascending: false })
+        .limit(5);
+
+      setAssignments((aData as unknown as Assignment[]) || []);
+    } catch (e) {
+      console.error("Lỗi tải dashboard:", e);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadProfile();
-    loadAll();
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
-  }, [loadProfile, loadAll]);
+  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
-  const pending = tasks.filter((t) => t.trangthai !== "HOAN_THANH");
-  const doing = tasks.filter((t) => t.trangthai === "DANG_THUC_HIEN");
-  const done = tasks.filter((t) => t.trangthai === "HOAN_THANH");
-  const reusableStocks = stocks.filter((s) => s.trangthai !== "BO_DI" && s.chieudaihientai > 0);
-
-  const greet = greetingByHour(now.getHours());
-  const GreetIcon = greet.icon;
+  const activeTasks = assignments.filter(a => a.trangthai === "DANG_THUC_HIEN");
+  const pendingTasks = assignments.filter(a => a.trangthai === "CHO_THUC_HIEN");
 
   return (
-    <div className="space-y-5 relative z-10">
-      {/* ===== Hero / Greeting ===== */}
-      <section className="relative overflow-hidden rounded-3xl admin-metal-panel border border-white/10 px-5 py-5">
-        <div className="admin-metal-shine" />
-        <div className="relative z-10 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              <GreetIcon className="w-3.5 h-3.5 text-sky-300" />
-              {greet.text}
+    <div className="min-h-full bg-[#030508] text-gray-200">
+
+      {/* Header */}
+      <div className="bg-linear-to-b from-blue-900/40 to-[#030508] px-5 pt-12 pb-6">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+              <User className="w-5 h-5 text-blue-400" />
             </div>
-            <h2 className="mt-1 text-2xl font-extrabold tracking-tight brand-name leading-tight truncate">
-              {fullName}
-            </h2>
-            <p className="text-sm text-slate-400 mt-1">
-              Hôm nay có <strong className="text-sky-300">{pending.length}</strong> việc cần làm ·{" "}
-              <span className="text-emerald-300">{done.length} đã xong</span>
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <span className="text-[10px] font-bold tracking-wider uppercase text-sky-200 bg-sky-500/15 px-2.5 py-1 rounded-full border border-sky-400/30">
-              {greet.shift}
-            </span>
-            <span className="text-[11px] font-mono text-slate-400 bg-black/40 px-2 py-0.5 rounded-md border border-white/5">
-              {now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          </div>
-        </div>
-
-        {/* Stat Row */}
-        <div className="relative z-10 mt-5 grid grid-cols-3 gap-2 pt-4 border-t border-white/5">
-          <Stat icon={<ClipboardCheck className="w-4 h-4" />} label="Đang chờ" value={pending.length} accent="sky" />
-          <Stat icon={<Scissors className="w-4 h-4" />} label="Đang làm" value={doing.length} accent="amber" />
-          <Stat icon={<CheckCircle2 className="w-4 h-4" />} label="Hoàn thành" value={done.length} accent="emerald" />
-        </div>
-      </section>
-
-      {/* ===== Primary CTA: Quét Tem Khung ===== */}
-      <button
-        type="button"
-        className="group relative w-full overflow-hidden rounded-3xl border border-sky-400/40 bg-linear-to-br from-sky-500 via-sky-600 to-blue-700 px-5 py-6 text-left shadow-[0_18px_50px_-20px_rgba(14,165,233,0.55)] transition-all active:scale-[0.985]"
-        aria-label="Quét tem khung phôi"
-      >
-        <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/25 to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-1500 ease-in-out" />
-        <div className="relative z-10 flex items-center gap-4">
-          <div className="shrink-0 w-16 h-16 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center shadow-inner">
-            <QrCode className="w-9 h-9 text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-[0.22em] text-sky-100/80 font-bold">
-              Hành động nhanh
+            <div>
+              <p className="text-xs text-gray-400 font-medium">{greeting},</p>
+              {loading ? (
+                <div className="h-4 w-28 bg-white/10 rounded animate-pulse mt-1" />
+              ) : (
+                <h1 className="text-sm font-bold text-gray-100">{worker?.hoten || "Nhân viên"}</h1>
+              )}
             </div>
-            <div className="text-2xl font-extrabold text-white tracking-tight leading-tight">
-              Quét tem khung
+          </div>
+          <button className="relative p-2 bg-white/5 rounded-full border border-white/10 hover:bg-white/10 transition-colors">
+            <Bell className="w-5 h-5 text-gray-300" />
+            {(activeTasks.length + pendingTasks.length) > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+            )}
+          </button>
+        </div>
+
+        {/* Stats Card */}
+        <div className="bg-linear-to-br from-blue-600 to-blue-800 rounded-2xl p-5 shadow-[0_10px_25px_-5px_rgba(37,99,235,0.4)] relative overflow-hidden">
+          <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-white/10 rounded-full blur-2xl" />
+          <div className="relative z-10 flex justify-between items-center">
+            <div>
+              <p className="text-blue-100/80 text-xs font-medium mb-1">Việc đang chạy / Chờ nhận</p>
+              {loading ? (
+                <div className="h-8 w-20 bg-white/20 rounded animate-pulse" />
+              ) : (
+                <p className="text-3xl font-bold text-white flex items-center">
+                  {activeTasks.length}
+                  <span className="text-lg text-blue-200 mx-1">/</span>
+                  {pendingTasks.length}
+                  <Activity className="w-5 h-5 ml-2 text-green-300" />
+                </p>
+              )}
             </div>
-            <div className="text-xs text-sky-100/80 mt-0.5">Dùng camera điện thoại để check-in phôi</div>
+            <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
+              <Target className="w-6 h-6 text-blue-100" />
+            </div>
           </div>
-          <ArrowRight className="w-6 h-6 text-white/90 group-hover:translate-x-1 transition-transform" />
-        </div>
-      </button>
-
-      {/* ===== Quick Links ===== */}
-      <section className="grid grid-cols-2 gap-3">
-        <QuickLink
-          href="/worker/kho"
-          icon={<Package className="w-5 h-5 text-sky-300" />}
-          title="Kho phôi"
-          hint={`${reusableStocks.length} thanh dùng được`}
-        />
-        <QuickLink
-          href="/worker/cat"
-          icon={<Scissors className="w-5 h-5 text-amber-300" />}
-          title="Máy cắt"
-          hint={`${pending.length} việc đang chờ`}
-        />
-      </section>
-
-      {/* ===== Ongoing Tasks ===== */}
-      <section>
-        <div className="flex items-end justify-between mb-3">
-          <div>
-            <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-              <ClipboardCheck className="w-4 h-4 text-emerald-400" />
-              Việc đang gia công
-            </h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">Ấn vào thẻ để mở chi tiết trong “Máy cắt”.</p>
+          <div className="relative z-10 mt-4 flex items-center text-xs text-blue-100/90">
+            <span className="bg-white/20 px-2 py-0.5 rounded mr-2">{worker?.sdt || "Chưa có SĐT"}</span>
+            <span>Số điện thoại</span>
           </div>
-          <span className="text-xs font-bold text-white bg-sky-600 px-2.5 py-0.5 rounded-full shadow-[0_0_12px_rgba(14,165,233,0.55)]">
-            {pending.length}
-          </span>
         </div>
+      </div>
 
-        <div className="space-y-3">
-          {loading && (
-            <div className="py-10 text-center text-sm text-slate-500">Đang tải việc...</div>
-          )}
+      {/* Quick Access Grid */}
+      <div className="px-5 pb-6">
+        <h2 className="text-sm font-bold text-gray-100 mb-4 px-1">Dịch Vụ Nhanh</h2>
+        <div className="grid grid-cols-4 gap-4">
+          <Link href="/worker/tasks" className="flex flex-col items-center group">
+            <div className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center border border-orange-500/20 mb-2 group-hover:scale-110 transition-transform">
+              <Zap className="w-6 h-6 text-orange-400 drop-shadow-[0_0_5px_rgba(249,115,22,0.5)]" />
+            </div>
+            <span className="text-[10px] text-center font-medium text-gray-400">Việc Hôm Nay</span>
+          </Link>
 
-          {!loading && pending.length === 0 && (
-            <EmptyState
-              icon={<CheckCircle2 className="w-8 h-8 text-emerald-400" />}
-              title="Hết việc rồi!"
-              desc="Không có phân công nào đang chờ. Nghỉ ngơi hoặc hỗ trợ đồng nghiệp nhé."
-            />
-          )}
+          <Link href="/worker/simulator" className="flex flex-col items-center group">
+            <div className="w-12 h-12 bg-cyan-500/10 rounded-2xl flex items-center justify-center border border-cyan-500/20 mb-2 group-hover:scale-110 transition-transform">
+              <Scissors className="w-6 h-6 text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.5)]" />
+            </div>
+            <span className="text-[10px] text-center font-medium text-gray-400">Mô Phỏng Cắt</span>
+          </Link>
 
-          {!loading &&
-            pending.slice(0, 5).map((t) => {
-              const isDoing = t.trangthai === "DANG_THUC_HIEN";
-              return (
-                <Link
-                  href="/worker/cat"
-                  key={t.mapc}
-                  className="block relative overflow-hidden rounded-2xl border border-white/10 bg-[#0f1115]/85 backdrop-blur-sm p-4 active:bg-white/5 transition-colors shadow-lg"
-                >
-                  <div
-                    className={`absolute top-0 left-0 h-1 w-full ${
-                      isDoing ? "bg-amber-400/80" : "bg-sky-500/60"
-                    }`}
-                    aria-hidden
-                  />
-                  <div className="flex items-start justify-between gap-2 pt-1">
-                    <span
-                      className={`inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-[11px] font-bold border ${
-                        isDoing
-                          ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                          : "bg-sky-500/15 text-sky-300 border-sky-500/30"
-                      }`}
-                    >
-                      {isDoing ? <Flame className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-                      PC-{t.mapc}
-                    </span>
-                    <span className="text-[11px] font-mono text-slate-400 bg-black/40 px-2 py-0.5 rounded-md border border-white/5">
-                      DH-{t.donhang?.madh ?? "?"}
-                    </span>
+          <Link href="/worker/calendar" className="flex flex-col items-center group">
+            <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center border border-purple-500/20 mb-2 group-hover:scale-110 transition-transform">
+              <Clock className="w-6 h-6 text-purple-400 drop-shadow-[0_0_5px_rgba(168,85,247,0.5)]" />
+            </div>
+            <span className="text-[10px] text-center font-medium text-gray-400">Lịch & Ghi Chú</span>
+          </Link>
+
+          <Link href="/worker/ca-nhan" className="flex flex-col items-center group">
+            <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center border border-emerald-500/20 mb-2 group-hover:scale-110 transition-transform">
+              <CreditCard className="w-6 h-6 text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
+            </div>
+            <span className="text-[10px] text-center font-medium text-gray-400">Cá Nhân</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Active Assignments */}
+      <div className="px-5 space-y-3 pb-8">
+        <h2 className="text-sm font-bold text-gray-100 mb-3 px-1">Đang Thực Hiện</h2>
+
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2].map(i => (
+              <div key={i} className="bg-[#12141a] rounded-xl p-4 border border-white/5 animate-pulse">
+                <div className="h-4 bg-white/10 rounded w-3/4 mb-2" />
+                <div className="h-3 bg-white/5 rounded w-1/2" />
+              </div>
+            ))}
+          </div>
+        ) : assignments.length === 0 ? (
+          <div className="bg-[#12141a] rounded-xl p-6 border border-white/5 text-center">
+            <Package className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+            <p className="text-sm text-gray-500">Chưa có việc nào được giao.</p>
+            <p className="text-xs text-gray-600 mt-1">Liên hệ quản đốc để nhận công việc.</p>
+          </div>
+        ) : (
+          assignments.map(a => (
+            <Link key={a.mapc} href="/worker/tasks">
+              <div className="bg-[#12141a] rounded-xl p-4 border border-white/5 flex items-center justify-between shadow-sm active:scale-95 transition-transform">
+                <div className="flex items-center">
+                  <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center border border-blue-500/20 mr-3">
+                    <ClipboardList className="w-5 h-5 text-blue-400" />
                   </div>
-
-                  <h4 className="text-slate-100 font-bold text-[15px] mt-2 leading-tight">
-                    {t.donhang?.khachhang?.hoten || "Khách lẻ"}
-                  </h4>
-                  <div className="flex items-center justify-between mt-1">
-                    <p className="text-[12px] text-slate-500">
-                      Trạng thái ĐH:{" "}
-                      <span className="text-slate-300 font-semibold">{t.donhang?.trangthai || "—"}</span>
+                  <div>
+                    <p className="text-sm font-bold text-gray-200">
+                      Đơn DH-{a.madh} · {a.donhang?.khachhang?.hoten || "Khách hàng"}
                     </p>
-                    <ArrowRight className="w-4 h-4 text-emerald-400" />
+                    <p className={`text-xs font-medium mt-0.5 flex items-center ${
+                      a.trangthai === "DANG_THUC_HIEN" ? "text-blue-400" : "text-amber-400"
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                        a.trangthai === "DANG_THUC_HIEN" ? "bg-blue-500 animate-pulse" : "bg-amber-500"
+                      }`} />
+                      {a.trangthai === "DANG_THUC_HIEN" ? "Đang thi công" : "Chờ nhận việc"}
+                    </p>
                   </div>
-                </Link>
-              );
-            })}
-        </div>
-      </section>
-
-      {/* ===== Tip card ===== */}
-      <section className="rounded-2xl border border-white/10 bg-linear-to-br from-slate-800/40 to-slate-900/60 p-4 flex items-start gap-3">
-        <div className="shrink-0 w-9 h-9 rounded-xl bg-amber-400/15 border border-amber-300/30 flex items-center justify-center">
-          <AlertTriangle className="w-4 h-4 text-amber-300" />
-        </div>
-        <div className="text-[12px] leading-relaxed text-slate-400">
-          <strong className="text-slate-200">Lưu ý an toàn:</strong> luôn kiểm tra mã UID phôi trước khi cắt.
-          Sai UID = sai vật tư = hỏng đơn hàng.
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function Stat({
-  icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  accent: "sky" | "emerald" | "amber";
-}) {
-  const palette = {
-    sky: "text-sky-300",
-    emerald: "text-emerald-300",
-    amber: "text-amber-300",
-  }[accent];
-  return (
-    <div className="relative rounded-xl border border-white/5 bg-white/2 px-3 py-2.5">
-      <div className={`flex items-center gap-1.5 ${palette}`}>
-        {icon}
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
+                </div>
+                <ChevronRight className="w-5 h-5 text-gray-600" />
+              </div>
+            </Link>
+          ))
+        )}
       </div>
-      <div className="mt-1 text-xl font-extrabold text-white tabular-nums">{value}</div>
-    </div>
-  );
-}
 
-function QuickLink({
-  href,
-  icon,
-  title,
-  hint,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  title: string;
-  hint: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#10131a]/80 backdrop-blur px-4 py-3.5 active:scale-[0.98] transition-transform"
-    >
-      <div className="flex items-center justify-between">
-        <div className="w-10 h-10 rounded-xl bg-white/4 border border-white/10 flex items-center justify-center">
-          {icon}
-        </div>
-        <TrendingUp className="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors" />
-      </div>
-      <div className="mt-2.5 text-sm font-bold text-slate-100">{title}</div>
-      <div className="text-[11px] text-slate-500">{hint}</div>
-    </Link>
-  );
-}
-
-function EmptyState({
-  icon,
-  title,
-  desc,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-white/2 px-5 py-8 text-center">
-      <div className="mx-auto w-14 h-14 rounded-2xl bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center">
-        {icon}
-      </div>
-      <h4 className="mt-3 text-sm font-bold text-slate-200">{title}</h4>
-      <p className="mt-1 text-[12px] text-slate-500 max-w-xs mx-auto">{desc}</p>
     </div>
   );
 }
