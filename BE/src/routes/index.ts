@@ -26,6 +26,7 @@ import {
 import { paymentsRouter } from "@/modules/payments/payments.routes";
 import { categoriesRouter } from "@/modules/categories/categories.routes";
 import { notificationsRouter } from "@/modules/notifications/notifications.routes";
+import { emailsRouter } from "@/modules/emails/emails.routes";
 import {
   adminRawStockRouter,
   workerRawStockRouter,
@@ -54,6 +55,7 @@ apiRouter.use("/admin/orders", ordersRouter);
 apiRouter.use("/admin/orders-list", ordersListRouter);
 apiRouter.use("/admin/payments", paymentsRouter);
 apiRouter.use("/admin/notifications", notificationsRouter);
+apiRouter.use("/admin/emails", emailsRouter);
 apiRouter.use("/admin/raw-stock", adminRawStockRouter);
 apiRouter.use("/admin/rules", rulesRouter);
 apiRouter.use("/admin/seed", adminSeedRouter);

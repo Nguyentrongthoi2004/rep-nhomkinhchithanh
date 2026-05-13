@@ -25,12 +25,9 @@ function getSupabaseClient() {
  */
 function buildApiUrl(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (host === "localhost" || host === "127.0.0.1") {
-      return normalizedPath;
-    }
-  }
+  // Browser: always prefer same-origin `/api/*` so it works on LAN/phone.
+  // If API_BASE_URL points to localhost, calling it from a phone would fail.
+  if (typeof window !== "undefined") return normalizedPath;
   return `${API_BASE_URL}${normalizedPath}`;
 }
 

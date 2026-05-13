@@ -18,7 +18,7 @@ import {
   WalletCards,
 } from "lucide-react";
 
-const NAV_ITEMS = [
+export const NAV_ITEMS = [
   { name: "Tổng quan", href: "/admin", icon: LayoutDashboard },
   { name: "Đơn hàng", href: "/admin/don-hang", icon: ShoppingCart },
   { name: "Khách hàng", href: "/admin/khach-hang", icon: Contact },
@@ -37,7 +37,7 @@ export default function AdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 h-screen admin-metal-panel border-r border-white/5 flex flex-col shrink-0 relative overflow-hidden print:hidden">
+    <aside className="hidden md:flex w-64 h-screen admin-metal-panel border-r border-white/5 flex-col shrink-0 relative overflow-hidden print:hidden">
       <div className="admin-metal-shine" />
       <div className="h-16 flex items-center px-6 border-b border-white/5">
         <div className="brand-mark">

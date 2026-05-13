@@ -1,14 +1,15 @@
 "use client";
 
 import { useTransition, useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { Bell, Search, LogOut, Loader2, User } from "lucide-react";
+import { Bell, Search, LogOut, Loader2, User, Menu, X, Hexagon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { apiData } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
 import { formatRelativeVi } from "@/lib/format-relative-vi";
 import { apiJson } from "@/lib/api";
+import { NAV_ITEMS } from "./AdminSidebar";
 
 type OrderBrief = {
   madh: number;
@@ -65,7 +66,9 @@ function buildFeed(orders: OrderBrief[], access: AccessRow[]): FeedItem[] {
 
 export default function AdminHeader() {
   const router = useRouter();
+  const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [feedLoading, setFeedLoading] = useState(false);
@@ -151,10 +154,22 @@ export default function AdminHeader() {
   };
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 admin-metal-panel/70 backdrop-blur-md border-b border-white/5 sticky top-0 z-20 print:hidden">
+    <>
+    <header className="h-16 flex items-center justify-between px-4 md:px-6 admin-metal-panel/70 backdrop-blur-md border-b border-white/5 sticky top-0 z-20 print:hidden">
       <div className="admin-metal-shine" />
 
-      <div className="flex-1 max-w-md">
+      <div className="flex items-center md:hidden relative z-10 mr-3">
+        <button
+          type="button"
+          onClick={() => setShowMobileMenu(true)}
+          className="p-2 -ml-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg"
+          aria-label="Mở menu"
+        >
+          <Menu className="w-6 h-6" />
+        </button>
+      </div>
+
+      <div className="flex-1 max-w-md hidden md:block">
         <div className="relative group">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
             <Search className="w-4 h-4 text-gray-500 group-focus-within:text-blue-400 transition-colors" />
@@ -269,5 +284,61 @@ export default function AdminHeader() {
         </button>
       </div>
     </header>
+
+    {/* Mobile Menu Overlay */}
+    {showMobileMenu && (
+      <div className="fixed inset-0 z-50 flex md:hidden">
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowMobileMenu(false)}
+        />
+        
+        {/* Sidebar */}
+        <div className="relative w-64 max-w-[80%] h-full flex flex-col bg-[#0a0a0c] border-r border-white/10 shadow-2xl animate-in slide-in-from-left duration-200">
+          <div className="h-16 flex items-center justify-between px-4 border-b border-white/5">
+            <div className="brand-mark flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+                <Hexagon className="w-4 h-4 text-blue-400" />
+              </div>
+              <div className="leading-tight">
+                <div className="text-sm font-bold text-gray-100">Chí Thành</div>
+                <div className="text-[10px] text-gray-400 font-semibold tracking-widest uppercase">Mini ERP</div>
+              </div>
+            </div>
+            <button 
+              onClick={() => setShowMobileMenu(false)}
+              className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
+            {NAV_ITEMS.map((item) => {
+              const isActive = item.href === "/admin" ? pathname === item.href : pathname.startsWith(item.href);
+              const Icon = item.icon;
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setShowMobileMenu(false)}
+                  className={`flex items-center px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    isActive
+                      ? "bg-blue-500/10 text-blue-400"
+                      : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 mr-3 ${isActive ? "text-blue-400" : "text-gray-500"}`} />
+                  {item.name}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

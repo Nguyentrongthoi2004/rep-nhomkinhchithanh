@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, ClipboardCheck, Loader2, Package, Play, RefreshCw, Ruler } from "lucide-react";
+import Link from "next/link";
 import { apiData, apiJson } from "@/lib/api";
 
 type Task = {
@@ -143,6 +144,14 @@ export default function WorkerTasksPage() {
                 <button onClick={() => setExpanded(expanded === task.mapc ? null : task.mapc)} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-semibold hover:bg-white/10">
                   <Package className="w-4 h-4 inline mr-2" /> BOM
                 </button>
+                <Link
+                  href={`/worker/cat?mapc=${task.mapc}`}
+                  className="h-11 px-4 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-200 text-sm font-semibold hover:bg-amber-400/20 inline-flex items-center justify-center"
+                  title="Mở sơ đồ cắt"
+                  aria-label="Mở sơ đồ cắt"
+                >
+                  <Ruler className="w-4 h-4 mr-2" /> Sơ đồ cắt
+                </Link>
                 {task.trangthai === "CHO_THUC_HIEN" && (
                   <button onClick={() => updateStatus(task.mapc, "DANG_THUC_HIEN")} disabled={busyId === task.mapc} className="flex-1 h-11 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm flex items-center justify-center">
                     {busyId === task.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />} Bắt đầu

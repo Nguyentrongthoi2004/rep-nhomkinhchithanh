@@ -113,15 +113,14 @@ function planCuts(pieces: CutPiece[], stocks: RawStock[], kerf: number, safeMarg
   for (const piece of pieces) {
     const bar = bars.find((candidate) => {
       if (candidate.stock.mavt !== piece.mavt) return false;
-      const extraKerf = candidate.cuts.length > 0 ? kerf : 0;
-      return candidate.remaining >= piece.length + extraKerf;
+      return candidate.remaining >= piece.length + kerf;
     });
 
     if (!bar) {
       throw HttpError.badRequest(`Khong du phoi cho ${piece.label} (${piece.length}mm)`);
     }
 
-    bar.remaining -= piece.length + (bar.cuts.length > 0 ? kerf : 0);
+    bar.remaining -= piece.length + kerf;
     bar.cuts.push(piece);
   }
 
@@ -205,7 +204,7 @@ export const cuttingPlansService = {
       .neq("trangthai", "BO_DI");
     if (stockErr) throw HttpError.internal(stockErr.message);
 
-    const kerf = await getRuleValue("BLADE_KERF", 4);
+    const kerf = await getRuleValue("BLADE_KERF", 5);
     const safeMargin = await getRuleValue("SAFE_MARGIN", 20);
     const plannedBars = planCuts(pieces, (stockRows ?? []) as unknown as RawStock[], kerf, safeMargin);
 
@@ -262,13 +261,14 @@ export const cuttingPlansService = {
     if (typed.phancong?.matho !== matho) throw HttpError.forbidden("Cutting plan is not assigned to this worker");
 
     const before = typed.khothanhphoi?.chieudaihientai ?? 0;
-    const kerf = await getRuleValue("BLADE_KERF", 4);
+    const kerf = await getRuleValue("BLADE_KERF", 5);
     const used = typed.chitietcat.reduce((sum, cut) => sum + Number(cut.chieudaicat || 0), 0);
-    const kerfLoss = Math.max(0, typed.chitietcat.length - 1) * kerf;
+    const kerfLoss = typed.chitietcat.length * kerf;
     const after = before - used - kerfLoss;
     if (after < 0) throw HttpError.badRequest("So do cat vuot qua chieu dai phoi hien tai");
 
-    const nextStatus = after === 0 ? "BO_DI" : "CON_DU";
+    const SCRAP_THRESHOLD = 100; // mm - ngưỡng phế liệu
+    const nextStatus = after < SCRAP_THRESHOLD ? "BO_DI" : "CON_DU";
 
     const [{ error: cutErr }, { error: planErr }, { error: stockErr }, { error: logErr }] = await Promise.all([
       supabaseAdmin.from("chitietcat").update({ trangthai: "DA_CAT" }).eq("masdc", masdc),

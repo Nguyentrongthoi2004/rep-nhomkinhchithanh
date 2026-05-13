@@ -1,0 +1,287 @@
+// Mini-ERP Nhôm Kính — DBML for dbdiagram.io (17 bảng)
+// Source of truth: supabase_scripts/01_schema_final.sql
+
+Enum trang_thai_danh_muc {
+  HOAT_DONG
+  NGUNG
+}
+
+Enum trang_thai_phoi {
+  MOI
+  CON_DU
+  BO_DI
+}
+
+Enum trang_thai_don_hang {
+  BAO_GIA_NHAP
+  KHAO_SAT
+  DA_COC
+  DANG_GIA_CONG
+  DANG_LAP_DAT
+  HOAN_THANH
+  DA_HUY
+}
+
+Enum vai_tro_nguoi_dung {
+  ADMIN
+  WORKER
+}
+
+Enum trang_thai_nguoi_dung {
+  DANG_LAM
+  NGHI_VIEC
+}
+
+Enum trang_thai_phan_cong {
+  CHO_THUC_HIEN
+  DANG_THUC_HIEN
+  HOAN_THANH
+}
+
+Enum trang_thai_so_do_cat {
+  CHO_DUYET
+  DANG_CAT
+  HOAN_THANH
+}
+
+Enum trang_thai_chi_tiet_cat {
+  CHO_CAT
+  DA_CAT
+  LOI
+}
+
+Enum loai_su_kien {
+  CAT
+  LOI
+  BO_DI
+}
+
+Enum loai_giao_dich {
+  DAT_COC
+  TAM_UNG
+  HOAN_TAT
+  HUY_DON
+}
+
+Enum phuong_thuc_thanh_toan {
+  TIEN_MAT
+  CHUYEN_KHOAN
+}
+
+Enum trang_thai_yeu_cau {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+Table quytac {
+  maqt varchar(50) [pk]
+  tenqt varchar(100) [not null]
+  giatri decimal(10,2) [not null]
+}
+
+Table danhmuc {
+  madm int [pk, increment]
+  tendm varchar(100) [not null, unique]
+  mota varchar(255)
+  trangthai trang_thai_danh_muc [not null, default: 'HOAT_DONG']
+  ngaytao timestamp [not null, default: `now()`]
+}
+
+Table nguoidung {
+  mand int [pk, increment]
+  tendangnhap varchar(50) [not null, unique]
+  hoten varchar(100) [not null]
+  vaitro vai_tro_nguoi_dung [not null]
+  sdt varchar(15)
+  trangthai trang_thai_nguoi_dung [not null, default: 'DANG_LAM']
+}
+
+Table yeucaucapquyen {
+  mayc int [pk, increment]
+  hoten varchar(100) [not null]
+  sdt varchar(15)
+  tendangnhap varchar(80) [not null]
+  vaitro vai_tro_nguoi_dung [not null, default: 'WORKER']
+  ghichu text
+  trangthai trang_thai_yeu_cau [not null, default: 'PENDING']
+  ngaytao timestamp [not null, default: `now()`]
+  ngayduyet timestamp
+  nguoiduyet int
+}
+
+Table khachhang {
+  makh int [pk, increment]
+  hoten varchar(100) [not null]
+  sdt varchar(15) [not null, unique]
+  diachi varchar(255)
+}
+
+Table vattu {
+  mavt int [pk, increment]
+  madm int [not null]
+  tenvt varchar(150) [not null]
+  donvitinh varchar(20) [not null]
+  chieudaimacdinh int
+  dongianhap decimal(15,2) [not null]
+  dongiaban decimal(15,2)
+}
+
+Table lonhap {
+  malonhap int [pk, increment]
+  ngaynhap timestamp [not null, default: `now()`]
+  nhacungcap varchar(150)
+}
+
+Table khothanhphoi {
+  maphoi int [pk, increment]
+  mavt int [not null]
+  malonhap int [not null]
+  chieudaibandau int [not null]
+  chieudaihientai int [not null]
+  trangthai trang_thai_phoi [not null, default: 'MOI']
+}
+
+Table donhang {
+  madh int [pk, increment]
+  makh int [not null]
+  ngaytao timestamp [not null, default: `now()`]
+  trangthai trang_thai_don_hang [not null, default: 'BAO_GIA_NHAP']
+  tonggiatri decimal(15,2) [default: 0]
+}
+
+Table chitietdh {
+  mactdh int [pk, increment]
+  madh int [not null]
+  mavt int [not null]
+  mota varchar(200)
+  chieudaicat int
+  soluong int [not null, default: 1]
+  dongiadongbang decimal(15,2)
+  thanhtien decimal(15,2)
+}
+
+Table phancong {
+  mapc int [pk, increment]
+  madh int [not null]
+  matho int [not null]
+  trangthai trang_thai_phan_cong [not null, default: 'CHO_THUC_HIEN']
+}
+
+Table sodocat {
+  masdc int [pk, increment]
+  mapc int [not null]
+  maphoi int [not null]
+  trangthai trang_thai_so_do_cat [not null, default: 'CHO_DUYET']
+}
+
+Table chitietcat {
+  mactc int [pk, increment]
+  masdc int [not null]
+  mactdh int
+  thutucat int [not null, default: 1]
+  chieudaicat int [not null]
+  trangthai trang_thai_chi_tiet_cat [not null, default: 'CHO_CAT']
+}
+
+Table nhatkygiacong {
+  mank int [pk, increment]
+  maphoi int [not null]
+  mapc int
+  matho int
+  sukien loai_su_kien [not null]
+  chieudaitruoc int [not null]
+  chieudaisau int [not null]
+  ghichu text
+  thoigian timestamp [not null, default: `now()`]
+}
+
+Table giaodich {
+  magd int [pk, increment]
+  madh int [not null]
+  loaigd loai_giao_dich [not null]
+  phuongthuc phuong_thuc_thanh_toan [not null]
+  sotien decimal(15,2) [not null]
+  ngaygd timestamp [not null, default: `now()`]
+  ghichu text
+}
+
+Table hinhanh {
+  maha int [pk, increment]
+  madh int [not null]
+  duongdan varchar(500) [not null]
+  nguoichup int
+  mota varchar(255)
+  thoigian timestamp [not null, default: `now()`]
+}
+
+Table thongbao {
+  matb int [pk, increment]
+  mand int [not null]
+  tieude varchar(200)
+  noidung text [not null]
+  daxem boolean [not null, default: false]
+  ngaytao timestamp [not null, default: `now()`]
+  dulieu jsonb
+}
+
+// ---- Groups (giúp sơ đồ dễ nhìn khi export hình) ----
+TableGroup "Master data" {
+  quytac
+  danhmuc
+  vattu
+}
+
+TableGroup "Kho" {
+  lonhap
+  khothanhphoi
+}
+
+TableGroup "Khách & Đơn hàng" {
+  khachhang
+  donhang
+  chitietdh
+}
+
+TableGroup "Sản xuất / Cắt" {
+  phancong
+  sodocat
+  chitietcat
+  nhatkygiacong
+}
+
+TableGroup "Tài chính & Ảnh" {
+  giaodich
+  hinhanh
+}
+
+TableGroup "Tài khoản & Yêu cầu" {
+  nguoidung
+  yeucaucapquyen
+}
+
+TableGroup "Thông báo" {
+  thongbao
+}
+
+Ref: yeucaucapquyen.nguoiduyet > nguoidung.mand
+Ref: vattu.madm > danhmuc.madm
+Ref: khothanhphoi.mavt > vattu.mavt
+Ref: khothanhphoi.malonhap > lonhap.malonhap
+Ref: donhang.makh > khachhang.makh
+Ref: chitietdh.madh > donhang.madh
+Ref: chitietdh.mavt > vattu.mavt
+Ref: phancong.madh > donhang.madh
+Ref: phancong.matho > nguoidung.mand
+Ref: sodocat.mapc > phancong.mapc
+Ref: sodocat.maphoi > khothanhphoi.maphoi
+Ref: chitietcat.masdc > sodocat.masdc
+Ref: chitietcat.mactdh > chitietdh.mactdh
+Ref: nhatkygiacong.maphoi > khothanhphoi.maphoi
+Ref: nhatkygiacong.mapc > phancong.mapc
+Ref: nhatkygiacong.matho > nguoidung.mand
+Ref: giaodich.madh > donhang.madh
+Ref: hinhanh.madh > donhang.madh
+Ref: hinhanh.nguoichup > nguoidung.mand
+Ref: thongbao.mand > nguoidung.mand
+

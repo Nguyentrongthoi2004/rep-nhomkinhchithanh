@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Check, Loader2, RefreshCw, Ruler, Scissors, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { apiData, apiJson } from "@/lib/api";
 
 type CutDetail = {
@@ -28,7 +29,9 @@ type CuttingPlan = {
   chitietcat: CutDetail[];
 };
 
-export default function WorkerCatPage() {
+function WorkerCatPageInner() {
+  const searchParams = useSearchParams();
+  const mapcFilter = Number(searchParams.get("mapc") || "0");
   const [plans, setPlans] = useState<CuttingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -112,12 +115,14 @@ export default function WorkerCatPage() {
       <div className="space-y-3">
         {loading ? (
           <div className="py-14 flex justify-center text-slate-400"><Loader2 className="w-8 h-8 animate-spin" /></div>
-        ) : plans.length === 0 ? (
+        ) : plans.filter((p) => (mapcFilter ? p.mapc === mapcFilter : true)).length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 bg-white/2 px-5 py-10 text-center text-sm text-slate-500">
-            Chưa có sơ đồ cắt nào được giao.
+            {mapcFilter ? `Chưa có sơ đồ cắt cho PC-${mapcFilter}.` : "Chưa có sơ đồ cắt nào được giao."}
           </div>
         ) : (
-          plans.map((plan) => {
+          plans
+            .filter((plan) => (mapcFilter ? plan.mapc === mapcFilter : true))
+            .map((plan) => {
             const stockLength = plan.khothanhphoi?.chieudaihientai || plan.khothanhphoi?.chieudaibandau || 1;
             const used = plan.chitietcat.reduce((sum, cut) => sum + cut.chieudaicat, 0);
             const isDone = plan.trangthai === "HOAN_THANH";
@@ -198,5 +203,13 @@ export default function WorkerCatPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function WorkerCatPage() {
+  return (
+    <Suspense fallback={null}>
+      <WorkerCatPageInner />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 -- =====================================================
 -- SCRIPT 01: SCHEMA HOÀN CHỈNH MINI-ERP NHÔM KÍNH
 -- PostgreSQL / Supabase
--- 15 Bảng · 11 ENUM Types · 17 Indexes · RLS Policies
+-- 17 Bảng · 11 ENUM Types · 24 Indexes · RLS Policies
 -- =====================================================
 -- NAMING CONVENTION: lowercase, KHÔNG DẤU GẠCH DƯỚI
 -- (khớp 100% với code Frontend đã viết)
@@ -32,7 +32,7 @@ BEGIN
 END $$;
 
 -- =====================
--- BƯỚC 2: TẠO 15 BẢNG
+-- BƯỚC 2: TẠO BẢNG
 -- =====================
 
 -- ─── Bảng 1: quytac ────────────────────────────────────────────
@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS yeucaucapquyen (
 
 CREATE INDEX IF NOT EXISTS idx_yeucau_trangthai ON yeucaucapquyen(trangthai);
 CREATE INDEX IF NOT EXISTS idx_yeucau_tendangnhap ON yeucaucapquyen(tendangnhap);
+CREATE INDEX IF NOT EXISTS idx_yeucau_ngaytao ON yeucaucapquyen(ngaytao);
 
 -- ─── Bảng 4: khachhang ─────────────────────────────────────────
 -- Hồ sơ khách hàng, tra cứu nhanh qua Số Điện Thoại
@@ -212,9 +213,20 @@ CREATE TABLE hinhanh (
     thoigian    TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 
+-- ─── Bảng 16: thongbao ─────────────────────────────────────────
+-- Thông báo hệ thống (lưu lịch sử, đã xem/chưa xem theo user)
+CREATE TABLE thongbao (
+    matb        SERIAL          PRIMARY KEY,
+    mand        INT             NOT NULL REFERENCES nguoidung(mand) ON DELETE CASCADE,
+    tieude      VARCHAR(200),
+    noidung     TEXT            NOT NULL,
+    daxem       BOOLEAN         NOT NULL DEFAULT FALSE,
+    ngaytao     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    dulieu      JSONB
+);
 
 -- =====================
--- BƯỚC 3: INDEXES (17 indexes)
+-- BƯỚC 3: INDEXES (24 indexes)
 -- =====================
 
 CREATE INDEX idx_vattu_danhmuc         ON vattu(madm);
@@ -236,6 +248,10 @@ CREATE INDEX idx_nhatky_tho            ON nhatkygiacong(matho);
 CREATE INDEX idx_giaodich_don          ON giaodich(madh);
 CREATE INDEX idx_hinhanh_don           ON hinhanh(madh);
 
+CREATE INDEX idx_thongbao_mand         ON thongbao(mand);
+CREATE INDEX idx_thongbao_daxem        ON thongbao(daxem);
+CREATE INDEX idx_thongbao_ngaytao      ON thongbao(ngaytao);
+
 
 -- =====================
 -- BƯỚC 4: ROW LEVEL SECURITY (RLS)
@@ -249,6 +265,7 @@ CREATE INDEX idx_hinhanh_don           ON hinhanh(madh);
 ALTER TABLE quytac          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE danhmuc         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nguoidung       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE yeucaucapquyen  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE khachhang       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vattu           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lonhap          ENABLE ROW LEVEL SECURITY;
@@ -261,11 +278,13 @@ ALTER TABLE chitietcat      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nhatkygiacong   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE giaodich        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hinhanh         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE thongbao        ENABLE ROW LEVEL SECURITY;
 
 -- Policy cho authenticated users (đọc/ghi tất cả)
 CREATE POLICY "Authenticated full access" ON quytac        FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated full access" ON danhmuc       FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated full access" ON nguoidung     FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated full access" ON yeucaucapquyen FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated full access" ON khachhang     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated full access" ON vattu         FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated full access" ON lonhap        FOR ALL TO authenticated USING (true) WITH CHECK (true);
@@ -278,10 +297,11 @@ CREATE POLICY "Authenticated full access" ON chitietcat    FOR ALL TO authentica
 CREATE POLICY "Authenticated full access" ON nhatkygiacong FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated full access" ON giaodich      FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated full access" ON hinhanh       FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated full access" ON thongbao      FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 
 -- =====================================================
 -- HOÀN TẤT SCHEMA
--- Tổng: 15 bảng · 11 ENUM types · 18 indexes · 15 RLS policies
+-- Tổng: 17 bảng · 11 ENUM types · 24 indexes · 17 RLS policies
 -- Naming: lowercase, không dấu gạch dưới
 -- =====================================================

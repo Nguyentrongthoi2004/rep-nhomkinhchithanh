@@ -42,9 +42,18 @@ export const createOrderSchema = z.object({
   items: z.array(createOrderItemSchema).default([]),
 });
 
+export const updateOrderSchema = z.object({
+  customer: z.string().trim().min(1).max(100),
+  phone: z.string().trim().min(1).max(15),
+  address: z.string().trim().max(255).nullable().optional(),
+  totalCost: z.number().nonnegative(),
+  items: z.array(createOrderItemSchema).default([]),
+});
+
 export const updateOrderStatusSchema = z.object({
   trangthai: orderStatusEnum,
 });
 
 export type CreateOrderDto = z.infer<typeof createOrderSchema>;
+export type UpdateOrderDto = z.infer<typeof updateOrderSchema>;
 export type UpdateOrderStatusDto = z.infer<typeof updateOrderStatusSchema>;

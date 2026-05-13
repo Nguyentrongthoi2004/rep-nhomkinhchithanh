@@ -8,6 +8,14 @@ const backendUrl =
   process.env.BACKEND_PROXY_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:4000";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: [
+    "localhost",
+    "127.0.0.1",
+    // LAN access (phone in same network)
+    "192.168.0.102",
+    // Radmin VPN adapter shown by `next dev`
+    "26.87.165.3",
+  ],
   async rewrites() {
     return [
       {

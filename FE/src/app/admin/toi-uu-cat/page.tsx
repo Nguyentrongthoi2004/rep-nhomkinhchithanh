@@ -82,15 +82,15 @@ export default function CuttingOptimizationPage() {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="admin-metal-panel border border-white/10 rounded-2xl p-6 flex items-center justify-between relative overflow-hidden">
+      <div className="admin-metal-panel border border-white/10 rounded-2xl p-4 md:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
         <div className="admin-metal-shine" />
         <div className="relative z-10">
-          <h1 className="text-2xl font-bold text-gray-100 flex items-center">
-            <Scissors className="w-6 h-6 mr-3 text-red-400" /> Toi uu cat vat tu
+          <h1 className="text-xl md:text-2xl font-bold text-gray-100 flex items-center">
+            <Scissors className="w-5 h-5 md:w-6 md:h-6 mr-2 md:mr-3 text-red-400" /> Toi uu cat vat tu
           </h1>
-          <p className="text-sm text-gray-400 mt-1 ml-9">Lay BOM tu don da phan cong va kho phoi that, sau do luu vao sodocat/chitietcat.</p>
+          <p className="text-xs md:text-sm text-gray-400 mt-1 ml-7 md:ml-9">Lay BOM tu don da phan cong va kho phoi that, sau do luu vao sodocat/chitietcat.</p>
         </div>
-        <button onClick={load} className="relative z-10 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10" title="Tai lai" aria-label="Tai lai">
+        <button onClick={load} className="relative z-10 p-2 md:p-3 self-end md:self-auto -mt-12 md:mt-0 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10" title="Tai lai" aria-label="Tai lai">
           <RefreshCw className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
@@ -153,7 +153,7 @@ export default function CuttingOptimizationPage() {
                         {plan.trangthai}
                       </span>
                     </div>
-                    <div className="h-14 bg-[#15171d] rounded-xl border border-white/10 overflow-hidden flex">
+                    <div className="h-14 bg-[#15171d] rounded-xl border border-white/10 overflow-x-auto overflow-y-hidden flex">
                       {plan.chitietcat.map((cut) => (
                         <div
                           key={cut.mactc}

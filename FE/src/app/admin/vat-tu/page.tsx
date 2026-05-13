@@ -24,6 +24,10 @@ interface VatTu {
   dongianhap: number;
   madm?: number;
   danhmuc: { tendm: string } | null;
+  /** Số thanh/tấm trong Kho phôi (MOI + CON_DU), khớp màn Kho phôi */
+  tonKhoThanh?: number;
+  /** Tổng chiều dài còn lại (mm) trên các thanh đó */
+  tonKhoTongMm?: number;
 }
 
 interface DanhMuc {
@@ -239,7 +243,12 @@ export default function MaterialPage() {
             <Box className="w-6 h-6 mr-3 text-emerald-500" />
             Lưu Trữ Mã Vật Tư
           </h1>
-          <p className="text-gray-400 text-sm mt-1 ml-9">Quản lý kho Nhôm, Kính, Phụ kiện phục vụ cho quá trình sản xuất.</p>
+          <p className="text-gray-400 text-sm mt-1 ml-9">
+            Quản lý kho Nhôm, Kính, Phụ kiện phục vụ cho quá trình sản xuất.
+            <span className="text-gray-500"> Cột “Tồn” lấy từ </span>
+            <span className="text-gray-300">Kho phôi</span>
+            <span className="text-gray-500"> (số thanh MOI/CON_DU); vật tư chỉ có danh mục mà không nhập phôi sẽ hiện 0.</span>
+          </p>
         </div>
         
         <div className="flex space-x-3">
@@ -371,7 +380,12 @@ export default function MaterialPage() {
                 <th className="p-4 font-semibold">Thuộc Danh Mục</th>
                 <th className="p-4 font-semibold text-center w-24">Chiều dài</th>
                 <th className="p-4 font-semibold text-right w-36">Đơn Giá Nhập</th>
-                <th className="p-4 font-semibold text-right w-28">Tồn Kho</th>
+                <th
+                  className="p-4 font-semibold text-right w-36"
+                  title="Tồn từ Kho phôi: số thanh/tấm còn dùng (MOI, CON_DU). Phụ kiện/vật tư không nhập theo thanh sẽ là 0."
+                >
+                  Tồn (kho phôi)
+                </th>
                 <th className="p-4 font-semibold w-24 text-right">Thao Tác</th>
               </tr>
             </thead>
@@ -383,7 +397,10 @@ export default function MaterialPage() {
                   </td>
                 </tr>
               ) : (
-                materials.map((item, idx) => (
+                materials.map((item, idx) => {
+                  const tonThanh = Math.max(0, Math.round(Number(item.tonKhoThanh ?? 0)));
+                  const tonMm = Math.max(0, Math.round(Number(item.tonKhoTongMm ?? 0)));
+                  return (
                   <tr key={item.mavt} className="hover:bg-white/5 transition-colors group">
                     <td className="p-4 text-center text-sm text-gray-500 font-mono">
                       {(page - 1) * pageSize + idx + 1}
@@ -397,9 +414,25 @@ export default function MaterialPage() {
                     <td className="p-4 text-right text-sm text-gray-300 font-mono">
                       {formatCurrency(item.dongianhap)}<span className="text-gray-500 ml-1 text-xs">/{item.donvitinh}</span>
                     </td>
-                    <td className="p-4 text-right text-sm">
-                      <span className="font-mono font-bold text-gray-400">0</span>
-                      <span className="text-gray-600 ml-1 text-xs">{item.donvitinh}</span>
+                    <td className="p-4 text-right text-sm align-top">
+                      {tonThanh > 0 ? (
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span>
+                            <span className="font-mono font-bold text-emerald-300">{tonThanh}</span>
+                            <span className="text-gray-500 ml-1 text-xs">thanh</span>
+                          </span>
+                          {item.chieudaimacdinh != null && tonMm > 0 ? (
+                            <span
+                              className="text-[10px] text-gray-500 font-mono max-w-[10rem] leading-tight"
+                              title="Tổng mm còn lại trên các thanh (nhôm / thanh có chiều dài)"
+                            >
+                              Σ {tonMm.toLocaleString("vi-VN")} mm
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-gray-500 font-mono">0</span>
+                      )}
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end space-x-2">
@@ -424,7 +457,8 @@ export default function MaterialPage() {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

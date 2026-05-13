@@ -31,7 +31,9 @@ export default function LoginPage() {
     setError("");
 
     if (!username.trim() || !password) {
-      setError("Vui lòng nhập tài khoản và mật khẩu");
+      const msg = "Vui lòng nhập tài khoản và mật khẩu";
+      setError(msg);
+      alert(msg);
       return;
     }
 
@@ -47,27 +49,46 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        setError(`Lỗi đăng nhập: Sai tài khoản hoặc mật khẩu.`);
+        const msg = `Lỗi đăng nhập: Sai tài khoản hoặc mật khẩu.`;
+        setError(msg);
+        alert(msg);
         setLoading(false);
         return;
       }
 
       // Nếu user đăng nhập bằng Gmail Master Admin, server sẽ tự tạo hồ sơ nghiệp vụ (nguoidung) 1 lần.
-      // (BE dùng Bearer token từ session Supabase hiện tại)
-      try {
-        await apiJson("/api/auth/ensure-profile", { method: "POST" });
-      } catch {}
+      // Chỉ gọi khi user nhập email đúng MASTER_ADMIN_EMAIL để tránh spam warning cho worker.
+      const masterAdminEmail = (process.env.NEXT_PUBLIC_MASTER_ADMIN_EMAIL || "").trim().toLowerCase();
+      if (masterAdminEmail && email === masterAdminEmail) {
+        try {
+          await apiJson("/api/auth/ensure-profile", { method: "POST" });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.warn("ensure-profile failed:", msg);
+        }
+      }
 
-      const profile = await apiData<{ vaitro: string }>("/api/auth/me");
+      let profile;
+      try {
+        profile = await apiData<{ vaitro: string }>("/api/auth/me");
+      } catch (e: unknown) {
+        const msg = `Lỗi gọi API /auth/me: ${e instanceof Error ? e.message : String(e)}`;
+        setError(msg);
+        alert(msg);
+        setLoading(false);
+        return;
+      }
 
       // Redirect based on role
       if (profile?.vaitro === "ADMIN") {
-        router.push("/admin/vat-tu"); // Đi thẳng vào kho vật tư
+        router.push("/admin/vat-tu");
       } else {
         router.push("/worker");
       }
-    } catch {
-      setError("Lỗi kết nối máy chủ");
+    } catch (e: unknown) {
+      const msg = `Lỗi hệ thống: ${e instanceof Error ? e.message : String(e)}`;
+      setError(msg);
+      alert(msg);
       setLoading(false);
     }
   };
@@ -187,7 +208,7 @@ export default function LoginPage() {
 
         {/* Bottom Footer */}
         <div className="w-full max-w-[420px] mx-auto mt-8 text-xs text-zinc-600 flex justify-between">
-          <span>&copy; {new Date().getFullYear()} MiniERP.</span>
+          <span>&copy; MiniERP.</span>
           <span className="flex gap-4">
             <a href="#" className="hover:text-zinc-400 transition-colors">Privacy</a>
             <a href="#" className="hover:text-zinc-400 transition-colors">Terms</a>

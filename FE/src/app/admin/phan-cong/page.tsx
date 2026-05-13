@@ -6,6 +6,7 @@ import {
   CheckCircle2, Clock, AlertCircle, X, Package, Ruler
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { apiJson } from "@/lib/api";
 
 // ─── Types (khớp 100% với schema Supabase) ───
 interface Worker {
@@ -110,6 +111,21 @@ export default function AdminPhanCongPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const assignmentsByOrder = useMemo(() => {
+    const map = new Map<number, Assignment[]>();
+    for (const a of assignments) {
+      const list = map.get(a.madh) ?? [];
+      list.push(a);
+      map.set(a.madh, list);
+    }
+    // keep stable ordering: newest mapc first inside each order
+    for (const [madh, list] of map.entries()) {
+      list.sort((x, y) => y.mapc - x.mapc);
+      map.set(madh, list);
+    }
+    return map;
+  }, [assignments]);
+
   // ─── Giao việc mới ───
   const handleAssign = async () => {
     if (!selectedOrder || !selectedWorker) {
@@ -117,7 +133,7 @@ export default function AdminPhanCongPage() {
       return;
     }
 
-    // Kiểm tra trùng phân công
+    // Kiểm tra trùng phân công cùng đơn
     const isDuplicate = assignments.some(
       a => a.madh === Number(selectedOrder) && a.matho === Number(selectedWorker)
         && a.trangthai !== "HOAN_THANH"
@@ -127,29 +143,46 @@ export default function AdminPhanCongPage() {
       return;
     }
 
+    // Ràng buộc bận: hiện tại hệ thống không có time-range nên chặn 1 thợ có >1 phân công đang mở
+    const isBusy = assignments.some(
+      a => a.matho === Number(selectedWorker) && a.trangthai !== "HOAN_THANH"
+    );
+    if (isBusy) {
+      setError("Thợ này đang bận phân công khác (chưa hoàn thành)!");
+      return;
+    }
+
     setSaving(true);
     setError("");
-    const { error: insertError } = await supabase.from("phancong").insert({
-      madh: Number(selectedOrder),
-      matho: Number(selectedWorker),
-      trangthai: "CHO_THUC_HIEN",
-    });
-
-    if (insertError) {
-      setError("Lỗi lưu phân công: " + insertError.message);
-    } else {
+    try {
+      await apiJson("/api/admin/assignments", {
+        method: "POST",
+        body: JSON.stringify({
+          madh: Number(selectedOrder),
+          matho: Number(selectedWorker),
+        }),
+      });
       setShowModal(false);
       setSelectedOrder("");
       setSelectedWorker("");
       fetchData();
+    } catch (e: unknown) {
+      setError("Lỗi lưu phân công: " + (e instanceof Error ? e.message : String(e)));
     }
     setSaving(false);
   };
 
   // ─── Cập nhật trạng thái phân công ───
   const updateStatus = async (mapc: number, newStatus: string) => {
-    await supabase.from("phancong").update({ trangthai: newStatus }).eq("mapc", mapc);
-    fetchData();
+    try {
+      await apiJson(`/api/admin/assignments/${mapc}`, {
+        method: "PATCH",
+        body: JSON.stringify({ trangthai: newStatus }),
+      });
+      fetchData();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const openOrder = orders.find(o => o.madh === expandedOrder);
@@ -230,57 +263,91 @@ export default function AdminPhanCongPage() {
             </div>
           ) : (
             <div className="divide-y divide-white/5">
-              {assignments.map(a => {
-                const status = STATUS_MAP[a.trangthai] || STATUS_MAP.CHO_THUC_HIEN;
-                return (
-                  <div key={a.mapc} className="p-4 hover:bg-white/2 transition-colors">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="text-sm font-bold text-gray-200">
-                          DH-{a.madh} · {a.donhang?.khachhang?.hoten || "Không rõ KH"}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Thợ: <span className="text-gray-300 font-medium">{a.nguoidung?.hoten}</span>
-                          {a.nguoidung?.sdt && <span className="ml-2 text-gray-500">({a.nguoidung.sdt})</span>}
-                        </p>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${status.color}`}>
-                        {status.label}
-                      </span>
-                    </div>
+              {Array.from(assignmentsByOrder.entries())
+                .sort((a, b) => b[0] - a[0]) // newest order id first (matches existing behavior roughly)
+                .map(([madh, list]) => {
+                  const orderName = list[0]?.donhang?.khachhang?.hoten || "Không rõ KH";
+                  const anyDoing = list.some((x) => x.trangthai === "DANG_THUC_HIEN");
+                  const allDone = list.length > 0 && list.every((x) => x.trangthai === "HOAN_THANH");
+                  const groupStatus = allDone ? "HOAN_THANH" : anyDoing ? "DANG_THUC_HIEN" : "CHO_THUC_HIEN";
+                  const status = STATUS_MAP[groupStatus] || STATUS_MAP.CHO_THUC_HIEN;
 
-                    <div className="flex space-x-2 mt-3">
-                      {a.trangthai === "CHO_THUC_HIEN" && (
+                  return (
+                    <div key={madh} className="p-4 hover:bg-white/2 transition-colors">
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-gray-200 truncate">
+                            DH-{madh} · {orderName}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {list.length} thợ được phân công
+                          </p>
+                        </div>
+                        <span className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-bold border ${status.color}`}>
+                          {status.label}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {list.map((a) => {
+                          const rowStatus = STATUS_MAP[a.trangthai] || STATUS_MAP.CHO_THUC_HIEN;
+                          return (
+                            <div
+                              key={a.mapc}
+                              className="rounded-xl border border-white/10 bg-white/2 px-3 py-2 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] font-mono text-gray-500">PC-{a.mapc}</span>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${rowStatus.color}`}>
+                                    {rowStatus.label}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-300 mt-1 truncate">
+                                  {a.nguoidung?.hoten || "Không rõ thợ"}
+                                  {a.nguoidung?.sdt ? ` (${a.nguoidung.sdt})` : ""}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                {a.trangthai === "CHO_THUC_HIEN" && (
+                                  <button
+                                    onClick={() => updateStatus(a.mapc, "DANG_THUC_HIEN")}
+                                    className="text-[11px] px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/20 rounded-lg transition-colors"
+                                  >
+                                    Đang làm
+                                  </button>
+                                )}
+                                {a.trangthai === "DANG_THUC_HIEN" && (
+                                  <button
+                                    onClick={() => updateStatus(a.mapc, "HOAN_THANH")}
+                                    className="text-[11px] px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/20 rounded-lg transition-colors"
+                                  >
+                                    Hoàn thành
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex space-x-2 mt-3">
                         <button
-                          onClick={() => updateStatus(a.mapc, "DANG_THUC_HIEN")}
-                          className="text-xs px-3 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/20 rounded-lg transition-colors"
+                          onClick={() => setExpandedOrder(madh === expandedOrder ? null : madh)}
+                          className="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors flex items-center"
                         >
-                          Đánh Dấu Đang Làm
+                          <Package className="w-3 h-3 mr-1" />
+                          Xem BOM
+                          {expandedOrder === madh
+                            ? <ChevronDown className="w-3 h-3 ml-1" />
+                            : <ChevronRight className="w-3 h-3 ml-1" />
+                          }
                         </button>
-                      )}
-                      {a.trangthai === "DANG_THUC_HIEN" && (
-                        <button
-                          onClick={() => updateStatus(a.mapc, "HOAN_THANH")}
-                          className="text-xs px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/20 rounded-lg transition-colors"
-                        >
-                          Xác Nhận Hoàn Thành
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setExpandedOrder(a.madh === expandedOrder ? null : a.madh)}
-                        className="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors flex items-center"
-                      >
-                        <Package className="w-3 h-3 mr-1" />
-                        Xem BOM
-                        {expandedOrder === a.madh
-                          ? <ChevronDown className="w-3 h-3 ml-1" />
-                          : <ChevronRight className="w-3 h-3 ml-1" />
-                        }
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           )}
         </div>

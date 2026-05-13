@@ -10,6 +10,9 @@
 -- 1. XÓA CÁC BẢNG (NO UNDERSCORE — schema cũ FE)
 -- ===========================
 DROP TABLE IF EXISTS hinhanh CASCADE;
+DROP TABLE IF EXISTS thongbaodadoc CASCADE;
+DROP TABLE IF EXISTS thongbao CASCADE;
+DROP TABLE IF EXISTS yeucaucapquyen CASCADE;
 DROP TABLE IF EXISTS giaodich CASCADE;
 DROP TABLE IF EXISTS nhatkygiacong CASCADE;
 DROP TABLE IF EXISTS chitietcat CASCADE;
@@ -75,6 +78,7 @@ DROP TYPE IF EXISTS trang_thai_chi_tiet_cat CASCADE;
 DROP TYPE IF EXISTS loai_su_kien CASCADE;
 DROP TYPE IF EXISTS loai_giao_dich CASCADE;
 DROP TYPE IF EXISTS phuong_thuc_thanh_toan CASCADE;
+DROP TYPE IF EXISTS trang_thai_yeu_cau CASCADE;
 
 -- =====================================================
 -- XONG! Hệ thống đã sạch. Chạy tiếp script 01.

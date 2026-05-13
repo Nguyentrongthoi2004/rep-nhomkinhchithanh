@@ -23,12 +23,16 @@ interface Assignment {
 
 export default function WorkerDashboard() {
   const supabase = useMemo(() => createClient(), []);
-  const [greeting] = useState(() => {
+  const [greeting, setGreeting] = useState("Xin chào");
+  const [todayText, setTodayText] = useState("");
+  useEffect(() => {
     const hour = new Date().getHours();
-    if (hour >= 12 && hour < 18) return "Chào buổi chiều";
-    if (hour >= 18) return "Chào buổi tối";
-    return "Chào buổi sáng";
-  });
+    if (hour >= 12 && hour < 18) setGreeting("Chào buổi chiều");
+    else if (hour >= 18) setGreeting("Chào buổi tối");
+    else setGreeting("Chào buổi sáng");
+
+    setTodayText(new Date().toLocaleDateString("vi-VN", { weekday: "long", year: "numeric", month: "long", day: "numeric" }));
+  }, []);
 
   const [worker, setWorker] = useState<WorkerInfo | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -70,27 +74,38 @@ export default function WorkerDashboard() {
 
   const activeTasks = assignments.filter(a => a.trangthai === "DANG_THUC_HIEN");
   const pendingTasks = assignments.filter(a => a.trangthai === "CHO_THUC_HIEN");
+  const topTask = activeTasks[0] || pendingTasks[0] || null;
 
   return (
     <div className="min-h-full bg-[#030508] text-gray-200">
 
       {/* Header */}
       <div className="bg-linear-to-b from-blue-900/40 to-[#030508] px-5 pt-12 pb-6">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
-              <User className="w-5 h-5 text-blue-400" />
+        <div className="flex justify-between items-start mb-6 gap-4">
+          <div className="flex items-start space-x-3">
+            <div className="w-11 h-11 rounded-2xl bg-blue-500/15 flex items-center justify-center border border-blue-500/25 shrink-0">
+              <User className="w-5 h-5 text-blue-300" />
             </div>
-            <div>
-              <p className="text-xs text-gray-400 font-medium">{greeting},</p>
-              {loading ? (
-                <div className="h-4 w-28 bg-white/10 rounded animate-pulse mt-1" />
-              ) : (
-                <h1 className="text-sm font-bold text-gray-100">{worker?.hoten || "Nhân viên"}</h1>
-              )}
+            <div className="min-w-0">
+              <p className="text-[11px] text-blue-100/80 font-semibold tracking-wider uppercase">{todayText || "Hôm nay"}</p>
+              <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+                <span className="text-base font-extrabold text-gray-100">{greeting},</span>
+                {loading ? (
+                  <span className="inline-block h-5 w-36 bg-white/10 rounded animate-pulse" />
+                ) : (
+                  <span className="text-base font-extrabold text-white truncate max-w-[220px]">{worker?.hoten || "Nhân viên"}</span>
+                )}
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-[11px]">
+                <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-gray-300">
+                  {worker?.vaitro === "WORKER" ? "Thợ" : (worker?.vaitro || "Nhân sự")}
+                </span>
+                <span className="text-gray-500">•</span>
+                <span className="text-gray-400">{worker?.sdt || "Chưa có SĐT"}</span>
+              </div>
             </div>
           </div>
-          <button className="relative p-2 bg-white/5 rounded-full border border-white/10 hover:bg-white/10 transition-colors">
+          <button className="relative p-2 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors shrink-0" title="Thông báo" aria-label="Thông báo">
             <Bell className="w-5 h-5 text-gray-300" />
             {(activeTasks.length + pendingTasks.length) > 0 && (
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
@@ -99,11 +114,12 @@ export default function WorkerDashboard() {
         </div>
 
         {/* Stats Card */}
-        <div className="bg-linear-to-br from-blue-600 to-blue-800 rounded-2xl p-5 shadow-[0_10px_25px_-5px_rgba(37,99,235,0.4)] relative overflow-hidden">
+        <div className="bg-linear-to-br from-blue-600 to-blue-900 rounded-3xl p-5 shadow-[0_10px_25px_-5px_rgba(37,99,235,0.4)] relative overflow-hidden border border-white/10">
           <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute bottom-[-30%] left-[-15%] w-[55%] h-[55%] bg-emerald-400/10 rounded-full blur-3xl" />
           <div className="relative z-10 flex justify-between items-center">
             <div>
-              <p className="text-blue-100/80 text-xs font-medium mb-1">Việc đang chạy / Chờ nhận</p>
+              <p className="text-blue-100/80 text-xs font-semibold mb-1 tracking-wide">Đang làm / Chờ nhận</p>
               {loading ? (
                 <div className="h-8 w-20 bg-white/20 rounded animate-pulse" />
               ) : (
@@ -119,9 +135,23 @@ export default function WorkerDashboard() {
               <Target className="w-6 h-6 text-blue-100" />
             </div>
           </div>
-          <div className="relative z-10 mt-4 flex items-center text-xs text-blue-100/90">
-            <span className="bg-white/20 px-2 py-0.5 rounded mr-2">{worker?.sdt || "Chưa có SĐT"}</span>
-            <span>Số điện thoại</span>
+          <div className="relative z-10 mt-4 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2">
+              <div className="text-blue-100/80 text-[11px]">Ưu tiên</div>
+              <div className="text-white font-bold mt-0.5">
+                {topTask ? `PC-${topTask.mapc} / DH-${topTask.madh}` : "Chưa có"}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2">
+              <div className="text-blue-100/80 text-[11px]">Hành động nhanh</div>
+              {topTask ? (
+                <Link href={`/worker/cat?mapc=${topTask.mapc}`} className="inline-flex items-center font-bold text-amber-200 mt-0.5">
+                  Mở máy cắt <ChevronRight className="w-4 h-4 ml-1" />
+                </Link>
+              ) : (
+                <span className="text-blue-100/90 font-semibold mt-0.5 inline-block">Chờ phân công</span>
+              )}
+            </div>
           </div>
         </div>
       </div>

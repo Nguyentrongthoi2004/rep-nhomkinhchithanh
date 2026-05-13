@@ -7,6 +7,8 @@ import type {
 } from "./materials.schema";
 
 const TABLE = "vattu";
+const KHO_TABLE = "khothanhphoi";
+
 const SELECT = `
   mavt,
   madm,
@@ -28,6 +30,47 @@ export type MaterialsPageResult = {
   page: number;
   pageSize: number;
 };
+
+/** Chuẩn hóa FK mavt để ghép Map (Supabase có thể trả mavt là number hoặc string). */
+function toMavtKey(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+const STOCK_AGG_PAGE = 1000;
+
+/** Tồn trong kho phôi: mỗi bản ghi khothanhphoi = 1 thanh/tấm; chỉ MOI + CON_DU (bỏ BO_DI). */
+async function fetchStockAggByMavt(): Promise<Map<number, { thanh: number; tongMm: number }>> {
+  const map = new Map<number, { thanh: number; tongMm: number }>();
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabaseAdmin
+      .from(KHO_TABLE)
+      .select("mavt,chieudaihientai,trangthai")
+      .neq("trangthai", "BO_DI")
+      .order("maphoi", { ascending: true })
+      .range(from, from + STOCK_AGG_PAGE - 1);
+
+    if (error) throw HttpError.internal(error.message);
+    const chunk = data ?? [];
+    for (const row of chunk) {
+      const status = row.trangthai as string | undefined;
+      if (status !== "MOI" && status !== "CON_DU") continue;
+
+      const id = toMavtKey(row.mavt);
+      if (id <= 0) continue;
+
+      const mm = Number(row.chieudaihientai ?? 0);
+      const cur = map.get(id) ?? { thanh: 0, tongMm: 0 };
+      cur.thanh += 1;
+      cur.tongMm += Number.isFinite(mm) ? mm : 0;
+      map.set(id, cur);
+    }
+    if (chunk.length < STOCK_AGG_PAGE) break;
+    from += STOCK_AGG_PAGE;
+  }
+  return map;
+}
 
 export const materialsService = {
   async listPaged(query: MaterialsListQuery): Promise<MaterialsPageResult> {
@@ -63,8 +106,20 @@ export const materialsService = {
       .range(fromIdx, toIdx);
 
     if (error) throw HttpError.internal(error.message);
+
+    const stockMap = await fetchStockAggByMavt();
+    const items = (data ?? []).map((row) => {
+      const mavt = toMavtKey((row as { mavt: unknown }).mavt);
+      const agg = stockMap.get(mavt);
+      return {
+        ...row,
+        tonKhoThanh: agg?.thanh ?? 0,
+        tonKhoTongMm: agg?.tongMm ?? 0,
+      };
+    });
+
     return {
-      items: data ?? [],
+      items,
       total: count ?? 0,
       page,
       pageSize,
