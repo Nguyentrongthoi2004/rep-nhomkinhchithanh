@@ -7,9 +7,11 @@ import { validate } from "@/middlewares/validate";
 import {
   createOrderSchema,
   orderIdParamSchema,
+  updateOrderCustomerSchema,
   updateOrderSchema,
   updateOrderStatusSchema,
   type CreateOrderDto,
+  type UpdateOrderCustomerDto,
   type UpdateOrderDto,
   type UpdateOrderStatusDto,
 } from "./orders.schema";
@@ -42,6 +44,15 @@ ordersRouter.post(
   }),
 );
 
+ordersRouter.post(
+  "/:id/approve-price",
+  validate(orderIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    sendOk(res, await ordersService.approvePrice(id));
+  }),
+);
+
 ordersRouter.patch(
   "/:id",
   validate(orderIdParamSchema, "params"),
@@ -59,6 +70,16 @@ ordersRouter.patch(
   asyncHandler(async (req, res) => {
     const id = (req.params as unknown as { id: number }).id;
     sendOk(res, await ordersService.updateDetails(id, req.body as UpdateOrderDto));
+  }),
+);
+
+ordersRouter.patch(
+  "/:id/customer",
+  validate(orderIdParamSchema, "params"),
+  validate(updateOrderCustomerSchema, "body"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    sendOk(res, await ordersService.updateCustomer(id, req.body as UpdateOrderCustomerDto));
   }),
 );
 

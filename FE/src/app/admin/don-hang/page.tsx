@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search, Filter, FileText, ClipboardList, TrendingUp, Loader2, Trash2, Ban, RefreshCw } from "lucide-react";
+import { Ban, ClipboardList, FileText, Filter, Loader2, Plus, RefreshCw, Search, Trash2, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiData, apiJson } from "@/lib/api";
@@ -19,6 +19,7 @@ export default function OrderListPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   const reloadOrders = useCallback(async () => {
     setLoading(true);
@@ -37,15 +38,19 @@ export default function OrderListPage() {
 
   const handleDeleteOrder = async (madh: number) => {
     if (!confirm(`Xóa đơn hàng DH-${madh}? (Sẽ xóa cả BOM chi tiết)`)) return;
+    setBusyId(madh);
     try {
       await apiJson(`/api/admin/orders/${madh}`, { method: "DELETE" });
       reloadOrders();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyId(null);
     }
   };
 
   const updateStatus = async (madh: number, trangthai: string) => {
+    setBusyId(madh);
     try {
       await apiJson(`/api/admin/orders/${madh}`, {
         method: "PATCH",
@@ -54,170 +59,180 @@ export default function OrderListPage() {
       reloadOrders();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyId(null);
     }
   };
 
   const getStatusBadge = (status: string) => {
-    switch(status) {
-      case 'SẢN XUẤT': 
-      case 'DANG_GIA_CONG':
-        return <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded">SẢN XUẤT</span>;
-      case 'BÁO GIÁ': 
-      case 'BAO_GIA_NHAP':
-        return <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded">CHỜ DUYỆT GIÁ</span>;
-      case 'HOÀN THÀNH': 
-        return <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded">HOÀN THÀNH</span>;
+    const base = "px-2.5 py-1 text-[10px] font-bold tracking-wider border rounded";
+    switch (status) {
+      case "KHAO_SAT":
+        return <span className={`${base} border-gray-500/20 bg-gray-500/10 text-gray-300`}>TIẾP NHẬN</span>;
+      case "BAO_GIA_NHAP":
+        return <span className={`${base} border-amber-500/20 bg-amber-500/10 text-amber-400`}>CHỜ DUYỆT GIÁ</span>;
+      case "DA_DUYET_GIA":
+        return <span className={`${base} border-sky-500/20 bg-sky-500/10 text-sky-400`}>ĐÃ DUYỆT GIÁ</span>;
+      case "DA_THANH_TOAN":
+        return <span className={`${base} border-emerald-500/20 bg-emerald-500/10 text-emerald-300`}>ĐÃ THANH TOÁN</span>;
+      case "DANG_GIA_CONG":
+        return <span className={`${base} border-blue-500/20 bg-blue-500/10 text-blue-400`}>ĐANG GIA CÔNG</span>;
+      case "HOAN_THANH":
+        return <span className={`${base} border-emerald-500/20 bg-emerald-500/10 text-emerald-400`}>HOÀN THÀNH</span>;
+      case "DA_HUY":
+        return <span className={`${base} border-red-500/20 bg-red-500/10 text-red-400`}>ĐÃ HỦY</span>;
       default:
-        return (
-          <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-gray-400 bg-gray-500/10 border border-gray-500/20 rounded">
-            {formatOrderStatus(status)}
-          </span>
-        );
+        return <span className={`${base} border-gray-500/20 bg-gray-500/10 text-gray-400`}>{formatOrderStatus(status)}</span>;
     }
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   };
 
-  const filteredOrders = orders.filter(o => 
-    `DH-${o.madh}`.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (o.khachhang?.hoten || "").toLowerCase().includes(searchTerm.toLowerCase())
+  const formatCurrency = (amount: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(amount);
+  const filteredOrders = orders.filter(
+    (o) =>
+      `DH-${o.madh}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (o.khachhang?.hoten || "").toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   return (
     <div className="space-y-6">
-      
-      {/* Header */}
-      <div className="flex justify-between items-center bg-[#0a0a0c] p-6 rounded-2xl border border-white/5 shadow-sm">
+      <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-[#0a0a0c] p-6 shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100 flex items-center">
-            <ClipboardList className="w-6 h-6 mr-3 text-orange-500" />
-            Quản Lý Đơn Hàng & CRM
+          <h1 className="flex items-center text-2xl font-bold text-gray-100">
+            <ClipboardList className="mr-3 h-6 w-6 text-orange-500" />
+            Quản lý đơn hàng & CRM
           </h1>
-          <p className="text-gray-400 text-sm mt-1 ml-9">Theo dõi luồng xử lý từ Báo giá đến Trả hàng.</p>
+          <p className="ml-9 mt-1 text-sm text-gray-400">Theo dõi luồng xử lý từ tiếp nhận, lập BOM, báo giá đến sản xuất.</p>
         </div>
-        
+
         <Link href="/admin/don-hang/create">
-          <button className="bg-orange-600 hover:bg-orange-500 text-white px-5 py-2.5 rounded-lg flex items-center font-bold transition-colors shadow-[0_0_20px_-3px_rgba(234,88,12,0.4)]">
-            <Plus className="w-5 h-5 mr-2 stroke-[3px]" />
-            Tạo Đơn Mới (Bóc Tách)
+          <button className="flex items-center rounded-lg bg-orange-600 px-5 py-2.5 font-bold text-white shadow-[0_0_20px_-3px_rgba(234,88,12,0.4)] transition-colors hover:bg-orange-500">
+            <Plus className="mr-2 h-5 w-5 stroke-[3px]" />
+            Tạo đơn mới
           </button>
         </Link>
       </div>
 
-      {/* KPI Row */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-[#0a0a0c] border border-white/5 p-5 rounded-2xl flex items-center shadow-lg">
-          <div className="p-3 bg-blue-500/10 rounded-full mr-4 border border-blue-500/20"><TrendingUp className="text-blue-400 w-6 h-6"/></div>
+        <div className="flex items-center rounded-2xl border border-white/5 bg-[#0a0a0c] p-5 shadow-lg">
+          <div className="mr-4 rounded-full border border-blue-500/20 bg-blue-500/10 p-3">
+            <TrendingUp className="h-6 w-6 text-blue-400" />
+          </div>
           <div>
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Đang Sản Xuất</p>
+            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-gray-500">Đang sản xuất</p>
             <p className="text-2xl font-bold text-gray-100">
-              {orders.filter(o => o.trangthai === 'DANG_GIA_CONG').length} <span className="text-sm font-normal text-gray-500">đơn</span>
+              {orders.filter((o) => o.trangthai === "DANG_GIA_CONG").length} <span className="text-sm font-normal text-gray-500">đơn</span>
             </p>
           </div>
         </div>
       </div>
 
-      {/* Toolbar */}
       <div className="flex items-center space-x-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input 
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
+          <input
             type="text"
             placeholder="Tìm theo mã ĐH, tên KH..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all shadow-inner"
+            className="w-full rounded-lg border border-white/10 bg-[#0a0a0c] py-2.5 pl-10 pr-4 text-sm text-gray-200 shadow-inner outline-none transition-all focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
           />
         </div>
-        <button
-          title="Bộ lọc"
-          aria-label="Bộ lọc"
-          className="p-2.5 bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
-        >
-          <Filter className="w-5 h-5" />
+        <button title="Bộ lọc" aria-label="Bộ lọc" className="rounded-lg border border-white/10 bg-white/5 p-2.5 text-gray-400 transition-colors hover:text-white">
+          <Filter className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Order List Table */}
-      <div className="bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg">
+      <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0a0a0c] shadow-lg">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
-             <Loader2 className="w-8 h-8 text-orange-500 animate-spin mb-4" />
-             <p className="text-gray-400">Đang tải danh sách đơn hàng...</p>
+            <Loader2 className="mb-4 h-8 w-8 animate-spin text-orange-500" />
+            <p className="text-gray-400">Đang tải danh sách đơn hàng...</p>
           </div>
         ) : (
-          <table className="w-full text-left border-collapse">
+          <table className="w-full border-collapse text-left">
             <thead>
-              <tr className="bg-white/5 border-b border-white/10 text-[11px] uppercase tracking-wider text-gray-400">
-                <th className="p-4 font-semibold w-24">Mã ĐH</th>
-                <th className="p-4 font-semibold">Khách Hàng / Dự Án</th>
-                <th className="p-4 font-semibold text-center">Chi tiết</th>
-                <th className="p-4 font-semibold text-right">Giá Trị</th>
-                <th className="p-4 font-semibold w-32 text-center">Trạng Thái</th>
-                <th className="p-4 font-semibold w-24 text-right">Thao Tác</th>
+              <tr className="border-b border-white/10 bg-white/5 text-[11px] uppercase tracking-wider text-gray-400">
+                <th className="w-24 p-4 font-semibold">Mã ĐH</th>
+                <th className="p-4 font-semibold">Khách hàng / Dự án</th>
+                <th className="p-4 text-center font-semibold">Chi tiết</th>
+                <th className="p-4 text-right font-semibold">Giá trị</th>
+                <th className="w-36 p-4 text-center font-semibold">Trạng thái</th>
+                <th className="w-32 p-4 text-right font-semibold">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {filteredOrders.length === 0 ? (
-                 <tr><td colSpan={6} className="p-8 text-center text-gray-500">Chưa có đơn hàng nào.</td></tr>
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-gray-500">
+                    Chưa có đơn hàng nào.
+                  </td>
+                </tr>
               ) : (
-                filteredOrders.map((order) => (
-                  <tr key={order.madh} className="hover:bg-white/2 transition-colors group cursor-pointer">
-                    <td className="p-4 text-sm font-bold text-orange-400 font-mono"><Link href={`/admin/don-hang/${order.madh}`}>DH-{order.madh}</Link></td>
-                    <td className="p-4">
-                      <p className="text-sm font-bold text-gray-200">{order.khachhang?.hoten || "Không tên"}</p>
-                      <p className="text-xs text-gray-500 mt-1">Lập ngày: {new Date(order.ngaytao).toLocaleDateString("vi-VN")}</p>
-                    </td>
-                    <td className="p-4 text-center text-sm text-gray-300 font-medium">
-                      {order.chitietdh?.length || 0} <span className="text-xs text-gray-500 font-normal">hạng mục</span>
-                    </td>
-                    <td className="p-4 text-right text-sm font-bold text-gray-200 font-mono tracking-tight">
-                      {formatCurrency(order.tonggiatri)}
-                    </td>
-                    <td className="p-4 text-center">
-                      {getStatusBadge(order.trangthai)}
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link href={`/admin/don-hang/${order.madh}`}>
-                          <button className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors" title="Xem chi tiết" aria-label="Xem chi tiết">
-                          <FileText className="w-4 h-4" />
+                filteredOrders.map((order) => {
+                  const workLink = order.trangthai === "KHAO_SAT" ? `/admin/don-hang/${order.madh}/bom` : `/admin/don-hang/${order.madh}/bao-gia`;
+                  const workTitle = order.trangthai === "KHAO_SAT" ? "Lập BOM" : "Xem báo giá";
+                  return (
+                    <tr key={order.madh} className="group cursor-pointer transition-colors hover:bg-white/[0.02]">
+                      <td className="p-4 font-mono text-sm font-bold text-orange-400">
+                        <Link href={`/admin/don-hang/${order.madh}`}>DH-{order.madh}</Link>
+                      </td>
+                      <td className="p-4">
+                        <p className="text-sm font-bold text-gray-200">{order.khachhang?.hoten || "Không tên"}</p>
+                        <p className="mt-1 text-xs text-gray-500">Lập ngày: {new Date(order.ngaytao).toLocaleDateString("vi-VN")}</p>
+                      </td>
+                      <td className="p-4 text-center text-sm font-medium text-gray-300">
+                        {order.chitietdh?.length || 0} <span className="text-xs font-normal text-gray-500">hạng mục</span>
+                      </td>
+                      <td className="p-4 text-right font-mono text-sm font-bold tracking-tight text-gray-200">{formatCurrency(order.tonggiatri)}</td>
+                      <td className="p-4 text-center">{getStatusBadge(order.trangthai)}</td>
+                      <td className="p-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link href={`/admin/don-hang/${order.madh}`}>
+                            <button className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-blue-400/10 hover:text-blue-400" title="Xem chi tiết" aria-label="Xem chi tiết">
+                              <FileText className="h-4 w-4" />
+                            </button>
+                          </Link>
+                          {["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai) && (
+                            <Link href={workLink}>
+                              <button className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-orange-400/10 hover:text-orange-400" title={workTitle} aria-label={workTitle}>
+                                <ClipboardList className="h-4 w-4" />
+                              </button>
+                            </Link>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateStatus(order.madh, order.trangthai === "DA_HUY" ? "BAO_GIA_NHAP" : "DA_HUY");
+                            }}
+                            disabled={busyId === order.madh}
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-amber-400/10 hover:text-amber-400 disabled:opacity-50"
+                            title={order.trangthai === "DA_HUY" ? "Mở lại đơn" : "Hủy đơn"}
+                            aria-label={order.trangthai === "DA_HUY" ? "Mở lại đơn" : "Hủy đơn"}
+                          >
+                            {order.trangthai === "DA_HUY" ? <RefreshCw className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
                           </button>
-                        </Link>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateStatus(order.madh, order.trangthai === "DA_HUY" ? "BAO_GIA_NHAP" : "DA_HUY");
-                          }}
-                          className="p-1.5 text-gray-400 hover:text-amber-400 hover:bg-amber-400/10 rounded-md transition-colors"
-                          title={order.trangthai === "DA_HUY" ? "Mo lai don" : "Huy don"}
-                          aria-label={order.trangthai === "DA_HUY" ? "Mo lai don" : "Huy don"}
-                        >
-                          {order.trangthai === "DA_HUY" ? <RefreshCw className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteOrder(order.madh);
-                          }}
-                          className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
-                          title="Xóa đơn hàng"
-                          aria-label="Xóa đơn hàng"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteOrder(order.madh);
+                            }}
+                            disabled={busyId === order.madh}
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-red-400/10 hover:text-red-400 disabled:opacity-50"
+                            title="Xóa đơn hàng"
+                            aria-label="Xóa đơn hàng"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         )}
       </div>
-
     </div>
   );
 }

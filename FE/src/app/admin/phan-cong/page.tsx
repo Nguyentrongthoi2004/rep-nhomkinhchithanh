@@ -100,7 +100,7 @@ export default function AdminPhanCongPage() {
         .order("mapc", { ascending: false });
 
       setWorkers((wData as Worker[]) || []);
-      setOrders((oData as unknown as Order[]) || []);
+      setOrders(((oData as unknown as Order[]) || []).filter((o) => !["KHAO_SAT", "BAO_GIA_NHAP"].includes(o.trangthai)));
       setAssignments((aData as unknown as Assignment[]) || []);
     } catch (e) {
       console.error("Lỗi tải dữ liệu phân công:", e);

@@ -17,6 +17,7 @@ type AssignmentWithBom = {
   matho: number;
   donhang: {
     madh: number;
+    trangthai: string;
     khachhang: { hoten: string } | null;
     chitietdh: BomItem[];
   } | null;
@@ -137,6 +138,7 @@ async function getAssignment(mapc: number) {
       trangthai,
       donhang:madh (
         madh,
+        trangthai,
         khachhang:makh ( hoten ),
         chitietdh (
           mactdh,
@@ -192,6 +194,9 @@ export const cuttingPlansService = {
 
   async createForAssignment(mapc: number) {
     const assignment = await getAssignment(mapc);
+    if (["KHAO_SAT", "BAO_GIA_NHAP"].includes(assignment.donhang?.trangthai as string)) {
+      throw HttpError.badRequest("Cần duyệt giá đơn hàng trước khi tạo sơ đồ cắt");
+    }
     const items = assignment.donhang?.chitietdh ?? [];
     const pieces = expandPieces(items);
     if (pieces.length === 0) throw HttpError.badRequest("Don hang khong co chi tiet cat nhom");

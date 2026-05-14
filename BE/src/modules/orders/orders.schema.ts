@@ -2,8 +2,10 @@ import { z } from "zod";
 
 export const orderStatusEnum = z.enum([
   "BAO_GIA_NHAP",
+  "DA_DUYET_GIA",
   "KHAO_SAT",
   "DA_COC",
+  "DA_THANH_TOAN",
   "DANG_GIA_CONG",
   "DANG_LAP_DAT",
   "HOAN_THANH",
@@ -25,11 +27,12 @@ export const createOrderItemSchema = z.object({
 }).superRefine((item, ctx) => {
   const hasLinearCut = item.length !== undefined;
   const hasSheetCut = item.w !== undefined && item.h !== undefined;
+  const hasManualUnitPrice = item.unitPrice !== undefined && item.unitPrice > 0;
 
-  if (!hasLinearCut && !hasSheetCut) {
+  if (!hasLinearCut && !hasSheetCut && !hasManualUnitPrice) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Each order item must provide `length` or both `w` and `h`",
+      message: "Each order item must provide `length`, both `w` and `h`, or a manual unit price",
     });
   }
 });
@@ -50,10 +53,17 @@ export const updateOrderSchema = z.object({
   items: z.array(createOrderItemSchema).default([]),
 });
 
+export const updateOrderCustomerSchema = z.object({
+  customer: z.string().trim().min(1).max(100),
+  phone: z.string().trim().min(1).max(15),
+  address: z.string().trim().max(255).nullable().optional(),
+});
+
 export const updateOrderStatusSchema = z.object({
   trangthai: orderStatusEnum,
 });
 
 export type CreateOrderDto = z.infer<typeof createOrderSchema>;
 export type UpdateOrderDto = z.infer<typeof updateOrderSchema>;
+export type UpdateOrderCustomerDto = z.infer<typeof updateOrderCustomerSchema>;
 export type UpdateOrderStatusDto = z.infer<typeof updateOrderStatusSchema>;

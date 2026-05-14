@@ -66,7 +66,7 @@ export default function SanXuatPage() {
 
   const pendingOrders = useMemo(() => {
     // các đơn chưa hoàn thành/huỷ để phân công
-    const blocked = new Set(["HOAN_THANH", "DA_HUY"]);
+    const blocked = new Set(["KHAO_SAT", "BAO_GIA_NHAP", "HOAN_THANH", "DA_HUY"]);
     return orders.filter((o) => !blocked.has(o.trangthai));
   }, [orders]);
 

@@ -40,6 +40,18 @@ export const assignmentsService = {
   },
 
   async create(dto: CreateAssignmentDto) {
+    const { data: order, error: orderErr } = await supabaseAdmin
+      .from("donhang")
+      .select("madh, trangthai")
+      .eq("madh", dto.madh)
+      .maybeSingle();
+    if (orderErr) throw HttpError.internal(orderErr.message);
+    if (!order) throw HttpError.notFound("Không tìm thấy đơn hàng");
+    if (["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai as string)) {
+      throw HttpError.badRequest("Cần duyệt giá đơn hàng trước khi phân công thợ");
+    }
+    if (order.trangthai === "DA_HUY") throw HttpError.badRequest("Không thể phân công đơn đã hủy");
+
     const { data: worker, error: workerErr } = await supabaseAdmin
       .from("nguoidung")
       .select("mand, vaitro, trangthai")

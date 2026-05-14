@@ -2,6 +2,7 @@ import { HttpError } from "@/lib/http";
 import { generatePassword, toAuthEmail } from "@/lib/identity";
 import { sendAccessApprovedEmail } from "@/lib/mailer";
 import { supabaseAdmin } from "@/lib/supabase";
+import { notificationsService } from "@/modules/notifications/notifications.service";
 import type {
   CreateAccessRequestDto,
   UpdateAccessRequestDto,
@@ -55,6 +56,19 @@ export const accessRequestsService = {
       }
       throw HttpError.internal(error.message);
     }
+    void notificationsService
+      .createForAdmins({
+        title: "Yêu cầu cấp quyền mới",
+        body: `${dto.hoten} vừa gửi yêu cầu cấp quyền ${dto.vaitro}.`,
+        type: "he_thong",
+        href: "/admin/yeu-cau-cap-quyen",
+        data: {
+          doi_tuong: "yeucaucapquyen",
+          ma_doi_tuong: data.mayc,
+        },
+      })
+      .catch(() => null);
+
     return data;
   },
 

@@ -36,3 +36,17 @@ export const sendQuoteEmailSchema = z.object({
 
 export type SendQuoteEmailDto = z.infer<typeof sendQuoteEmailSchema>;
 
+export const sendPaymentReceiptEmailSchema = z.object({
+  madh: z.number().int().positive(),
+  email: z.string().email(),
+  customer: z.string().min(1),
+  phone: z.string().optional().nullable(),
+  transactionType: z.string().min(1),
+  paymentMethod: z.string().min(1),
+  amount: z.number().positive(),
+  paidTotal: z.number().nonnegative(),
+  remainingDebt: z.number().nonnegative(),
+  note: z.string().trim().max(500).optional().nullable(),
+});
+
+export type SendPaymentReceiptEmailDto = z.infer<typeof sendPaymentReceiptEmailSchema>;

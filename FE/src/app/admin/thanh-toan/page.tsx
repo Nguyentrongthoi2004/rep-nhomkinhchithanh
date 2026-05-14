@@ -27,6 +27,23 @@ type OrderPayment = {
 };
 
 const money = (value: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
+const moneyPlain = (value: number) => `${new Intl.NumberFormat("vi-VN").format(value || 0)} đ`;
+
+function parseCurrencyInput(raw: string): { value: number; valid: boolean } {
+  const text = raw.trim();
+  if (!text) return { value: 0, valid: true };
+  if (/[^0-9.,\s]/.test(text)) return { value: 0, valid: false };
+  const normalized = text.replace(/[.,\s]/g, "");
+  if (!normalized) return { value: 0, valid: true };
+  const value = Number(normalized);
+  return { value, valid: Number.isSafeInteger(value) && value >= 0 };
+}
+
+function formatCurrencyInput(raw: string): string {
+  const parsed = parseCurrencyInput(raw);
+  if (!parsed.valid || parsed.value <= 0) return raw;
+  return new Intl.NumberFormat("vi-VN").format(parsed.value);
+}
 
 function formatTransactionType(code: string): string {
   switch (code) {
@@ -60,14 +77,22 @@ export default function PaymentsPage() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ madh: 0, loaigd: "DAT_COC", phuongthuc: "TIEN_MAT", sotien: 0, ghichu: "" });
+  const [form, setForm] = useState({ madh: 0, loaigd: "DAT_COC", phuongthuc: "TIEN_MAT", ghichu: "" });
+  const [amountInput, setAmountInput] = useState("");
+  const [receiptEmail, setReceiptEmail] = useState("");
+  const [notice, setNotice] = useState<{ type: "ok" | "warn"; text: string } | null>(null);
+
+  const updateAmountInput = (raw: string) => {
+    setAmountInput(formatCurrencyInput(raw));
+  };
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiData<OrderPayment[]>("/api/admin/payments");
       setRows(data);
-      setForm((p) => ({ ...p, madh: p.madh || data[0]?.madh || 0 }));
+      const firstPayable = data.find((row) => !["KHAO_SAT", "BAO_GIA_NHAP"].includes(row.trangthai)) ?? data[0];
+      setForm((p) => ({ ...p, madh: p.madh || firstPayable?.madh || 0 }));
     } finally {
       setLoading(false);
     }
@@ -83,28 +108,92 @@ export default function PaymentsPage() {
     return rows.filter((row) => `DH-${row.madh} ${row.khachhang?.hoten || ""} ${row.khachhang?.sdt || ""}`.toLowerCase().includes(q));
   }, [rows, search]);
 
-  const totals = useMemo(() => ({
-    revenue: rows.reduce((sum, row) => sum + row.tonggiatri, 0),
-    paid: rows.reduce((sum, row) => sum + row.dathanhtoan, 0),
-    debt: rows.reduce((sum, row) => sum + row.conno, 0),
-  }), [rows]);
+  const totals = useMemo(
+    () => ({
+      revenue: rows.reduce((sum, row) => sum + row.tonggiatri, 0),
+      paid: rows.reduce((sum, row) => sum + row.dathanhtoan, 0),
+      debt: rows.reduce((sum, row) => sum + row.conno, 0),
+    }),
+    [rows],
+  );
+
+  const selectedOrder = useMemo(() => rows.find((row) => row.madh === form.madh) ?? null, [form.madh, rows]);
+  const parsedAmount = useMemo(() => parseCurrencyInput(amountInput), [amountInput]);
+  const clearsDebt = useMemo(
+    () =>
+      form.loaigd !== "HUY_DON" &&
+      !!selectedOrder &&
+      selectedOrder.conno > 0 &&
+      parsedAmount.valid &&
+      parsedAmount.value >= selectedOrder.conno,
+    [form.loaigd, parsedAmount, selectedOrder],
+  );
+  const effectiveTransactionType = clearsDebt ? "HOAN_TAT" : form.loaigd;
+  const amountError = useMemo(() => {
+    if (!parsedAmount.valid) return "Số tiền chỉ được nhập chữ số, dấu chấm hoặc dấu phẩy.";
+    if (parsedAmount.value <= 0) return "Số tiền phải lớn hơn 0.";
+    if (selectedOrder && ["KHAO_SAT", "BAO_GIA_NHAP"].includes(selectedOrder.trangthai)) return "Đơn hàng cần được duyệt giá trước khi ghi nhận thanh toán.";
+    if (form.loaigd !== "HUY_DON" && selectedOrder && parsedAmount.value > selectedOrder.conno) {
+      return `Số tiền vượt quá công nợ còn lại (${money(selectedOrder.conno)}).`;
+    }
+    return "";
+  }, [form.loaigd, parsedAmount, selectedOrder]);
+
+  const receiptEmailTrimmed = receiptEmail.trim();
+  const receiptEmailError =
+    receiptEmailTrimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiptEmailTrimmed)
+      ? "Email nhận xác nhận chưa hợp lệ."
+      : "";
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.madh || form.sotien <= 0) return;
+    if (!form.madh || amountError || receiptEmailError) return;
     setSaving(true);
+    setNotice(null);
     try {
       await apiJson("/api/admin/payments", {
         method: "POST",
-        body: JSON.stringify({ ...form, ghichu: form.ghichu.trim() || null }),
+        body: JSON.stringify({ ...form, sotien: parsedAmount.value, ghichu: form.ghichu.trim() || null }),
       });
+      let emailMsg = "";
+      if (receiptEmailTrimmed && selectedOrder) {
+        try {
+          await apiJson("/api/admin/emails/send-payment-receipt", {
+            method: "POST",
+            body: JSON.stringify({
+              madh: selectedOrder.madh,
+              email: receiptEmailTrimmed,
+              customer: selectedOrder.khachhang?.hoten || `DH-${selectedOrder.madh}`,
+              phone: selectedOrder.khachhang?.sdt || null,
+              transactionType: formatTransactionType(effectiveTransactionType),
+              paymentMethod: formatPaymentMethod(form.phuongthuc),
+              amount: parsedAmount.value,
+              paidTotal: selectedOrder.dathanhtoan + parsedAmount.value,
+              remainingDebt: Math.max(0, selectedOrder.conno - parsedAmount.value),
+              note: form.ghichu.trim() || null,
+            }),
+          });
+          emailMsg = ` Email xác nhận đã gửi tới ${receiptEmailTrimmed}.`;
+        } catch (mailErr: unknown) {
+          emailMsg = ` Giao dịch đã lưu nhưng gửi email lỗi: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}.`;
+        }
+      }
       setOpen(false);
+      setAmountInput("");
+      setReceiptEmail("");
+      setForm((p) => ({ ...p, ghichu: "" }));
+      setNotice({ type: emailMsg.includes("lỗi") ? "warn" : "ok", text: `Đã ghi nhận thanh toán DH-${form.madh}.${emailMsg}` });
       reload();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
+  };
+
+  const fillRemainingDebt = () => {
+    if (!selectedOrder || selectedOrder.conno <= 0) return;
+    setAmountInput(formatCurrencyInput(String(selectedOrder.conno)));
   };
 
   return (
@@ -137,9 +226,23 @@ export default function PaymentsPage() {
         />
       </div>
 
+      {notice && (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+            notice.type === "ok"
+              ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
+              : "border-amber-500/25 bg-amber-500/10 text-amber-200"
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
+
       <div className="bg-[#0a0a0c] border border-white/5 rounded-2xl overflow-hidden">
         {loading ? (
-          <div className="py-16 flex justify-center text-gray-400"><Loader2 className="w-8 h-8 animate-spin" /></div>
+          <div className="py-16 flex justify-center text-gray-400">
+            <Loader2 className="w-8 h-8 animate-spin" />
+          </div>
         ) : (
           <table className="w-full text-left">
             <thead className="bg-white/5 text-[11px] uppercase text-gray-400">
@@ -169,14 +272,27 @@ export default function PaymentsPage() {
                     <td className="p-4 text-right font-mono text-emerald-300">{money(row.dathanhtoan)}</td>
                     <td className="p-4 text-right font-mono text-amber-300">{money(row.conno)}</td>
                     <td className="p-4 text-sm text-gray-400">
-                      {latest
-                        ? `${formatTransactionType(latest.loaigd)} · ${formatPaymentMethod(latest.phuongthuc)} · ${money(latest.sotien)} · ${new Date(latest.ngaygd).toLocaleDateString("vi-VN")}`
-                        : "Chưa có"}
+                      {latest ? (
+                        <div className="space-y-1">
+                          <div>
+                            {formatTransactionType(latest.loaigd)} · {formatPaymentMethod(latest.phuongthuc)} · {money(latest.sotien)} · {new Date(latest.ngaygd).toLocaleDateString("vi-VN")}
+                          </div>
+                          {latest.ghichu && <div className="text-xs text-gray-500 line-clamp-2">Ghi chú: {latest.ghichu}</div>}
+                        </div>
+                      ) : (
+                        "Chưa có"
+                      )}
                     </td>
                   </tr>
                 );
               })}
-              {filtered.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-500">Không có dữ liệu thanh toán.</td></tr>}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-gray-500">
+                    Không có dữ liệu thanh toán.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         )}
@@ -186,12 +302,21 @@ export default function PaymentsPage() {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-[#121214] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
             <div className="px-6 py-5 bg-[#0a0a0c] border-b border-white/5 flex items-center justify-between">
-              <h2 className="font-bold text-white flex items-center"><ReceiptText className="w-5 h-5 mr-2 text-emerald-300" /> Ghi nhận thanh toán</h2>
-              <button onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-white" title="Đóng" aria-label="Đóng"><X className="w-5 h-5" /></button>
+              <h2 className="font-bold text-white flex items-center">
+                <ReceiptText className="w-5 h-5 mr-2 text-emerald-300" /> Ghi nhận thanh toán
+              </h2>
+              <button onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-white" title="Đóng" aria-label="Đóng">
+                <X className="w-5 h-5" />
+              </button>
             </div>
             <form onSubmit={submit} className="p-6 space-y-4">
               <Select label="Đơn hàng" value={String(form.madh)} onChange={(v) => setForm((p) => ({ ...p, madh: Number(v) }))}>
-                {rows.map((row) => <option key={row.madh} value={row.madh}>DH-{row.madh} — {row.khachhang?.hoten || "Khách lẻ"} — còn {money(row.conno)}</option>)}
+                {rows.map((row) => (
+                  <option key={row.madh} value={row.madh} disabled={["KHAO_SAT", "BAO_GIA_NHAP"].includes(row.trangthai)}>
+                    DH-{row.madh} - {row.khachhang?.hoten || "Khách lẻ"} - còn {money(row.conno)}
+                    {["KHAO_SAT", "BAO_GIA_NHAP"].includes(row.trangthai) ? " - cần duyệt giá" : ""}
+                  </option>
+                ))}
               </Select>
               <Select label="Loại giao dịch" value={form.loaigd} onChange={(v) => setForm((p) => ({ ...p, loaigd: v }))}>
                 <option value="DAT_COC">Đặt cọc</option>
@@ -205,15 +330,66 @@ export default function PaymentsPage() {
               </Select>
               <label className="block space-y-2">
                 <span className="text-sm text-gray-400">Số tiền</span>
-                <input type="number" min={1} value={form.sotien || ""} onChange={(e) => setForm((p) => ({ ...p, sotien: Number(e.target.value) }))} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-100 outline-none focus:border-emerald-500" required />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={amountInput}
+                  onChange={(e) => updateAmountInput(e.target.value)}
+                  placeholder="VD: 7.858.808"
+                  className={`w-full bg-[#0a0a0c] border rounded-lg px-4 py-2.5 text-gray-100 outline-none focus:border-emerald-500 font-mono text-base ${
+                    amountError ? "border-red-500/40" : "border-white/10"
+                  }`}
+                  required
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <div className={`text-sm font-semibold ${amountError ? "text-red-300" : "text-emerald-300"}`}>
+                    {amountError || `Số tiền sẽ ghi nhận: ${moneyPlain(parsedAmount.value)}`}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fillRemainingDebt}
+                    disabled={!selectedOrder || ["KHAO_SAT", "BAO_GIA_NHAP"].includes(selectedOrder.trangthai) || selectedOrder.conno <= 0}
+                    className="shrink-0 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40 disabled:hover:bg-emerald-500/10"
+                  >
+                    Thanh toán đủ số còn nợ
+                  </button>
+                </div>
+                {clearsDebt && !amountError && (
+                  <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200">
+                    Thanh toán đủ công nợ, giao dịch sẽ được lưu là Hoàn tất.
+                  </div>
+                )}
               </label>
               <label className="block space-y-2">
                 <span className="text-sm text-gray-400">Ghi chú</span>
-                <input value={form.ghichu} onChange={(e) => setForm((p) => ({ ...p, ghichu: e.target.value }))} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-100 outline-none focus:border-emerald-500" />
+                <input
+                  value={form.ghichu}
+                  onChange={(e) => setForm((p) => ({ ...p, ghichu: e.target.value }))}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-100 outline-none focus:border-emerald-500"
+                />
+              </label>
+              <label className="block space-y-2">
+                <span className="text-sm text-gray-400">Email nhận xác nhận thanh toán</span>
+                <input
+                  value={receiptEmail}
+                  onChange={(e) => setReceiptEmail(e.target.value)}
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="tenkhach@example.com"
+                  className={`w-full bg-[#0a0a0c] border rounded-lg px-4 py-2.5 text-gray-100 outline-none focus:border-emerald-500 ${
+                    receiptEmailError ? "border-red-500/40" : "border-white/10"
+                  }`}
+                />
+                <div className={`text-xs ${receiptEmailError ? "text-red-300" : "text-gray-500"}`}>
+                  {receiptEmailError || "Nếu để trống, hệ thống chỉ ghi nhận thanh toán và không gửi email."}
+                </div>
               </label>
               <div className="pt-3 flex justify-end gap-3">
-                <button type="button" onClick={() => setOpen(false)} className="px-5 py-2.5 rounded-lg border border-white/10 text-gray-300">Hủy</button>
-                <button disabled={saving} className="px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center">
+                <button type="button" onClick={() => setOpen(false)} className="px-5 py-2.5 rounded-lg border border-white/10 text-gray-300">
+                  Hủy
+                </button>
+                <button disabled={saving || !!amountError || !!receiptEmailError} className="px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center disabled:opacity-60">
                   {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Lưu
                 </button>
               </div>

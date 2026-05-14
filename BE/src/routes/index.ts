@@ -63,5 +63,6 @@ apiRouter.use("/admin/users", usersRouter);
 
 // Worker
 apiRouter.use("/worker/cutting-plans", workerCuttingPlansRouter);
+apiRouter.use("/worker/notifications", notificationsRouter);
 apiRouter.use("/worker/raw-stock", workerRawStockRouter);
 apiRouter.use("/worker/tasks", workerTasksRouter);

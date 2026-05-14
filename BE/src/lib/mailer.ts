@@ -227,6 +227,91 @@ export async function sendQuoteEmail(input: {
   return { messageId: String(info.messageId), previewUrl: null };
 }
 
+export async function sendPaymentReceiptEmail(input: {
+  madh: number;
+  email: string;
+  customer: string;
+  phone?: string | null;
+  transactionType: string;
+  paymentMethod: string;
+  amount: number;
+  paidTotal: number;
+  remainingDebt: number;
+  note?: string | null;
+}): Promise<SendMailResult> {
+  const transporter = await createTransporter();
+
+  const money = (value: number) => `${Number(value || 0).toLocaleString("vi-VN")} VNĐ`;
+  const orderId = `DH-${input.madh}`;
+  const paymentDate = new Date().toLocaleString("vi-VN");
+  const noteHtml = input.note
+    ? `<tr>
+        <td style="padding:10px 0;color:#6b7280;font-size:14px;">Ghi chú:</td>
+        <td style="padding:10px 0;color:#111827;font-size:14px;font-weight:600;">${escapeHtml(input.note)}</td>
+      </tr>`
+    : "";
+
+  const html = `
+    <div style="font-family: Segoe UI, Arial, sans-serif; max-width: 680px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background:#fff;">
+      <div style="background:#064e3b; color:#fff; padding:22px 26px;">
+        <div style="font-weight:900; font-size:20px;">MiniERP Nhôm Kính Chí Thành</div>
+        <div style="opacity:0.9; margin-top:4px;">Xác nhận thanh toán ${escapeHtml(orderId)}</div>
+      </div>
+      <div style="padding:24px 26px; color:#111827;">
+        <p style="margin:0 0 14px 0;">Xin chào <b>${escapeHtml(input.customer)}</b>,</p>
+        <p style="margin:0 0 18px 0; color:#374151;">Hệ thống đã ghi nhận giao dịch thanh toán của quý khách với thông tin dưới đây.</p>
+        <table style="width:100%; border-collapse:collapse; background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:12px;">
+          <tr>
+            <td style="padding:10px 0;color:#6b7280;font-size:14px;width:42%;">Mã đơn hàng:</td>
+            <td style="padding:10px 0;color:#111827;font-size:14px;font-weight:700;">${escapeHtml(orderId)}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;color:#6b7280;font-size:14px;">Khách hàng:</td>
+            <td style="padding:10px 0;color:#111827;font-size:14px;font-weight:600;">${escapeHtml(input.customer)}${input.phone ? ` - ${escapeHtml(input.phone)}` : ""}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;color:#6b7280;font-size:14px;">Loại giao dịch:</td>
+            <td style="padding:10px 0;color:#111827;font-size:14px;font-weight:600;">${escapeHtml(input.transactionType)}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;color:#6b7280;font-size:14px;">Phương thức:</td>
+            <td style="padding:10px 0;color:#111827;font-size:14px;font-weight:600;">${escapeHtml(input.paymentMethod)}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;color:#6b7280;font-size:14px;">Số tiền vừa ghi nhận:</td>
+            <td style="padding:10px 0;color:#059669;font-size:18px;font-weight:900;">${escapeHtml(money(input.amount))}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;color:#6b7280;font-size:14px;">Tổng đã thanh toán:</td>
+            <td style="padding:10px 0;color:#111827;font-size:14px;font-weight:700;">${escapeHtml(money(input.paidTotal))}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;color:#6b7280;font-size:14px;">Còn nợ:</td>
+            <td style="padding:10px 0;color:#b45309;font-size:14px;font-weight:700;">${escapeHtml(money(input.remainingDebt))}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;color:#6b7280;font-size:14px;">Thời gian xác nhận:</td>
+            <td style="padding:10px 0;color:#111827;font-size:14px;font-weight:600;">${escapeHtml(paymentDate)}</td>
+          </tr>
+          ${noteHtml}
+        </table>
+      </div>
+      <div style="background:#f3f4f6; color:#6b7280; padding:14px 26px; font-size:12px;">
+        Đây là email tự động từ hệ thống MiniERP. Vui lòng liên hệ cửa hàng nếu thông tin thanh toán cần được điều chỉnh.
+      </div>
+    </div>
+  `;
+
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || '"MiniERP NhomKinh" <no-reply@minierp.local>',
+    to: input.email,
+    subject: `Xác nhận thanh toán ${orderId}`,
+    html,
+  });
+
+  return { messageId: String(info.messageId), previewUrl: null };
+}
+
 function escapeHtml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
@@ -235,4 +320,3 @@ function escapeHtml(s: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-

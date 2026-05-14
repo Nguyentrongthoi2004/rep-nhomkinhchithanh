@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, Edit3, Loader2, Mail, ReceiptText, X } from "lucide-react";
-import { apiData, apiJson } from "@/lib/api";
+import { ArrowLeft, ClipboardList, Edit3, FileText, ListChecks, Loader2, ReceiptText } from "lucide-react";
+import { apiData } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
 
 type OrderDetail = {
   madh: number;
   ngaytao: string;
   trangthai: string;
+  baogia_gui_luc: string | null;
+  baogia_email: string | null;
   tonggiatri: number;
   khachhang: { makh: number; hoten: string; sdt: string; diachi: string | null } | null;
   chitietdh: Array<{
@@ -25,43 +27,6 @@ type OrderDetail = {
   }>;
 };
 
-/** Gộp BOM đơn hàng thành payload email (phôi nhôm vs kính theo ĐVT / tên / kích mm trong mô tả). */
-function buildQuoteBomFromLines(
-  lines: OrderDetail["chitietdh"],
-): { sqm: number; phoiNhom: Array<{ code: string; name: string; length: number; qty: number }>; kinh: Array<{ name: string; w: number; h: number; qty: number }> } {
-  const dimInMota = /\((\d+)\s*x\s*(\d+)\s*mm\)/i;
-  const phoiNhom: Array<{ code: string; name: string; length: number; qty: number }> = [];
-  const kinh: Array<{ name: string; w: number; h: number; qty: number }> = [];
-  let sqm = 0;
-
-  for (const it of lines) {
-    const dvt = (it.vattu?.donvitinh ?? "").toLowerCase().trim();
-    const name = (it.mota ?? it.vattu?.tenvt ?? "—").trim() || "—";
-    const dim = name.match(dimInMota);
-    const glassByUnit = dvt === "m2" || dvt === "m²" || /\bm2\b/i.test(dvt);
-    const glassByName = /kinh/i.test(name);
-    const isGlass = glassByUnit || glassByName || !!dim;
-
-    if (isGlass) {
-      const w = dim ? Number(dim[1]) : 0;
-      const h = dim ? Number(dim[2]) : 0;
-      kinh.push({ name, w, h, qty: it.soluong });
-      if (w > 0 && h > 0) {
-        sqm += (w / 1000) * (h / 1000) * it.soluong;
-      }
-    } else {
-      phoiNhom.push({
-        code: `VT-${it.mavt}`,
-        name,
-        length: it.chieudaicat ?? 0,
-        qty: it.soluong,
-      });
-    }
-  }
-
-  return { sqm, phoiNhom, kinh };
-}
-
 const money = (value: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
 
 export default function AdminOrderDetailPage() {
@@ -72,11 +37,6 @@ export default function AdminOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [order, setOrder] = useState<OrderDetail | null>(null);
-  const [emailOpen, setEmailOpen] = useState(false);
-  const [emailTo, setEmailTo] = useState("");
-  const [emailLoading, setEmailLoading] = useState(false);
-  const [emailResult, setEmailResult] = useState<{ ok: boolean; previewUrl: string | null; messageId: string } | null>(null);
-  const [emailErr, setEmailErr] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,110 +55,119 @@ export default function AdminOrderDetailPage() {
     load();
   }, [id, load]);
 
-  const totalLines = useMemo(() => order?.chitietdh?.length ?? 0, [order]);
-
-  /** Tổng thành tiền các dòng BOM (chỉ vật tư); chênh với `tonggiatri` thường là nhân công + %LN lúc lưu báo giá. */
-  const bomSumMaterial = useMemo(
-    () => (order?.chitietdh ?? []).reduce((s, it) => s + Number(it.thanhtien ?? 0), 0),
-    [order],
-  );
-  const quoteGapRounded = order ? Math.round(Number(order.tonggiatri) - bomSumMaterial) : 0;
-  const showQuoteGapFoot = Math.abs(quoteGapRounded) > 10;
+  const bomSumMaterial = useMemo(() => (order?.chitietdh ?? []).reduce((s, it) => s + Number(it.thanhtien ?? 0), 0), [order]);
+  const quoteGap = order ? Math.round(Number(order.tonggiatri) - bomSumMaterial) : 0;
+  const hasBom = (order?.chitietdh?.length ?? 0) > 0;
+  const isApproved = order ? !["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai) : false;
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="bg-[#0a0a0c] border border-white/5 rounded-2xl p-6 flex items-center justify-between">
+      <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-[#0a0a0c] p-6">
         <div className="flex items-center">
           <button
             type="button"
-            onClick={() => (window.history.length > 1 ? router.back() : router.push("/admin/don-hang"))}
-            className="p-2 hover:bg-white/10 rounded-lg mr-4 text-gray-400"
-            title="Quay lại"
-            aria-label="Quay lại"
+            onClick={() => router.push("/admin/don-hang")}
+            className="mr-4 rounded-lg p-2 text-gray-400 hover:bg-white/10"
+            title="Quay lại danh sách"
+            aria-label="Quay lại danh sách"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-100 flex items-center">
-              <ReceiptText className="w-6 h-6 mr-3 text-orange-400" /> Chi tiết đơn hàng DH-{id}
+            <h1 className="flex items-center text-2xl font-bold text-gray-100">
+              <ReceiptText className="mr-3 h-6 w-6 text-orange-400" />
+              Chi tiết đơn hàng DH-{id}
             </h1>
-            <p className="text-sm text-gray-400 mt-1">Xem BOM và thông tin khách hàng.</p>
+            <p className="mt-1 text-sm text-gray-400">Thông tin khách hàng, BOM và trạng thái xử lý đơn hàng.</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href={`/admin/don-hang/${id}/edit`}
-            className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-200 px-4 py-2.5 rounded-lg font-bold flex items-center"
-            title="Chỉnh sửa đơn hàng"
-            aria-label="Chỉnh sửa đơn hàng"
-          >
-            <Edit3 className="w-4 h-4 mr-2" />
-            Sửa đơn
-          </Link>
-          <Link href="/admin/don-hang/create" className="text-sm text-gray-300 hover:text-white underline underline-offset-4">
-            Tạo đơn mới
-          </Link>
-        </div>
+
+        {order && (
+          <div className="flex items-center gap-3">
+            {isApproved && (
+              <Link href="/admin/don-hang" className="flex items-center rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 font-bold text-gray-200 hover:bg-white/10">
+                <ListChecks className="mr-2 h-4 w-4" />
+                Về quản lý đơn hàng
+              </Link>
+            )}
+            {!isApproved && (
+              <Link href={`/admin/don-hang/${id}/bom`} className="flex items-center rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 font-bold text-gray-200 hover:bg-white/10">
+                <Edit3 className="mr-2 h-4 w-4" />
+                Sửa BOM
+              </Link>
+            )}
+            {hasBom && (
+              <Link href={`/admin/don-hang/${id}/bao-gia`} className="flex items-center rounded-lg bg-orange-600 px-4 py-2.5 font-bold text-white hover:bg-orange-500">
+                <FileText className="mr-2 h-4 w-4" />
+                Xem báo giá
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       {loading ? (
         <div className="flex justify-center py-16 text-gray-400">
-          <Loader2 className="w-8 h-8 animate-spin" />
+          <Loader2 className="h-8 w-8 animate-spin" />
         </div>
       ) : errorMsg ? (
-        <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 text-sm">{errorMsg}</div>
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">{errorMsg}</div>
       ) : !order ? (
         <div className="p-6 text-gray-400">Không tìm thấy đơn hàng.</div>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-          <section className="xl:col-span-5 bg-[#0a0a0c] border border-white/5 rounded-2xl p-6">
-            <div className="text-xs uppercase tracking-wider text-gray-500">KHÁCH HÀNG</div>
-            <div className="mt-2 text-lg font-bold text-gray-100">{order.khachhang?.hoten || "—"}</div>
-            <div className="mt-1 text-sm text-gray-400">{order.khachhang?.sdt || "—"}</div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+          <section className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-6 xl:col-span-5">
+            <div className="text-xs uppercase tracking-wider text-gray-500">Khách hàng</div>
+            <div className="mt-2 text-lg font-bold text-gray-100">{order.khachhang?.hoten || "Không tên"}</div>
+            <div className="mt-1 text-sm text-gray-400">{order.khachhang?.sdt || "Chưa có số điện thoại"}</div>
             {order.khachhang?.diachi && <div className="mt-1 text-sm text-gray-500">{order.khachhang.diachi}</div>}
 
-            <div className="mt-6 border-t border-white/5 pt-4 space-y-2 text-sm">
+            <div className="mt-6 space-y-2 border-t border-white/5 pt-4 text-sm">
               <Row label="Trạng thái" value={formatOrderStatus(order.trangthai)} />
               <Row label="Ngày tạo" value={new Date(order.ngaytao).toLocaleString("vi-VN")} />
-              <Row label="Số hạng mục" value={`${totalLines}`} />
+              <Row label="Số hạng mục" value={`${order.chitietdh.length}`} />
               <Row label="Tổng giá trị" value={money(order.tonggiatri)} strong />
             </div>
 
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setEmailResult(null);
-                  setEmailErr("");
-                  setEmailTo("");
-                  setEmailOpen(true);
-                }}
-                className="w-full rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-60 text-white font-bold py-2.5 flex items-center justify-center"
-                title="Gửi email báo giá"
-                aria-label="Gửi email báo giá"
-              >
-                <Mail className="w-4 h-4 mr-2" />
-                Gửi email báo giá
-              </button>
-            </div>
+            {!isApproved && (
+              <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-200">
+                Đơn chưa được duyệt giá. Cần gửi báo giá và khách xác nhận trước khi thanh toán, phân công hoặc tối ưu cắt.
+              </div>
+            )}
+
+            {order.baogia_gui_luc && (
+              <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+                <div className="font-bold">Báo giá đã gửi</div>
+                <div className="mt-1 text-xs text-emerald-100/80">
+                  {order.baogia_email} - {new Date(order.baogia_gui_luc).toLocaleString("vi-VN")}
+                </div>
+              </div>
+            )}
           </section>
 
-          <section className="xl:col-span-7 bg-[#0a0a0c] border border-white/5 rounded-2xl p-6">
-            <div className="text-sm font-bold text-gray-100">Bóc tách vật tư (BOM)</div>
-            <p className="text-[11px] text-gray-500 mt-1 mb-4 leading-relaxed">
-              Đơn giá / thành tiền từng dòng là phần vật tư cắt. Tổng đơn hàng còn gồm nhân công theo m² và % lợi nhuận đã nhập khi tạo báo giá (nếu có chênh, xem dòng cuối bảng).
-            </p>
-            {order.chitietdh.length === 0 ? (
-              <div className="p-10 border border-dashed border-white/10 rounded-xl text-center text-gray-500">
-                Đơn hàng chưa có BOM.
+          <section className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-6 xl:col-span-7">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-bold text-gray-100">Bóc tách vật tư (BOM)</div>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">Đơn giá từng dòng là vật tư. Phần chênh với tổng đơn thường là nhân công và lợi nhuận.</p>
               </div>
+              {!hasBom && (
+                <Link href={`/admin/don-hang/${id}/bom`} className="flex items-center rounded-lg bg-orange-600 px-3 py-2 text-sm font-bold text-white hover:bg-orange-500">
+                  <ClipboardList className="mr-2 h-4 w-4" />
+                  Lập BOM
+                </Link>
+              )}
+            </div>
+
+            {!hasBom ? (
+              <div className="mt-5 rounded-xl border border-dashed border-white/10 p-10 text-center text-gray-500">Đơn hàng chưa có BOM.</div>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-white/10">
+              <div className="mt-5 overflow-hidden rounded-xl border border-white/10">
                 <table className="w-full text-sm">
                   <thead className="bg-white/5 text-gray-400">
                     <tr>
                       <th className="p-3 text-left">Hạng mục</th>
-                      <th className="p-3 text-right">Cắt (mm)</th>
+                      <th className="p-3 text-right">Kích thước</th>
                       <th className="p-3 text-right">SL</th>
                       <th className="p-3 text-right">Đơn giá</th>
                       <th className="p-3 text-right">Thành tiền</th>
@@ -208,26 +177,23 @@ export default function AdminOrderDetailPage() {
                     {order.chitietdh.map((it) => (
                       <tr key={it.mactdh}>
                         <td className="p-3 text-gray-200">
-                          <div className="font-semibold">{it.mota || it.vattu?.tenvt || "—"}</div>
+                          <div className="font-semibold">{it.mota || it.vattu?.tenvt || "Hạng mục"}</div>
                           {it.vattu?.donvitinh && <div className="text-xs text-gray-500">{it.vattu.donvitinh}</div>}
                         </td>
-                        <td className="p-3 text-right font-mono text-gray-300">{it.chieudaicat ?? "—"}</td>
+                        <td className="p-3 text-right font-mono text-gray-300">{formatCutSize(it)}</td>
                         <td className="p-3 text-right">{it.soluong}</td>
                         <td className="p-3 text-right font-mono">{money(Number(it.dongiadongbang ?? 0))}</td>
                         <td className="p-3 text-right font-mono font-bold">{money(Number(it.thanhtien ?? 0))}</td>
                       </tr>
                     ))}
                   </tbody>
-                  {showQuoteGapFoot && (
-                    <tfoot className="bg-white/3 border-t border-white/10">
+                  {Math.abs(quoteGap) > 10 && (
+                    <tfoot className="border-t border-white/10 bg-white/[0.03]">
                       <tr>
-                        <td colSpan={3} className="p-3 text-left text-xs text-amber-200/90">
-                          {quoteGapRounded > 0
-                            ? "Nhân công & lợi nhuận (phần chênh so với tổng vật tư trên — đã gộp trong tổng đơn)"
-                            : "Chênh lệch âm (tổng dòng vượt tổng đơn — kiểm tra lại dữ liệu)"}
+                        <td colSpan={4} className="p-3 text-left text-xs text-amber-200/90">
+                          Nhân công & lợi nhuận
                         </td>
-                        <td className="p-3" />
-                        <td className="p-3 text-right font-mono font-bold text-amber-100">{money(quoteGapRounded)}</td>
+                        <td className="p-3 text-right font-mono font-bold text-amber-100">{money(quoteGap)}</td>
                       </tr>
                     </tfoot>
                   )}
@@ -237,134 +203,23 @@ export default function AdminOrderDetailPage() {
           </section>
         </div>
       )}
-
-      {emailOpen && order && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-4 pb-[80px]">
-          <div className="w-full max-w-md bg-[#12141a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
-              <div>
-                <div className="text-sm font-bold text-white">Gửi báo giá DH-{order.madh}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{order.khachhang?.hoten || "Khách hàng"}</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEmailOpen(false)}
-                className="p-2 rounded-xl hover:bg-white/5 text-gray-400"
-                title="Đóng"
-                aria-label="Đóng"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setEmailErr("");
-                setEmailResult(null);
-                const email = emailTo.trim();
-                if (!email) return;
-                setEmailLoading(true);
-                try {
-                  const json = await apiJson<{ messageId: string; previewUrl: string | null }>("/api/admin/emails/send-quote", {
-                    method: "POST",
-                    body: JSON.stringify({
-                      madh: order.madh,
-                      email,
-                      customer: order.khachhang?.hoten || `DH-${order.madh}`,
-                      phone: order.khachhang?.sdt || null,
-                      quotePrice: order.tonggiatri,
-                      bom: buildQuoteBomFromLines(order.chitietdh),
-                      doorType: null,
-                      width: null,
-                      height: null,
-                      laborCost: null,
-                      margin: null,
-                    }),
-                  });
-                  const data = json.data as { messageId: string; previewUrl: string | null };
-                  setEmailResult({ ok: true, messageId: data.messageId, previewUrl: data.previewUrl });
-                } catch (err: unknown) {
-                  setEmailErr(err instanceof Error ? err.message : String(err));
-                } finally {
-                  setEmailLoading(false);
-                }
-              }}
-              className="p-5 space-y-4"
-            >
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-300">Email nhận báo giá</label>
-                <input
-                  value={emailTo}
-                  onChange={(e) => setEmailTo(e.target.value)}
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  placeholder="tenkhach@example.com"
-                  className="w-full h-11 rounded-xl bg-[#0a0a0c] border border-white/10 px-3 text-sm text-white outline-none focus:border-sky-400/60"
-                  required
-                />
-                <div className="text-[11px] text-gray-500">
-                  Nếu bạn chưa cấu hình SMTP thật, hệ thống sẽ tạo <span className="text-gray-300 font-semibold">link preview</span> thay vì gửi vào Gmail.
-                </div>
-              </div>
-
-              {emailErr && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                  {emailErr}
-                </div>
-              )}
-
-              {emailResult?.ok && (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-                  <div className="flex items-center font-bold">
-                    <CheckCircle2 className="w-4 h-4 mr-2" /> Đã tạo yêu cầu gửi email
-                  </div>
-                  <div className="text-[11px] text-emerald-200/80 mt-1">messageId: <span className="font-mono">{emailResult.messageId}</span></div>
-                  {emailResult.previewUrl ? (
-                    <div className="text-[11px] mt-1">
-                      Preview (dev):{" "}
-                      <a className="underline underline-offset-2" href={emailResult.previewUrl} target="_blank" rel="noreferrer">
-                        mở preview
-                      </a>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-emerald-200/80 mt-1">Đã gửi qua SMTP cấu hình.</div>
-                  )}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEmailOpen(false)}
-                  className="flex-1 h-11 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200 font-bold"
-                >
-                  Đóng
-                </button>
-                <button
-                  disabled={emailLoading}
-                  className="flex-1 h-11 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-60 text-white font-bold flex items-center justify-center"
-                  type="submit"
-                >
-                  {emailLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
-                  Gửi
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
+}
+
+function formatCutSize(item: OrderDetail["chitietdh"][number]) {
+  const name = item.mota ?? "";
+  const dim = name.match(/\((\d+)\s*x\s*(\d+)\s*mm\)/i);
+  if (dim) return `${dim[1]} x ${dim[2]} mm`;
+  if (item.chieudaicat != null) return `${item.chieudaicat} mm`;
+  return "Theo SL";
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="text-gray-500">{label}</div>
-      <div className={strong ? "text-gray-100 font-bold" : "text-gray-300"}>{value}</div>
+      <div className={strong ? "font-bold text-gray-100" : "text-gray-300"}>{value}</div>
     </div>
   );
 }
-
