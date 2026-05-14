@@ -42,8 +42,8 @@ NOTIFY pgrst, 'reload schema';
 INSERT INTO thongbao (mand, tieude, noidung, daxem, ngaytao, dulieu)
 SELECT
   nd.mand,
-  'Don hang DH-' || dh.madh || ' da co trong he thong',
-  COALESCE(kh.hoten, 'Khach hang') || ' - trang thai ' || dh.trangthai,
+  'Đơn hàng DH-' || dh.madh || ' đã có trong hệ thống',
+  COALESCE(kh.hoten, 'Khách hàng') || ' - trạng thái ' || dh.trangthai,
   FALSE,
   COALESCE(dh.ngaytao, NOW()),
   jsonb_build_object(
