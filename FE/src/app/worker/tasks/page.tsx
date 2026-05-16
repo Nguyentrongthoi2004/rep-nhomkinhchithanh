@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ClipboardCheck, Loader2, Package, Play, RefreshCw, Ruler } from "lucide-react";
+import { Check, ClipboardCheck, Loader2, Package, Play, RefreshCw, Ruler, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import { apiData, apiJson } from "@/lib/api";
+
+type TaskStatus = "CHO_THUC_HIEN" | "DANG_THUC_HIEN" | "HOAN_THANH";
 
 type Task = {
   mapc: number;
   madh: number;
-  trangthai: "CHO_THUC_HIEN" | "DANG_THUC_HIEN" | "HOAN_THANH";
+  trangthai: TaskStatus;
   donhang: {
     madh: number;
     ngaytao: string;
@@ -24,7 +26,21 @@ type Task = {
   } | null;
 };
 
-type TabKey = "CHO_THUC_HIEN" | "DANG_THUC_HIEN" | "HOAN_THANH";
+type TabKey = TaskStatus;
+
+const REJECT_REASONS = [
+  { value: "DANG_BAN", label: "Đang bận việc khác" },
+  { value: "KHONG_PHU_HOP_TAY_NGHE", label: "Không phù hợp tay nghề" },
+  { value: "KHONG_THUAN_TIEN_THAO_TAC", label: "Không thuận tiện thao tác" },
+  { value: "THIEU_THONG_TIN_SO_DO_CAT", label: "Thiếu thông tin/sơ đồ cắt" },
+  { value: "LY_DO_KHAC", label: "Lý do khác" },
+] as const;
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  CHO_THUC_HIEN: "Chờ nhận",
+  DANG_THUC_HIEN: "Đang làm",
+  HOAN_THANH: "Đã xong",
+};
 
 export default function WorkerTasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -33,6 +49,9 @@ export default function WorkerTasksPage() {
   const [tab, setTab] = useState<TabKey>("CHO_THUC_HIEN");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [rejectTask, setRejectTask] = useState<Task | null>(null);
+  const [rejectReason, setRejectReason] = useState<(typeof REJECT_REASONS)[number]["value"]>("DANG_BAN");
+  const [rejectNote, setRejectNote] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,7 +75,7 @@ export default function WorkerTasksPage() {
     HOAN_THANH: tasks.filter((t) => t.trangthai === "HOAN_THANH"),
   }), [tasks]);
 
-  const updateStatus = async (mapc: number, trangthai: Task["trangthai"]) => {
+  const updateStatus = async (mapc: number, trangthai: TaskStatus) => {
     setBusyId(mapc);
     try {
       await apiJson(`/api/worker/tasks/${mapc}`, {
@@ -71,11 +90,37 @@ export default function WorkerTasksPage() {
     }
   };
 
+  const openReject = (task: Task) => {
+    setRejectTask(task);
+    setRejectReason("DANG_BAN");
+    setRejectNote("");
+  };
+
+  const submitReject = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!rejectTask) return;
+    setBusyId(rejectTask.mapc);
+    try {
+      await apiJson(`/api/worker/tasks/${rejectTask.mapc}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ lydo: rejectReason, ghichu: rejectNote }),
+      });
+      setRejectTask(null);
+      setRejectNote("");
+      setTab("CHO_THUC_HIEN");
+      await load();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const current = buckets[tab];
 
   return (
-    <div className="space-y-4 pb-6 px-5 pt-6">
-      <section className="relative overflow-hidden rounded-3xl admin-metal-panel border border-white/10 px-5 py-5">
+    <div className="mx-auto max-w-md space-y-4 px-4 pt-5 pb-28">
+      <section className="relative overflow-hidden rounded-3xl admin-metal-panel border border-white/10 px-5 py-4">
         <div className="admin-metal-shine" />
         <div className="relative z-10 flex items-start justify-between gap-3">
           <div>
@@ -112,25 +157,25 @@ export default function WorkerTasksPage() {
           </div>
         ) : (
           current.map((task) => (
-            <div key={task.mapc} className="rounded-2xl border border-white/10 bg-[#10131a]/85 p-4">
+            <div key={task.mapc} className="rounded-2xl border border-white/10 bg-[#10131a]/90 p-4 shadow-[0_12px_30px_-22px_rgba(0,0,0,0.9)]">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-mono text-slate-400 bg-black/40 px-2 py-0.5 rounded-md border border-white/5">PC-{task.mapc}</span>
                     <span className="text-[11px] font-mono text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-md border border-sky-500/20">DH-{task.donhang?.madh ?? task.madh}</span>
                   </div>
-                  <h3 className="text-slate-100 font-bold text-[15px] mt-2">{task.donhang?.khachhang?.hoten || "Khách hàng"}</h3>
-                  <p className="text-xs text-slate-500 mt-1">{task.donhang?.chitietdh?.length || 0} hạng mục BOM</p>
+                  <h3 className="text-slate-100 font-bold text-base mt-2 truncate">{task.donhang?.khachhang?.hoten || "Khách hàng"}</h3>
+                  <p className="text-xs text-slate-400 mt-1">{task.donhang?.chitietdh?.length || 0} hạng mục BOM</p>
                 </div>
-                <span className="text-[10px] uppercase font-bold px-2 py-1 rounded border bg-sky-500/15 text-sky-300 border-sky-500/30">{task.trangthai}</span>
+                <span className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border bg-sky-500/15 text-sky-300 border-sky-500/30">{STATUS_LABEL[task.trangthai]}</span>
               </div>
 
               {expanded === task.mapc && (
                 <div className="mt-4 border-t border-white/5 pt-3 space-y-2">
                   {task.donhang?.chitietdh.map((item, index) => (
-                    <div key={item.mactdh} className="text-xs text-slate-300 bg-black/20 rounded-lg px-3 py-2 flex items-center justify-between">
-                      <span>{index + 1}. {item.mota || item.vattu?.tenvt || "Chi tiết"}</span>
-                      <span className="font-mono text-sky-300 inline-flex items-center">
+                    <div key={item.mactdh} className="text-xs text-slate-300 bg-black/20 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                      <span className="min-w-0">{index + 1}. {item.mota || item.vattu?.tenvt || "Chi tiết"}</span>
+                      <span className="font-mono text-sky-300 inline-flex items-center shrink-0">
                         {item.chieudaicat && <><Ruler className="w-3 h-3 mr-1" />{item.chieudaicat}mm</>}
                         <span className="ml-2 text-slate-500">x{item.soluong}</span>
                       </span>
@@ -140,25 +185,30 @@ export default function WorkerTasksPage() {
                 </div>
               )}
 
-              <div className="mt-4 flex gap-2">
-                <button onClick={() => setExpanded(expanded === task.mapc ? null : task.mapc)} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-semibold hover:bg-white/10">
-                  <Package className="w-4 h-4 inline mr-2" /> BOM
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button onClick={() => setExpanded(expanded === task.mapc ? null : task.mapc)} className="h-12 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-bold hover:bg-white/10 flex items-center justify-center">
+                  <Package className="w-4 h-4 mr-2" /> BOM
                 </button>
                 <Link
                   href={`/worker/cat?mapc=${task.mapc}`}
-                  className="h-11 px-4 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-200 text-sm font-semibold hover:bg-amber-400/20 inline-flex items-center justify-center"
+                  className="h-12 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-200 text-sm font-bold hover:bg-amber-400/20 inline-flex items-center justify-center"
                   title="Mở sơ đồ cắt"
                   aria-label="Mở sơ đồ cắt"
                 >
                   <Ruler className="w-4 h-4 mr-2" /> Sơ đồ cắt
                 </Link>
                 {task.trangthai === "CHO_THUC_HIEN" && (
-                  <button onClick={() => updateStatus(task.mapc, "DANG_THUC_HIEN")} disabled={busyId === task.mapc} className="flex-1 h-11 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm flex items-center justify-center">
+                  <button onClick={() => updateStatus(task.mapc, "DANG_THUC_HIEN")} disabled={busyId === task.mapc} className="col-span-2 h-12 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-sm flex items-center justify-center disabled:opacity-60">
                     {busyId === task.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />} Bắt đầu
                   </button>
                 )}
                 {task.trangthai !== "HOAN_THANH" && (
-                  <button onClick={() => updateStatus(task.mapc, "HOAN_THANH")} disabled={busyId === task.mapc} className="flex-1 h-11 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center">
+                  <button onClick={() => openReject(task)} disabled={busyId === task.mapc} className="h-12 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 font-bold text-sm flex items-center justify-center disabled:opacity-60">
+                    <XCircle className="w-4 h-4 mr-2" /> Từ chối
+                  </button>
+                )}
+                {task.trangthai !== "HOAN_THANH" && (
+                  <button onClick={() => updateStatus(task.mapc, "HOAN_THANH")} disabled={busyId === task.mapc} className="h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center disabled:opacity-60">
                     {busyId === task.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Hoàn thành
                   </button>
                 )}
@@ -167,6 +217,62 @@ export default function WorkerTasksPage() {
           ))
         )}
       </div>
+
+      {rejectTask && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-3 pb-[84px] sm:items-center sm:pb-3">
+          <form onSubmit={submitReject} className="w-full max-w-md max-h-[calc(100dvh-110px)] bg-[#12141a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-white/10 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-bold text-white">Từ chối nhiệm vụ PC-{rejectTask.mapc}</h3>
+                <p className="text-xs text-slate-400 mt-1 truncate">DH-{rejectTask.donhang?.madh ?? rejectTask.madh} · {rejectTask.donhang?.khachhang?.hoten || "Khách hàng"}</p>
+              </div>
+              <button type="button" onClick={() => setRejectTask(null)} className="text-slate-400 hover:text-white" title="Đóng" aria-label="Đóng">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                Sau khi từ chối, nhiệm vụ sẽ rời khỏi danh sách việc đang nhận và Admin sẽ nhận thông báo để phân công lại.
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-300 mb-2 block" htmlFor="reject-reason">Lý do từ chối</label>
+                <select
+                  id="reject-reason"
+                  value={rejectReason}
+                  onChange={(event) => setRejectReason(event.target.value as typeof rejectReason)}
+                  className="h-12 w-full bg-[#030508] border border-white/10 rounded-xl px-3 text-sm text-white outline-none focus:border-red-400"
+                >
+                  {REJECT_REASONS.map((reason) => (
+                    <option key={reason.value} value={reason.value}>{reason.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-300 mb-2 block" htmlFor="reject-note">Ghi chú thêm</label>
+                <textarea
+                  id="reject-note"
+                  value={rejectNote}
+                  onChange={(event) => setRejectNote(event.target.value)}
+                  rows={3}
+                  className="w-full bg-[#030508] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-red-400 resize-none"
+                  placeholder="Ví dụ: đang kẹt việc ở đơn khác, thiếu bản vẽ chi tiết..."
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-white/10 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setRejectTask(null)} className="h-12 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 font-bold">
+                Hủy
+              </button>
+              <button disabled={busyId === rejectTask.mapc} className="h-12 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold flex items-center justify-center disabled:opacity-60">
+                {busyId === rejectTask.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
+                Xác nhận
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -176,7 +282,7 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold border transition-colors ${
+      className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl text-[12px] font-bold border transition-colors ${
         active ? "bg-sky-500/15 text-sky-200 border-sky-500/40" : "border-transparent text-slate-400 hover:bg-white/5"
       }`}
     >

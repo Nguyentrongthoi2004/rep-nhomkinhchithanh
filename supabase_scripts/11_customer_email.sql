@@ -1,0 +1,2 @@
+ALTER TABLE khachhang
+  ADD COLUMN IF NOT EXISTS email TEXT NULL;

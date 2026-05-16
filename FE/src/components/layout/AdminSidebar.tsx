@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Archive,
+  AlertTriangle,
   Box,
   ClipboardList,
   Contact,
@@ -28,6 +29,7 @@ export const NAV_ITEMS = [
   { name: "Vật tư", href: "/admin/vat-tu", icon: Box },
   { name: "Kho phôi", href: "/admin/kho-phoi", icon: Archive },
   { name: "Tối ưu cắt", href: "/admin/toi-uu-cat", icon: Scissors },
+  { name: "Sự cố phôi", href: "/admin/su-co", icon: AlertTriangle },
   { name: "Nhân sự", href: "/admin/nhan-su", icon: Users },
   { name: "Yêu cầu cấp quyền", href: "/admin/yeu-cau-cap-quyen", icon: Shield },
   { name: "Cấu hình", href: "/admin/cau-hinh", icon: Settings },

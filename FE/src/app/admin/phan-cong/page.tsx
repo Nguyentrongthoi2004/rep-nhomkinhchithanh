@@ -37,6 +37,8 @@ interface Assignment {
   madh: number;
   matho: number;
   trangthai: string;
+  lydotuchoi: string | null;
+  tuchoiluc: string | null;
   donhang: {
     madh: number;
     khachhang: { hoten: string } | null;
@@ -49,6 +51,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   CHO_THUC_HIEN: { label: "Chờ Nhận", color: "bg-gray-500/20 text-gray-400 border-gray-500/20" },
   DANG_THUC_HIEN: { label: "Đang Làm", color: "bg-blue-500/20 text-blue-400 border-blue-500/20" },
   HOAN_THANH: { label: "Đã Xong", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/20" },
+  TU_CHOI: { label: "Từ Chối", color: "bg-red-500/20 text-red-300 border-red-500/25" },
 };
 
 export default function AdminPhanCongPage() {
@@ -93,7 +96,7 @@ export default function AdminPhanCongPage() {
       const { data: aData } = await supabase
         .from("phancong")
         .select(`
-          mapc, madh, matho, trangthai,
+          mapc, madh, matho, trangthai, lydotuchoi, tuchoiluc,
           donhang(madh, trangthai, khachhang(hoten)),
           nguoidung(hoten, sdt)
         `)
@@ -136,7 +139,7 @@ export default function AdminPhanCongPage() {
     // Kiểm tra trùng phân công cùng đơn
     const isDuplicate = assignments.some(
       a => a.madh === Number(selectedOrder) && a.matho === Number(selectedWorker)
-        && a.trangthai !== "HOAN_THANH"
+        && !["HOAN_THANH", "TU_CHOI"].includes(a.trangthai)
     );
     if (isDuplicate) {
       setError("Thợ này đã được giao đơn hàng này rồi!");
@@ -145,7 +148,7 @@ export default function AdminPhanCongPage() {
 
     // Ràng buộc bận: hiện tại hệ thống không có time-range nên chặn 1 thợ có >1 phân công đang mở
     const isBusy = assignments.some(
-      a => a.matho === Number(selectedWorker) && a.trangthai !== "HOAN_THANH"
+      a => a.matho === Number(selectedWorker) && !["HOAN_THANH", "TU_CHOI"].includes(a.trangthai)
     );
     if (isBusy) {
       setError("Thợ này đang bận phân công khác (chưa hoàn thành)!");
@@ -269,7 +272,8 @@ export default function AdminPhanCongPage() {
                   const orderName = list[0]?.donhang?.khachhang?.hoten || "Không rõ KH";
                   const anyDoing = list.some((x) => x.trangthai === "DANG_THUC_HIEN");
                   const allDone = list.length > 0 && list.every((x) => x.trangthai === "HOAN_THANH");
-                  const groupStatus = allDone ? "HOAN_THANH" : anyDoing ? "DANG_THUC_HIEN" : "CHO_THUC_HIEN";
+                  const allRejected = list.length > 0 && list.every((x) => x.trangthai === "TU_CHOI");
+                  const groupStatus = allDone ? "HOAN_THANH" : allRejected ? "TU_CHOI" : anyDoing ? "DANG_THUC_HIEN" : "CHO_THUC_HIEN";
                   const status = STATUS_MAP[groupStatus] || STATUS_MAP.CHO_THUC_HIEN;
 
                   return (
@@ -307,6 +311,11 @@ export default function AdminPhanCongPage() {
                                   {a.nguoidung?.hoten || "Không rõ thợ"}
                                   {a.nguoidung?.sdt ? ` (${a.nguoidung.sdt})` : ""}
                                 </p>
+                                {a.trangthai === "TU_CHOI" && a.lydotuchoi && (
+                                  <p className="text-xs text-red-200/80 mt-1 line-clamp-2">
+                                    Lý do: {a.lydotuchoi}
+                                  </p>
+                                )}
                               </div>
 
                               <div className="flex items-center gap-2 shrink-0">

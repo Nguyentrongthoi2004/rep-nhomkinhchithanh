@@ -16,6 +16,12 @@ export const orderIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+const optionalEmailSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toLowerCase() : null;
+}, z.string().email().max(255).nullable().optional());
+
 export const createOrderItemSchema = z.object({
   mavt: z.number().int().positive(),
   name: z.string().trim().min(1),
@@ -40,6 +46,7 @@ export const createOrderItemSchema = z.object({
 export const createOrderSchema = z.object({
   customer: z.string().trim().min(1).max(100),
   phone: z.string().trim().min(1).max(15),
+  email: optionalEmailSchema,
   address: z.string().trim().max(255).nullable().optional(),
   totalCost: z.number().nonnegative(),
   items: z.array(createOrderItemSchema).default([]),
@@ -48,6 +55,7 @@ export const createOrderSchema = z.object({
 export const updateOrderSchema = z.object({
   customer: z.string().trim().min(1).max(100),
   phone: z.string().trim().min(1).max(15),
+  email: optionalEmailSchema,
   address: z.string().trim().max(255).nullable().optional(),
   totalCost: z.number().nonnegative(),
   items: z.array(createOrderItemSchema).default([]),
@@ -56,6 +64,7 @@ export const updateOrderSchema = z.object({
 export const updateOrderCustomerSchema = z.object({
   customer: z.string().trim().min(1).max(100),
   phone: z.string().trim().min(1).max(15),
+  email: optionalEmailSchema,
   address: z.string().trim().max(255).nullable().optional(),
 });
 

@@ -15,7 +15,7 @@ const PAYMENT_SELECT = `
     madh,
     tonggiatri,
     trangthai,
-    khachhang:makh ( hoten, sdt )
+    khachhang:makh ( makh, hoten, sdt, email, diachi )
   )
 `;
 
@@ -33,7 +33,7 @@ export const paymentsService = {
     const [{ data: orders, error: ordersErr }, { data: payments, error: paymentsErr }] = await Promise.all([
       supabaseAdmin
         .from("donhang")
-        .select("madh, ngaytao, trangthai, tonggiatri, khachhang:makh(hoten, sdt)")
+        .select("madh, ngaytao, trangthai, tonggiatri, khachhang:makh(makh, hoten, sdt, email, diachi)")
         .order("madh", { ascending: false }),
       supabaseAdmin.from("giaodich").select("magd, madh, loaigd, phuongthuc, sotien, ngaygd, ghichu").order("magd", { ascending: false }),
     ]);

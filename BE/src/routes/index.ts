@@ -10,6 +10,7 @@ import {
   deprecatedSeedRouter,
 } from "@/modules/bootstrap/bootstrap.routes";
 import {
+  adminCuttingPlanIssuesRouter,
   adminCuttingPlansRouter,
   workerCuttingPlansRouter,
 } from "@/modules/cutting-plans/cutting-plans.routes";
@@ -48,6 +49,7 @@ apiRouter.use("/admin/access-requests", adminAccessRequestsRouter);
 apiRouter.use("/admin/assignments", assignmentsRouter);
 apiRouter.use("/admin/categories", categoriesRouter);
 apiRouter.use("/admin/customers", customersRouter);
+apiRouter.use("/admin/issues", adminCuttingPlanIssuesRouter);
 apiRouter.use("/admin/cutting-plans", adminCuttingPlansRouter);
 apiRouter.use("/admin/materials", materialsRouter);
 apiRouter.use("/admin/materials-options", materialsOptionsRouter);

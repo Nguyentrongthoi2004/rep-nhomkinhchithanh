@@ -5,6 +5,8 @@ import type { CreateAssignmentDto, UpdateAssignmentDto } from "./assignments.sch
 const SELECT = `
   mapc,
   trangthai,
+  lydotuchoi,
+  tuchoiluc,
   donhang:madh ( madh, ngaytao, trangthai, khachhang:makh ( hoten ) ),
   nguoidung:matho ( mand, hoten, tendangnhap, trangthai, vaitro )
 `;

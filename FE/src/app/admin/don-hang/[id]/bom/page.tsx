@@ -21,7 +21,7 @@ type OrderDetail = {
   madh: number;
   trangthai: string;
   tonggiatri: number;
-  khachhang: { hoten: string; sdt: string; diachi: string | null } | null;
+  khachhang: { hoten: string; sdt: string; email: string | null; diachi: string | null } | null;
   chitietdh: Array<{
     mactdh: number;
     mavt: number;
@@ -240,8 +240,14 @@ export default function OrderBomPage() {
       .filter((item): item is OrderItemPayload => item !== null);
   }, [manualLines, materialById]);
 
-  const doorBom = hasSize && frame && wing && glass ? buildBom(width, height, frame, wing, glass) : [];
-  const bom = mode === "MANUAL_BOM" ? manualBom : [...doorBom, ...manualBom];
+  const doorBom = useMemo(
+    () => (hasSize && frame && wing && glass ? buildBom(width, height, frame, wing, glass) : []),
+    [frame, glass, hasSize, height, width, wing],
+  );
+  const bom = useMemo(
+    () => (mode === "MANUAL_BOM" ? manualBom : [...doorBom, ...manualBom]),
+    [doorBom, manualBom, mode],
+  );
   const doorDims = useMemo(() => (hasSize ? calcDoorDims(Number(width), Number(height)) : null), [hasSize, height, width]);
 
   const sqm = useMemo(() => {
@@ -271,6 +277,7 @@ export default function OrderBomPage() {
         body: JSON.stringify({
           customer: order.khachhang.hoten,
           phone: order.khachhang.sdt,
+          email: order.khachhang.email || null,
           address: order.khachhang.diachi || null,
           totalCost: quoteTotal,
           items: bom,

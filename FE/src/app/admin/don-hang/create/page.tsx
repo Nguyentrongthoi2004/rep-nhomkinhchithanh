@@ -9,7 +9,7 @@ import { apiData, apiJson } from "@/lib/api";
 type OrderDetail = {
   madh: number;
   trangthai: string;
-  khachhang: { hoten: string; sdt: string; diachi: string | null } | null;
+  khachhang: { hoten: string; sdt: string; email: string | null; diachi: string | null } | null;
 };
 
 export default function CreateOrderPage() {
@@ -18,6 +18,7 @@ export default function CreateOrderPage() {
 
   const [customer, setCustomer] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -38,6 +39,7 @@ export default function CreateOrderPage() {
       const order = await apiData<OrderDetail>(`/api/admin/orders/${editingId}`);
       setCustomer(order.khachhang?.hoten || "");
       setPhone(order.khachhang?.sdt || "");
+      setEmail(order.khachhang?.email || "");
       setAddress(order.khachhang?.diachi || "");
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -61,6 +63,7 @@ export default function CreateOrderPage() {
           body: JSON.stringify({
             customer: customer.trim(),
             phone: phone.trim(),
+            email: email.trim() || null,
             address: address.trim() || null,
           }),
         });
@@ -73,6 +76,7 @@ export default function CreateOrderPage() {
         body: JSON.stringify({
           customer: customer.trim(),
           phone: phone.trim(),
+          email: email.trim() || null,
           address: address.trim() || null,
           totalCost: 0,
           items: [],
@@ -123,6 +127,9 @@ export default function CreateOrderPage() {
                 <Input label="Tên khách hàng / công trình" value={customer} onChange={setCustomer} autoFocus />
                 <Input label="Số điện thoại" value={phone} onChange={setPhone} inputMode="tel" />
                 <div className="md:col-span-2">
+                  <Input label="Email" value={email} onChange={setEmail} inputMode="email" type="email" />
+                </div>
+                <div className="md:col-span-2">
                   <Input label="Địa chỉ" value={address} onChange={setAddress} />
                 </div>
               </div>
@@ -163,12 +170,14 @@ function Input({
   value,
   onChange,
   inputMode,
+  type = "text",
   autoFocus,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  type?: React.HTMLInputTypeAttribute;
   autoFocus?: boolean;
 }) {
   return (
@@ -176,6 +185,7 @@ function Input({
       <span className="block text-xs text-gray-400">{label}</span>
       <input
         autoFocus={autoFocus}
+        type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         inputMode={inputMode}

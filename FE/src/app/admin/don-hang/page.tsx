@@ -1,17 +1,20 @@
 "use client";
 
-import { Ban, ClipboardList, FileText, Filter, Loader2, Plus, RefreshCw, Search, Trash2, TrendingUp } from "lucide-react";
+import { Ban, ClipboardList, Edit3, FileText, Loader2, Mail, Phone, Plus, RefreshCw, Search, Trash2, TrendingUp } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiData, apiJson } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
+import { CustomerContactModal, type CustomerContact } from "@/components/admin/CustomerContactModal";
+import { ListPagination } from "@/components/admin/ListPagination";
+import { DEFAULT_PAGE_SIZE, matchesTimeFilter, paginate, type TimeFilter } from "@/lib/list-controls";
 
 interface Order {
   madh: number;
   ngaytao: string;
   trangthai: string;
   tonggiatri: number;
-  khachhang: { hoten: string } | null;
+  khachhang: CustomerContact | null;
   chitietdh: { mactdh: number }[];
 }
 
@@ -20,6 +23,9 @@ export default function OrderListPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<CustomerContact | null>(null);
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [page, setPage] = useState(1);
 
   const reloadOrders = useCallback(async () => {
     setLoading(true);
@@ -35,6 +41,10 @@ export default function OrderListPage() {
   useEffect(() => {
     reloadOrders();
   }, [reloadOrders]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, timeFilter]);
 
   const handleDeleteOrder = async (madh: number) => {
     if (!confirm(`Xóa đơn hàng DH-${madh}? (Sẽ xóa cả BOM chi tiết)`)) return;
@@ -87,11 +97,14 @@ export default function OrderListPage() {
   };
 
   const formatCurrency = (amount: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(amount);
-  const filteredOrders = orders.filter(
-    (o) =>
-      `DH-${o.madh}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (o.khachhang?.hoten || "").toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const filteredOrders = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return orders.filter((o) => {
+      const text = `DH-${o.madh} ${o.khachhang?.hoten || ""} ${o.khachhang?.sdt || ""} ${o.khachhang?.email || ""} ${o.khachhang?.diachi || ""}`.toLowerCase();
+      return (!q || text.includes(q)) && matchesTimeFilter(o.ngaytao, timeFilter);
+    });
+  }, [orders, searchTerm, timeFilter]);
+  const pagedOrders = useMemo(() => paginate(filteredOrders, page, DEFAULT_PAGE_SIZE), [filteredOrders, page]);
 
   return (
     <div className="space-y-6">
@@ -126,20 +139,25 @@ export default function OrderListPage() {
         </div>
       </div>
 
-      <div className="flex items-center space-x-4">
-        <div className="relative max-w-sm flex-1">
+      <div className="relative z-10 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="relative w-full max-w-xl">
           <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
           <input
             type="text"
-            placeholder="Tìm theo mã ĐH, tên KH..."
+            placeholder="Tìm theo mã ĐH, tên KH, SĐT, email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            autoComplete="off"
+            name="mini-erp-order-search"
             className="w-full rounded-lg border border-white/10 bg-[#0a0a0c] py-2.5 pl-10 pr-4 text-sm text-gray-200 shadow-inner outline-none transition-all focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
           />
         </div>
-        <button title="Bộ lọc" aria-label="Bộ lọc" className="rounded-lg border border-white/10 bg-white/5 p-2.5 text-gray-400 transition-colors hover:text-white">
-          <Filter className="h-5 w-5" />
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <TimeFilterButton active={timeFilter === "all"} onClick={() => setTimeFilter("all")}>Tất cả</TimeFilterButton>
+          <TimeFilterButton active={timeFilter === "today"} onClick={() => setTimeFilter("today")}>Hôm nay</TimeFilterButton>
+          <TimeFilterButton active={timeFilter === "month"} onClick={() => setTimeFilter("month")}>Tháng này</TimeFilterButton>
+          <TimeFilterButton active={timeFilter === "year"} onClick={() => setTimeFilter("year")}>Năm này</TimeFilterButton>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0a0a0c] shadow-lg">
@@ -168,7 +186,7 @@ export default function OrderListPage() {
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((order) => {
+                pagedOrders.items.map((order) => {
                   const workLink = order.trangthai === "KHAO_SAT" ? `/admin/don-hang/${order.madh}/bom` : `/admin/don-hang/${order.madh}/bao-gia`;
                   const workTitle = order.trangthai === "KHAO_SAT" ? "Lập BOM" : "Xem báo giá";
                   return (
@@ -178,7 +196,20 @@ export default function OrderListPage() {
                       </td>
                       <td className="p-4">
                         <p className="text-sm font-bold text-gray-200">{order.khachhang?.hoten || "Không tên"}</p>
-                        <p className="mt-1 text-xs text-gray-500">Lập ngày: {new Date(order.ngaytao).toLocaleDateString("vi-VN")}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                          <span>Lập ngày: {new Date(order.ngaytao).toLocaleDateString("vi-VN")}</span>
+                          {order.khachhang?.sdt && (
+                            <span className="inline-flex items-center gap-1">
+                              <Phone className="h-3 w-3" />
+                              {order.khachhang.sdt}
+                            </span>
+                          )}
+                        </div>
+                        <div className={`mt-1 flex items-start gap-1 text-xs ${order.khachhang?.email ? "text-sky-300/90" : "text-gray-600"}`}>
+                          <Mail className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span className="break-all">{order.khachhang?.email || "Chưa có email"}</span>
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-xs text-gray-500">{order.khachhang?.diachi || "Chưa có địa chỉ"}</div>
                       </td>
                       <td className="p-4 text-center text-sm font-medium text-gray-300">
                         {order.chitietdh?.length || 0} <span className="text-xs font-normal text-gray-500">hạng mục</span>
@@ -192,6 +223,19 @@ export default function OrderListPage() {
                               <FileText className="h-4 w-4" />
                             </button>
                           </Link>
+                          {order.khachhang && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCustomer(order.khachhang);
+                              }}
+                              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-emerald-400/10 hover:text-emerald-300"
+                              title="Sửa thông tin khách hàng"
+                              aria-label="Sửa thông tin khách hàng"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+                          )}
                           {["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai) && (
                             <Link href={workLink}>
                               <button className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-orange-400/10 hover:text-orange-400" title={workTitle} aria-label={workTitle}>
@@ -232,7 +276,40 @@ export default function OrderListPage() {
             </tbody>
           </table>
         )}
+        {!loading && (
+          <ListPagination
+            page={pagedOrders.page}
+            pageCount={pagedOrders.pageCount}
+            total={filteredOrders.length}
+            start={pagedOrders.start}
+            end={pagedOrders.end}
+            onPageChange={setPage}
+          />
+        )}
       </div>
+
+      <CustomerContactModal
+        open={!!editingCustomer}
+        customer={editingCustomer}
+        onClose={() => setEditingCustomer(null)}
+        onSaved={reloadOrders}
+      />
     </div>
+  );
+}
+
+function TimeFilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+        active
+          ? "border-orange-500/40 bg-orange-500/15 text-orange-200"
+          : "border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

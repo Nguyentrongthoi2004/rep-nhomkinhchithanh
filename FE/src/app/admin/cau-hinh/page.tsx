@@ -39,15 +39,15 @@ export default function ConfigPage() {
       await Promise.all([
         apiJson("/api/admin/rules/BLADE_KERF", {
           method: "PUT",
-          body: JSON.stringify({ tenqt: "Do ho luoi cua", giatri: kerf }),
+          body: JSON.stringify({ tenqt: "Độ hở lưỡi cưa", giatri: kerf }),
         }),
         apiJson("/api/admin/rules/SAFE_MARGIN", {
           method: "PUT",
-          body: JSON.stringify({ tenqt: "Le an toan bien", giatri: safeMargin }),
+          body: JSON.stringify({ tenqt: "Lề an toàn biên", giatri: safeMargin }),
         }),
         apiJson("/api/admin/rules/MIN_OFFCUT", {
           method: "PUT",
-          body: JSON.stringify({ tenqt: "Do dai de-xe toi thieu", giatri: minOffcut }),
+          body: JSON.stringify({ tenqt: "Độ dài phôi dư tối thiểu", giatri: minOffcut }),
         }),
       ]);
       loadRules();
@@ -64,9 +64,9 @@ export default function ConfigPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-100 flex items-center">
             <Cpu className="w-6 h-6 mr-3 text-blue-500" />
-            Cau hinh thuat toan cat
+            Cấu hình thuật toán cắt
           </h1>
-          <p className="text-gray-400 text-sm mt-1 ml-9">Cac hang so nay duoc luu vao bang quytac va dung khi tao so do cat.</p>
+          <p className="text-gray-400 text-sm mt-1 ml-9">Các thông số này được lưu vào bảng quy tắc và dùng khi tạo sơ đồ cắt.</p>
         </div>
 
         <button
@@ -75,7 +75,7 @@ export default function ConfigPage() {
           className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center font-medium transition-colors disabled:opacity-50"
         >
           {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-          Luu cau hinh
+          Lưu cấu hình
         </button>
       </div>
 
@@ -85,8 +85,8 @@ export default function ConfigPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
           <NumberCard
             icon={<Ruler className="w-6 h-6 text-blue-400" />}
-            title="Blade kerf"
-            desc="Phan nhom bi hao sau moi nhat cat."
+            title="Độ hở lưỡi cưa"
+            desc="Phần nhôm bị hao sau mỗi nhát cắt."
             value={kerf}
             onChange={setKerf}
             min={0}
@@ -94,8 +94,8 @@ export default function ConfigPage() {
           />
           <NumberCard
             icon={<ShieldAlert className="w-6 h-6 text-red-400" />}
-            title="Safe margin"
-            desc="Le an toan tru hai dau thanh phoi."
+            title="Lề an toàn"
+            desc="Phần chừa an toàn ở hai đầu thanh phôi."
             value={safeMargin}
             onChange={setSafeMargin}
             min={0}
@@ -103,8 +103,8 @@ export default function ConfigPage() {
           />
           <NumberCard
             icon={<Ruler className="w-6 h-6 text-amber-400" />}
-            title="Min offcut"
-            desc="Do dai toi thieu de giu lai phoi du."
+            title="Phôi dư tối thiểu"
+            desc="Độ dài tối thiểu để giữ lại và tái sử dụng phôi dư."
             value={minOffcut}
             onChange={setMinOffcut}
             min={0}

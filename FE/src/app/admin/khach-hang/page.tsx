@@ -8,11 +8,12 @@ type Customer = {
   makh: number;
   hoten: string;
   sdt: string;
+  email: string | null;
   diachi: string | null;
   donhang?: { madh: number; tonggiatri: number; trangthai: string }[];
 };
 
-const blankForm = { hoten: "", sdt: "", diachi: "" };
+const blankForm = { hoten: "", sdt: "", email: "", diachi: "" };
 
 export default function CustomersPage() {
   const [rows, setRows] = useState<Customer[]>([]);
@@ -39,7 +40,7 @@ export default function CustomersPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((x) => `${x.hoten} ${x.sdt} ${x.diachi || ""} KH-${x.makh}`.toLowerCase().includes(q));
+    return rows.filter((x) => `${x.hoten} ${x.sdt} ${x.email || ""} ${x.diachi || ""} KH-${x.makh}`.toLowerCase().includes(q));
   }, [rows, search]);
 
   const showCreate = () => {
@@ -50,7 +51,7 @@ export default function CustomersPage() {
 
   const showEdit = (row: Customer) => {
     setEditing(row);
-    setForm({ hoten: row.hoten, sdt: row.sdt, diachi: row.diachi || "" });
+    setForm({ hoten: row.hoten, sdt: row.sdt, email: row.email || "", diachi: row.diachi || "" });
     setOpen(true);
   };
 
@@ -60,7 +61,7 @@ export default function CustomersPage() {
     try {
       await apiJson(editing ? `/api/admin/customers/${editing.makh}` : "/api/admin/customers", {
         method: editing ? "PATCH" : "POST",
-        body: JSON.stringify({ ...form, diachi: form.diachi.trim() || null }),
+        body: JSON.stringify({ ...form, email: form.email.trim() || null, diachi: form.diachi.trim() || null }),
       });
       setOpen(false);
       reload();
@@ -119,6 +120,7 @@ export default function CustomersPage() {
                 <th className="p-4">Mã KH</th>
                 <th className="p-4">Khách hàng</th>
                 <th className="p-4">SĐT</th>
+                <th className="p-4">Email</th>
                 <th className="p-4">Địa chỉ</th>
                 <th className="p-4 text-right">Đơn hàng</th>
                 <th className="p-4 text-right">Thao tác</th>
@@ -130,6 +132,7 @@ export default function CustomersPage() {
                   <td className="p-4 font-mono text-sky-300">KH-{row.makh}</td>
                   <td className="p-4 font-semibold text-gray-100">{row.hoten}</td>
                   <td className="p-4 text-gray-300">{row.sdt}</td>
+                  <td className="p-4 text-gray-400">{row.email || "Chưa có email"}</td>
                   <td className="p-4 text-gray-400">{row.diachi || "Chưa có"}</td>
                   <td className="p-4 text-right text-gray-300">{row.donhang?.length || 0}</td>
                   <td className="p-4">
@@ -156,7 +159,7 @@ export default function CustomersPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-500">
+                  <td colSpan={7} className="p-8 text-center text-gray-500">
                     Không có khách hàng phù hợp.
                   </td>
                 </tr>
@@ -183,6 +186,7 @@ export default function CustomersPage() {
                 required
               />
               <Field label="Số điện thoại" value={form.sdt} onChange={(v) => setForm((p) => ({ ...p, sdt: v }))} required />
+              <Field label="Email" value={form.email} onChange={(v) => setForm((p) => ({ ...p, email: v }))} type="email" />
               <Field label="Địa chỉ" value={form.diachi} onChange={(v) => setForm((p) => ({ ...p, diachi: v }))} />
               <div className="pt-3 flex justify-end gap-3">
                 <button type="button" onClick={() => setOpen(false)} className="px-5 py-2.5 rounded-lg border border-white/10 text-gray-300">
@@ -200,11 +204,23 @@ export default function CustomersPage() {
   );
 }
 
-function Field({ label, value, onChange, required }: { label: string; value: string; onChange: (value: string) => void; required?: boolean }) {
+function Field({
+  label,
+  value,
+  onChange,
+  required,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  type?: React.HTMLInputTypeAttribute;
+}) {
   return (
     <label className="block space-y-2">
       <span className="text-sm text-gray-400">{label}{required && <span className="text-red-400 ml-1">*</span>}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} required={required} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-100 outline-none focus:border-sky-500" />
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-100 outline-none focus:border-sky-500" />
     </label>
   );
 }

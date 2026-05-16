@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, ReceiptText, Save, Search, WalletCards, X } from "lucide-react";
 import { apiData, apiJson } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
+import { ListPagination } from "@/components/admin/ListPagination";
+import { DEFAULT_PAGE_SIZE, matchesTimeFilter, paginate, type TimeFilter } from "@/lib/list-controls";
 
 type PaymentRow = {
   magd: number;
@@ -20,7 +22,7 @@ type OrderPayment = {
   ngaytao: string;
   trangthai: string;
   tonggiatri: number;
-  khachhang: { hoten: string; sdt: string } | null;
+  khachhang: { makh: number; hoten: string; sdt: string; email: string | null; diachi: string | null } | null;
   dathanhtoan: number;
   conno: number;
   giaodich: PaymentRow[];
@@ -71,6 +73,10 @@ function formatPaymentMethod(code: string): string {
   }
 }
 
+function getPaymentFilterDate(row: OrderPayment) {
+  return row.giaodich[0]?.ngaygd ?? row.ngaytao;
+}
+
 export default function PaymentsPage() {
   const [rows, setRows] = useState<OrderPayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +87,8 @@ export default function PaymentsPage() {
   const [amountInput, setAmountInput] = useState("");
   const [receiptEmail, setReceiptEmail] = useState("");
   const [notice, setNotice] = useState<{ type: "ok" | "warn"; text: string } | null>(null);
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [page, setPage] = useState(1);
 
   const updateAmountInput = (raw: string) => {
     setAmountInput(formatCurrencyInput(raw));
@@ -102,11 +110,19 @@ export default function PaymentsPage() {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [search, timeFilter]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) => `DH-${row.madh} ${row.khachhang?.hoten || ""} ${row.khachhang?.sdt || ""}`.toLowerCase().includes(q));
-  }, [rows, search]);
+    return rows.filter((row) => {
+      const text = `DH-${row.madh} ${row.khachhang?.hoten || ""} ${row.khachhang?.sdt || ""} ${row.khachhang?.email || ""} ${row.khachhang?.diachi || ""} ${formatOrderStatus(row.trangthai)}`.toLowerCase();
+      return (!q || text.includes(q)) && matchesTimeFilter(getPaymentFilterDate(row), timeFilter);
+    });
+  }, [rows, search, timeFilter]);
+
+  const pagedRows = useMemo(() => paginate(filtered, page, DEFAULT_PAGE_SIZE), [filtered, page]);
 
   const totals = useMemo(
     () => ({
@@ -118,6 +134,15 @@ export default function PaymentsPage() {
   );
 
   const selectedOrder = useMemo(() => rows.find((row) => row.madh === form.madh) ?? null, [form.madh, rows]);
+  const openPaymentModal = () => {
+    setReceiptEmail(selectedOrder?.khachhang?.email || "");
+    setOpen(true);
+  };
+  const selectPaymentOrder = (madh: number) => {
+    const nextOrder = rows.find((row) => row.madh === madh) ?? null;
+    setForm((p) => ({ ...p, madh }));
+    setReceiptEmail(nextOrder?.khachhang?.email || "");
+  };
   const parsedAmount = useMemo(() => parseCurrencyInput(amountInput), [amountInput]);
   const clearsDebt = useMemo(
     () =>
@@ -174,6 +199,12 @@ export default function PaymentsPage() {
             }),
           });
           emailMsg = ` Email xác nhận đã gửi tới ${receiptEmailTrimmed}.`;
+          if (selectedOrder.khachhang?.makh && !selectedOrder.khachhang.email) {
+            await apiJson(`/api/admin/customers/${selectedOrder.khachhang.makh}`, {
+              method: "PATCH",
+              body: JSON.stringify({ email: receiptEmailTrimmed }),
+            });
+          }
         } catch (mailErr: unknown) {
           emailMsg = ` Giao dịch đã lưu nhưng gửi email lỗi: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}.`;
         }
@@ -205,7 +236,7 @@ export default function PaymentsPage() {
           </h1>
           <p className="text-sm text-gray-400 mt-1 ml-9">Ghi nhận giao dịch và theo dõi công nợ theo từng đơn hàng.</p>
         </div>
-        <button onClick={() => setOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg font-bold flex items-center">
+        <button onClick={openPaymentModal} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg font-bold flex items-center">
           <Plus className="w-4 h-4 mr-2" /> Ghi nhận
         </button>
       </div>
@@ -216,14 +247,24 @@ export default function PaymentsPage() {
         <Stat label="Còn nợ" value={money(totals.debt)} tone="text-amber-300" />
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Tìm theo mã đơn, khách hàng, SĐT..."
-          className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-emerald-500"
-        />
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="relative w-full max-w-xl">
+          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm theo mã đơn, khách hàng, SĐT, email..."
+            autoComplete="off"
+            name="mini-erp-payment-search"
+            className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-emerald-500"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <TimeFilterButton active={timeFilter === "all"} onClick={() => setTimeFilter("all")}>Tất cả</TimeFilterButton>
+          <TimeFilterButton active={timeFilter === "today"} onClick={() => setTimeFilter("today")}>Hôm nay</TimeFilterButton>
+          <TimeFilterButton active={timeFilter === "month"} onClick={() => setTimeFilter("month")}>Tháng này</TimeFilterButton>
+          <TimeFilterButton active={timeFilter === "year"} onClick={() => setTimeFilter("year")}>Năm này</TimeFilterButton>
+        </div>
       </div>
 
       {notice && (
@@ -256,14 +297,18 @@ export default function PaymentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filtered.map((row) => {
+              {pagedRows.items.map((row) => {
                 const latest = row.giaodich[0];
                 return (
                   <tr key={row.madh} className="hover:bg-white/3">
                     <td className="p-4 font-mono text-emerald-300">DH-{row.madh}</td>
                     <td className="p-4">
                       <div className="font-semibold text-gray-100">{row.khachhang?.hoten || "Khách lẻ"}</div>
-                      <div className="text-xs text-gray-500">{row.khachhang?.sdt}</div>
+                      <div className="text-xs text-gray-500">{row.khachhang?.sdt || "Chưa có SĐT"}</div>
+                      <div className={`mt-1 break-all text-xs ${row.khachhang?.email ? "font-mono text-sky-300/90" : "text-gray-600"}`}>
+                        {row.khachhang?.email || "Chưa có email"}
+                      </div>
+                      <div className="mt-1 line-clamp-2 text-xs text-gray-500">{row.khachhang?.diachi || "Chưa có địa chỉ"}</div>
                       <div className="text-[11px] text-gray-500 mt-1">
                         Trạng thái: <span className="text-gray-300">{formatOrderStatus(row.trangthai)}</span>
                       </div>
@@ -296,6 +341,16 @@ export default function PaymentsPage() {
             </tbody>
           </table>
         )}
+        {!loading && (
+          <ListPagination
+            page={pagedRows.page}
+            pageCount={pagedRows.pageCount}
+            total={filtered.length}
+            start={pagedRows.start}
+            end={pagedRows.end}
+            onPageChange={setPage}
+          />
+        )}
       </div>
 
       {open && (
@@ -310,7 +365,7 @@ export default function PaymentsPage() {
               </button>
             </div>
             <form onSubmit={submit} className="p-6 space-y-4">
-              <Select label="Đơn hàng" value={String(form.madh)} onChange={(v) => setForm((p) => ({ ...p, madh: Number(v) }))}>
+              <Select label="Đơn hàng" value={String(form.madh)} onChange={(v) => selectPaymentOrder(Number(v))}>
                 {rows.map((row) => (
                   <option key={row.madh} value={row.madh} disabled={["KHAO_SAT", "BAO_GIA_NHAP"].includes(row.trangthai)}>
                     DH-{row.madh} - {row.khachhang?.hoten || "Khách lẻ"} - còn {money(row.conno)}
@@ -382,7 +437,10 @@ export default function PaymentsPage() {
                   }`}
                 />
                 <div className={`text-xs ${receiptEmailError ? "text-red-300" : "text-gray-500"}`}>
-                  {receiptEmailError || "Nếu để trống, hệ thống chỉ ghi nhận thanh toán và không gửi email."}
+                  {receiptEmailError ||
+                    (selectedOrder?.khachhang?.email
+                      ? "Email được lấy mặc định từ hồ sơ khách hàng, có thể sửa trước khi gửi."
+                      : "Khách chưa có email. Có thể nhập thủ công hoặc để trống để chỉ ghi nhận thanh toán.")}
                 </div>
               </label>
               <div className="pt-3 flex justify-end gap-3">
@@ -418,5 +476,21 @@ function Select({ label, value, onChange, children }: { label: string; value: st
         {children}
       </select>
     </label>
+  );
+}
+
+function TimeFilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+        active
+          ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+          : "border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

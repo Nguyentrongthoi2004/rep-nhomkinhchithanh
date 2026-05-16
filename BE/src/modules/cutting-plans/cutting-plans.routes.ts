@@ -7,14 +7,50 @@ import { validate } from "@/middlewares/validate";
 import {
   createCuttingPlanSchema,
   cuttingPlanIdParamSchema,
+  issueIdParamSchema,
   reportIssueSchema,
+  trimIssueSchema,
   type CreateCuttingPlanDto,
   type ReportIssueDto,
+  type TrimIssueDto,
 } from "./cutting-plans.schema";
 import { cuttingPlansService } from "./cutting-plans.service";
 
 export const adminCuttingPlansRouter = Router();
 adminCuttingPlansRouter.use(authMiddleware, requireRole("ADMIN"));
+
+export const adminCuttingPlanIssuesRouter = Router();
+adminCuttingPlanIssuesRouter.use(authMiddleware, requireRole("ADMIN"));
+
+function registerIssueRoutes(router: Router) {
+  router.get(
+    "/",
+    asyncHandler(async (_req, res) => {
+      sendOk(res, await cuttingPlansService.listIssueReports());
+    }),
+  );
+
+  router.post(
+    "/:id/scrap",
+    validate(issueIdParamSchema, "params"),
+    asyncHandler(async (req, res) => {
+      const id = (req.params as unknown as { id: number }).id;
+      sendOk(res, await cuttingPlansService.scrapIssue(id, req.user!.mand));
+    }),
+  );
+
+  router.post(
+    "/:id/trim",
+    validate(issueIdParamSchema, "params"),
+    validate(trimIssueSchema, "body"),
+    asyncHandler(async (req, res) => {
+      const id = (req.params as unknown as { id: number }).id;
+      sendOk(res, await cuttingPlansService.trimIssue(id, req.user!.mand, req.body as TrimIssueDto));
+    }),
+  );
+}
+
+registerIssueRoutes(adminCuttingPlanIssuesRouter);
 
 adminCuttingPlansRouter.get(
   "/",
@@ -22,6 +58,8 @@ adminCuttingPlansRouter.get(
     sendOk(res, await cuttingPlansService.listAdmin());
   }),
 );
+
+adminCuttingPlansRouter.use("/issues", adminCuttingPlanIssuesRouter);
 
 adminCuttingPlansRouter.get(
   "/assignment/:id",
@@ -67,6 +105,6 @@ workerCuttingPlansRouter.post(
   asyncHandler(async (req, res) => {
     const id = (req.params as unknown as { id: number }).id;
     const body = req.body as ReportIssueDto;
-    sendOk(res, await cuttingPlansService.reportIssue(id, req.user!.mand, body.ghichu));
+    sendOk(res, await cuttingPlansService.reportIssue(id, req.user!.mand, body));
   }),
 );

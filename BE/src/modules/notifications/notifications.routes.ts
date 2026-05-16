@@ -18,7 +18,15 @@ notificationsRouter.get(
   "/",
   asyncHandler(async (req, res) => {
     const mand = req.user!.mand;
-    sendOk(res, await notificationsService.list(mand));
+    const limit = Number(req.query.limit ?? 20);
+    sendOk(res, await notificationsService.list(mand, Number.isFinite(limit) ? limit : 20));
+  }),
+);
+
+notificationsRouter.get(
+  "/summary",
+  asyncHandler(async (req, res) => {
+    sendOk(res, await notificationsService.summary(req.user!.mand));
   }),
 );
 

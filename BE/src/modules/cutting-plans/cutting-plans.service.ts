@@ -1,5 +1,7 @@
 import { HttpError } from "@/lib/http";
 import { supabaseAdmin } from "@/lib/supabase";
+import { notificationsService } from "@/modules/notifications/notifications.service";
+import type { ReportIssueDto, TrimIssueDto } from "./cutting-plans.schema";
 
 type BomItem = {
   mactdh: number;
@@ -23,6 +25,14 @@ type AssignmentWithBom = {
   } | null;
 };
 
+const ISSUE_TYPE_LABEL: Record<string, string> = {
+  CAT_SAI_KICH_THUOC: "Cắt sai kích thước",
+  PHOI_CONG_VENH: "Phôi cong/vênh",
+  GAY_PHOI: "Gãy phôi",
+  THIEU_VAT_TU: "Thiếu vật tư",
+  LOI_KHAC: "Lỗi khác",
+};
+
 type RawStock = {
   maphoi: number;
   mavt: number;
@@ -37,12 +47,32 @@ type CutPiece = {
   mavt: number;
   length: number;
   label: string;
+  materialName: string;
 };
 
 type PlannedBar = {
   stock: RawStock;
   remaining: number;
   cuts: CutPiece[];
+};
+
+type MissingCutPiece = CutPiece & {
+  materialName: string;
+};
+
+type StockShortage = {
+  mavt: number;
+  tenvt: string;
+  suggestedLength: number;
+  availableBars: number;
+  reusableBars: number;
+  newBars: number;
+  missingPieces: Array<{
+    label: string;
+    length: number;
+  }>;
+  totalPieces: number;
+  neededBars: number;
 };
 
 const PLAN_SELECT = `
@@ -79,6 +109,39 @@ const PLAN_SELECT = `
   )
 `;
 
+const ISSUE_SELECT = `
+  mank,
+  maphoi,
+  masdc,
+  mapc,
+  matho,
+  sukien,
+  chieudaitruoc,
+  chieudaisau,
+  ghichu,
+  thoigian,
+  trangthaixuly,
+  huongxuly,
+  xulyluc,
+  nguoixuly,
+  khothanhphoi:maphoi (
+    maphoi,
+    chieudaibandau,
+    chieudaihientai,
+    trangthai,
+    vattu:mavt ( tenvt, donvitinh )
+  ),
+  phancong:mapc (
+    mapc,
+    madh,
+    donhang:madh (
+      madh,
+      khachhang:makh ( hoten )
+    )
+  ),
+  nguoidung:matho ( mand, hoten )
+`;
+
 async function getRuleValue(code: string, fallback: number) {
   const { data, error } = await supabaseAdmin.from("quytac").select("giatri").eq("maqt", code).maybeSingle();
   if (error) throw HttpError.internal(error.message);
@@ -95,34 +158,100 @@ function expandPieces(items: BomItem[]) {
         mavt: item.mavt,
         length: item.chieudaicat,
         label: item.mota || item.vattu?.tenvt || `CT-${item.mactdh}`,
+        materialName: item.vattu?.tenvt || `VT-${item.mavt}`,
       });
     }
   }
   return pieces.sort((a, b) => b.length - a.length);
 }
 
+function estimateBarsForPieces(pieces: MissingCutPiece[], suggestedLength: number, kerf: number, safeMargin: number) {
+  const capacity = suggestedLength - safeMargin * 2;
+  const bars: number[] = [];
+
+  for (const piece of [...pieces].sort((a, b) => b.length - a.length)) {
+    const needed = piece.length + kerf;
+    const idx = bars.findIndex((remaining) => remaining >= needed);
+    if (idx >= 0) {
+      bars[idx] -= needed;
+    } else {
+      bars.push(Math.max(0, capacity - needed));
+    }
+  }
+
+  return Math.max(1, bars.length);
+}
+
+function suggestStockLength(pieces: MissingCutPiece[], kerf: number, safeMargin: number) {
+  const longestPiece = pieces.reduce((max, piece) => Math.max(max, piece.length), 0);
+  const minimumUsableLength = longestPiece + kerf + safeMargin * 2;
+  const standardLength = 6000;
+  return Math.ceil(Math.max(standardLength, minimumUsableLength) / 100) * 100;
+}
+
+function buildShortages(missingPieces: MissingCutPiece[], stocks: RawStock[], kerf: number, safeMargin: number) {
+  const grouped = new Map<number, MissingCutPiece[]>();
+  for (const piece of missingPieces) {
+    const rows = grouped.get(piece.mavt) ?? [];
+    rows.push(piece);
+    grouped.set(piece.mavt, rows);
+  }
+
+  return [...grouped.entries()].map(([mavt, rows]): StockShortage => {
+    const relatedStocks = stocks.filter((stock) => stock.mavt === mavt && stock.trangthai !== "BO_DI");
+    const suggestedLength = suggestStockLength(rows, kerf, safeMargin);
+    return {
+      mavt,
+      tenvt: rows[0]?.materialName || `VT-${mavt}`,
+      suggestedLength,
+      availableBars: relatedStocks.length,
+      reusableBars: relatedStocks.filter((stock) => stock.trangthai === "CON_DU").length,
+      newBars: relatedStocks.filter((stock) => stock.trangthai === "MOI").length,
+      missingPieces: rows.map((row) => ({ label: row.label, length: row.length })),
+      totalPieces: rows.length,
+      neededBars: estimateBarsForPieces(rows, suggestedLength, kerf, safeMargin),
+    };
+  });
+}
+
 function planCuts(pieces: CutPiece[], stocks: RawStock[], kerf: number, safeMargin: number) {
   const bars: PlannedBar[] = stocks
     .filter((s) => s.trangthai !== "BO_DI" && s.chieudaihientai > safeMargin * 2)
-    .sort((a, b) => b.chieudaihientai - a.chieudaihientai)
     .map((stock) => ({
       stock,
       remaining: stock.chieudaihientai - safeMargin * 2,
       cuts: [],
     }));
+  const missingPieces: MissingCutPiece[] = [];
 
   for (const piece of pieces) {
-    const bar = bars.find((candidate) => {
-      if (candidate.stock.mavt !== piece.mavt) return false;
-      return candidate.remaining >= piece.length + kerf;
-    });
+    const needed = piece.length + kerf;
+    const bar = bars
+      .filter((candidate) => candidate.stock.mavt === piece.mavt && candidate.remaining >= needed)
+      .sort((a, b) => {
+        const aPriority = a.stock.trangthai === "CON_DU" ? 0 : 1;
+        const bPriority = b.stock.trangthai === "CON_DU" ? 0 : 1;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+        return a.remaining - b.remaining;
+      })[0];
 
     if (!bar) {
-      throw HttpError.badRequest(`Khong du phoi cho ${piece.label} (${piece.length}mm)`);
+      missingPieces.push({
+        ...piece,
+        materialName: piece.materialName || stocks.find((stock) => stock.mavt === piece.mavt)?.vattu?.tenvt || piece.label,
+      });
+      continue;
     }
 
-    bar.remaining -= piece.length + kerf;
+    bar.remaining -= needed;
     bar.cuts.push(piece);
+  }
+
+  if (missingPieces.length > 0) {
+    throw HttpError.badRequest("Không đủ phôi để tạo sơ đồ cắt", {
+      code: "INSUFFICIENT_STOCK",
+      shortages: buildShortages(missingPieces, stocks, kerf, safeMargin),
+    });
   }
 
   return bars.filter((bar) => bar.cuts.length > 0);
@@ -167,6 +296,34 @@ async function listPlansForAssignment(mapc: number) {
   return data ?? [];
 }
 
+async function hasOpenIssue(input: { maphoi: number; mapc?: number | null; masdc?: number | null }) {
+  let query = supabaseAdmin
+    .from("nhatkygiacong")
+    .select("mank")
+    .eq("sukien", "LOI")
+    .eq("trangthaixuly", "CHO_XU_LY")
+    .eq("maphoi", input.maphoi)
+    .limit(1);
+  if (input.mapc) query = query.eq("mapc", input.mapc);
+  if (input.masdc) query = query.eq("masdc", input.masdc);
+  const { data, error } = await query;
+  if (error) throw HttpError.internal(error.message);
+  return (data ?? []).length > 0;
+}
+
+function updateOpenIssueScope(input: { maphoi: number; mapc: number | null; masdc: number | null }, payload: Record<string, unknown>) {
+  let query = supabaseAdmin
+    .from("nhatkygiacong")
+    .update(payload)
+    .eq("sukien", "LOI")
+    .eq("trangthaixuly", "CHO_XU_LY")
+    .eq("maphoi", input.maphoi);
+
+  query = input.mapc === null ? query.is("mapc", null) : query.eq("mapc", input.mapc);
+  query = input.masdc === null ? query.is("masdc", null) : query.eq("masdc", input.masdc);
+  return query;
+}
+
 export const cuttingPlansService = {
   async listAdmin() {
     const { data, error } = await supabaseAdmin
@@ -175,6 +332,104 @@ export const cuttingPlansService = {
       .order("masdc", { ascending: false });
     if (error) throw HttpError.internal(error.message);
     return data ?? [];
+  },
+
+  async listIssueReports() {
+    const { data, error } = await supabaseAdmin
+      .from("nhatkygiacong")
+      .select(ISSUE_SELECT)
+      .eq("sukien", "LOI")
+      .eq("trangthaixuly", "CHO_XU_LY")
+      .order("thoigian", { ascending: false })
+      .limit(100);
+    if (error) throw HttpError.internal(error.message);
+    const rows = data ?? [];
+    const seen = new Set<string>();
+    return rows.filter((row) => {
+      const item = row as { maphoi?: number; mapc?: number | null; masdc?: number | null };
+      const key = `${item.maphoi ?? "x"}:${item.mapc ?? "x"}:${item.masdc ?? "x"}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  },
+
+  async scrapIssue(issueId: number, adminId: number) {
+    const { data: issue, error } = await supabaseAdmin
+      .from("nhatkygiacong")
+      .select("mank, maphoi, mapc, masdc, trangthaixuly")
+      .eq("mank", issueId)
+      .eq("sukien", "LOI")
+      .maybeSingle();
+    if (error) throw HttpError.internal(error.message);
+    if (!issue) throw HttpError.notFound(`Issue ${issueId} not found`);
+    const typed = issue as { maphoi: number; mapc: number | null; masdc: number | null; trangthaixuly: string };
+    if (typed.trangthaixuly !== "CHO_XU_LY") throw HttpError.badRequest("Sự cố đã được xử lý");
+
+    const now = new Date().toISOString();
+    const [{ error: stockErr }, { error: issueErr }] = await Promise.all([
+      supabaseAdmin.from("khothanhphoi").update({ trangthai: "BO_DI" }).eq("maphoi", typed.maphoi),
+      updateOpenIssueScope(
+        { maphoi: typed.maphoi, mapc: typed.mapc, masdc: typed.masdc },
+        {
+          trangthaixuly: "DA_XU_LY",
+          huongxuly: "BO_PHOI",
+          xulyluc: now,
+          nguoixuly: adminId,
+        },
+      ),
+    ]);
+    if (stockErr) throw HttpError.internal(stockErr.message);
+    if (issueErr) throw HttpError.internal(issueErr.message);
+
+    return this.listIssueReports();
+  },
+
+  async trimIssue(issueId: number, adminId: number, dto: TrimIssueDto) {
+    const { data: issue, error } = await supabaseAdmin
+      .from("nhatkygiacong")
+      .select("mank, maphoi, mapc, masdc, trangthaixuly, khothanhphoi:maphoi(chieudaihientai, trangthai)")
+      .eq("mank", issueId)
+      .eq("sukien", "LOI")
+      .maybeSingle();
+    if (error) throw HttpError.internal(error.message);
+    if (!issue) throw HttpError.notFound(`Issue ${issueId} not found`);
+    const typed = issue as unknown as {
+      maphoi: number;
+      mapc: number | null;
+      masdc: number | null;
+      trangthaixuly: string;
+      khothanhphoi: { chieudaihientai: number; trangthai: string } | null;
+    };
+    if (typed.trangthaixuly !== "CHO_XU_LY") throw HttpError.badRequest("Sự cố đã được xử lý");
+
+    if (typed.khothanhphoi?.trangthai === "BO_DI") {
+      throw HttpError.badRequest("Phôi đã bị bỏ. Hãy dùng thao tác Bỏ phôi để đóng các báo cáo còn lại.");
+    }
+
+    const before = Number(typed.khothanhphoi?.chieudaihientai ?? 0);
+    if (dto.cutLength > before) throw HttpError.badRequest("Chiều dài cắt bỏ lớn hơn chiều dài phôi hiện tại");
+    const after = before - dto.cutLength;
+    const nextStatus = after > 0 ? "CON_DU" : "BO_DI";
+    const now = new Date().toISOString();
+
+    const [{ error: stockErr }, { error: issueErr }] = await Promise.all([
+      supabaseAdmin.from("khothanhphoi").update({ chieudaihientai: after, trangthai: nextStatus }).eq("maphoi", typed.maphoi),
+      updateOpenIssueScope(
+        { maphoi: typed.maphoi, mapc: typed.mapc, masdc: typed.masdc },
+        {
+          trangthaixuly: "DA_XU_LY",
+          huongxuly: `CAT_BO_DOAN_LOI_${dto.cutLength}MM${dto.ghichu ? `: ${dto.ghichu}` : ""}`,
+          chieudaisau: after,
+          xulyluc: now,
+          nguoixuly: adminId,
+        },
+      ),
+    ]);
+    if (stockErr) throw HttpError.internal(stockErr.message);
+    if (issueErr) throw HttpError.internal(issueErr.message);
+
+    return this.listIssueReports();
   },
 
   async listForWorker(matho: number) {
@@ -249,7 +504,7 @@ export const cuttingPlansService = {
   async completePlan(masdc: number, matho: number) {
     const { data: plan, error } = await supabaseAdmin
       .from("sodocat")
-      .select("masdc, mapc, maphoi, trangthai, khothanhphoi:maphoi(chieudaihientai), phancong:mapc(matho), chitietcat(mactc, chieudaicat, trangthai)")
+      .select("masdc, mapc, maphoi, trangthai, khothanhphoi:maphoi(chieudaihientai, trangthai), phancong:mapc(matho), chitietcat(mactc, chieudaicat, trangthai)")
       .eq("masdc", masdc)
       .maybeSingle();
     if (error) throw HttpError.internal(error.message);
@@ -259,11 +514,17 @@ export const cuttingPlansService = {
       masdc: number;
       mapc: number;
       maphoi: number;
-      khothanhphoi: { chieudaihientai: number } | null;
+      khothanhphoi: { chieudaihientai: number; trangthai: string } | null;
       phancong: { matho: number } | null;
       chitietcat: Array<{ mactc: number; chieudaicat: number; trangthai: string }>;
     };
     if (typed.phancong?.matho !== matho) throw HttpError.forbidden("Cutting plan is not assigned to this worker");
+    if (typed.khothanhphoi?.trangthai === "BO_DI") {
+      throw HttpError.badRequest("Phôi này đã bị đánh dấu bỏ đi, cần tạo sơ đồ cắt mới bằng phôi khác");
+    }
+    if (await hasOpenIssue({ maphoi: typed.maphoi, mapc: typed.mapc, masdc })) {
+      throw HttpError.badRequest("Phôi này đang có sự cố chờ Admin xử lý, chưa thể xác nhận hoàn thành");
+    }
 
     const before = typed.khothanhphoi?.chieudaihientai ?? 0;
     const kerf = await getRuleValue("BLADE_KERF", 5);
@@ -303,10 +564,10 @@ export const cuttingPlansService = {
     return listPlansForAssignment(typed.mapc);
   },
 
-  async reportIssue(masdc: number, matho: number, ghichu: string) {
+  async reportIssue(masdc: number, matho: number, input: ReportIssueDto) {
     const { data: plan, error } = await supabaseAdmin
       .from("sodocat")
-      .select("masdc, mapc, maphoi, khothanhphoi:maphoi(chieudaihientai), phancong:mapc(matho)")
+      .select("masdc, mapc, maphoi, khothanhphoi:maphoi(chieudaihientai, trangthai), phancong:mapc(matho, madh)")
       .eq("masdc", masdc)
       .maybeSingle();
     if (error) throw HttpError.internal(error.message);
@@ -314,26 +575,61 @@ export const cuttingPlansService = {
     const typed = plan as unknown as {
       mapc: number;
       maphoi: number;
-      khothanhphoi: { chieudaihientai: number } | null;
-      phancong: { matho: number } | null;
+      khothanhphoi: { chieudaihientai: number; trangthai: string } | null;
+      phancong: { matho: number; madh: number } | null;
     };
     if (typed.phancong?.matho !== matho) throw HttpError.forbidden("Cutting plan is not assigned to this worker");
+    if (typed.khothanhphoi?.trangthai === "BO_DI") {
+      throw HttpError.badRequest("Phôi này đã bị đánh dấu bỏ đi, không thể báo thêm sự cố");
+    }
+    if (await hasOpenIssue({ maphoi: typed.maphoi, mapc: typed.mapc, masdc })) {
+      throw HttpError.conflict("Sự cố của phôi này đã được báo và đang chờ Admin xử lý");
+    }
 
     const current = typed.khothanhphoi?.chieudaihientai ?? 0;
+    const issueLabel = ISSUE_TYPE_LABEL[input.loaiSuCo] ?? "Lỗi khác";
+    const detail = (input.mota || input.ghichu || "").trim();
+    const note = [
+      `Loại sự cố: ${issueLabel}`,
+      `Mô tả: ${detail}`,
+      `Mã phân công: PC-${typed.mapc}`,
+      `Mã sơ đồ cắt: SDC-${masdc}`,
+      `Mã phôi: UID-${typed.maphoi}`,
+    ].join("\n");
+
     const [{ error: planErr }, { error: logErr }] = await Promise.all([
       supabaseAdmin.from("sodocat").update({ trangthai: "DANG_CAT" }).eq("masdc", masdc),
       supabaseAdmin.from("nhatkygiacong").insert({
         maphoi: typed.maphoi,
+        masdc,
         mapc: typed.mapc,
         matho,
         sukien: "LOI",
+        trangthaixuly: "CHO_XU_LY",
         chieudaitruoc: current,
         chieudaisau: current,
-        ghichu,
+        ghichu: note,
       }),
     ]);
     if (planErr) throw HttpError.internal(planErr.message);
     if (logErr) throw HttpError.internal(logErr.message);
+
+    void notificationsService
+      .createForAdmins({
+        title: `Sự cố cắt hỏng SDC-${masdc}`,
+        body: `Worker báo ${issueLabel.toLowerCase()} tại PC-${typed.mapc} / UID-${typed.maphoi}. ${detail}`,
+        type: "su_co",
+        href: "/admin/su-co",
+        data: {
+          doi_tuong: "sodocat",
+          ma_doi_tuong: masdc,
+          mapc: typed.mapc,
+          maphoi: typed.maphoi,
+          madh: typed.phancong?.madh ?? null,
+          loaiSuCo: input.loaiSuCo,
+        },
+      })
+      .catch(() => null);
 
     return listPlansForAssignment(typed.mapc);
   },

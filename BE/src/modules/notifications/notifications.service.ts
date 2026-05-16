@@ -30,18 +30,29 @@ function normalize(row: NotificationRow) {
 }
 
 export const notificationsService = {
-  async list(mand: number) {
+  async summary(mand: number) {
+    const { count, error } = await supabaseAdmin
+      .from(TABLE)
+      .select("matb", { count: "exact", head: true })
+      .eq("mand", mand)
+      .eq("daxem", false);
+    if (error) throw HttpError.internal(error.message);
+    return { unreadCount: count ?? 0 };
+  },
+
+  async list(mand: number, limit = 20) {
     const { data, error } = await supabaseAdmin
       .from(TABLE)
       .select("matb, mand, tieude, noidung, daxem, ngaytao, dulieu")
       .eq("mand", mand)
       .order("ngaytao", { ascending: false })
-      .limit(50);
+      .limit(Math.min(Math.max(limit, 1), 50));
     if (error) throw HttpError.internal(error.message);
     const items = ((data ?? []) as NotificationRow[]).map(normalize);
+    const summary = await this.summary(mand);
     return {
       items,
-      unreadCount: items.filter((item) => !item.isRead).length,
+      unreadCount: summary.unreadCount,
     };
   },
 

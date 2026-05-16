@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const assignmentStatusEnum = z.enum(["CHO_THUC_HIEN", "DANG_THUC_HIEN", "HOAN_THANH"]);
+export const assignmentStatusEnum = z.enum(["CHO_THUC_HIEN", "DANG_THUC_HIEN", "HOAN_THANH", "TU_CHOI"]);
 
 export const assignmentIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),

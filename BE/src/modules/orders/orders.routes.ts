@@ -18,7 +18,7 @@ import {
 import { ordersService } from "./orders.service";
 
 export const ordersRouter = Router();
-ordersRouter.use(authMiddleware, requireRole("ADMIN", "WORKER"));
+ordersRouter.use(authMiddleware, requireRole("ADMIN"));
 
 ordersRouter.get(
   "/",
@@ -94,7 +94,7 @@ ordersRouter.delete(
 );
 
 export const ordersListRouter = Router();
-ordersListRouter.use(authMiddleware, requireRole("ADMIN", "WORKER"));
+ordersListRouter.use(authMiddleware, requireRole("ADMIN"));
 ordersListRouter.get(
   "/",
   asyncHandler(async (_req, res) => {

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ClipboardList, Edit3, FileText, ListChecks, Loader2, ReceiptText } from "lucide-react";
 import { apiData } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
+import { CustomerContactModal, type CustomerContact } from "@/components/admin/CustomerContactModal";
 
 type OrderDetail = {
   madh: number;
@@ -14,7 +15,7 @@ type OrderDetail = {
   baogia_gui_luc: string | null;
   baogia_email: string | null;
   tonggiatri: number;
-  khachhang: { makh: number; hoten: string; sdt: string; diachi: string | null } | null;
+  khachhang: { makh: number; hoten: string; sdt: string; email: string | null; diachi: string | null } | null;
   chitietdh: Array<{
     mactdh: number;
     mavt: number;
@@ -37,6 +38,7 @@ export default function AdminOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<CustomerContact | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,10 +119,28 @@ export default function AdminOrderDetailPage() {
       ) : (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
           <section className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-6 xl:col-span-5">
-            <div className="text-xs uppercase tracking-wider text-gray-500">Khách hàng</div>
-            <div className="mt-2 text-lg font-bold text-gray-100">{order.khachhang?.hoten || "Không tên"}</div>
-            <div className="mt-1 text-sm text-gray-400">{order.khachhang?.sdt || "Chưa có số điện thoại"}</div>
-            {order.khachhang?.diachi && <div className="mt-1 text-sm text-gray-500">{order.khachhang.diachi}</div>}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-gray-500">Khách hàng</div>
+                <div className="mt-2 text-lg font-bold text-gray-100">{order.khachhang?.hoten || "Không tên"}</div>
+              </div>
+              {order.khachhang && (
+                <button
+                  type="button"
+                  onClick={() => setEditingCustomer(order.khachhang)}
+                  className="inline-flex items-center rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/20"
+                >
+                  <Edit3 className="mr-2 h-4 w-4" />
+                  Sửa thông tin
+                </button>
+              )}
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <ContactBox label="Số điện thoại" value={order.khachhang?.sdt || "Chưa có số điện thoại"} />
+              <ContactBox label="Email" value={order.khachhang?.email || "Chưa có email"} highlight={!!order.khachhang?.email} />
+              <ContactBox label="Địa chỉ" value={order.khachhang?.diachi || "Chưa có địa chỉ"} />
+            </div>
 
             <div className="mt-6 space-y-2 border-t border-white/5 pt-4 text-sm">
               <Row label="Trạng thái" value={formatOrderStatus(order.trangthai)} />
@@ -203,6 +223,13 @@ export default function AdminOrderDetailPage() {
           </section>
         </div>
       )}
+
+      <CustomerContactModal
+        open={!!editingCustomer}
+        customer={editingCustomer}
+        onClose={() => setEditingCustomer(null)}
+        onSaved={load}
+      />
     </div>
   );
 }
@@ -220,6 +247,15 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
     <div className="flex items-center justify-between gap-3">
       <div className="text-gray-500">{label}</div>
       <div className={strong ? "font-bold text-gray-100" : "text-gray-300"}>{value}</div>
+    </div>
+  );
+}
+
+function ContactBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+      <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{label}</div>
+      <div className={`mt-1 break-all text-sm ${highlight ? "font-mono text-sky-200" : "text-gray-300"}`}>{value}</div>
     </div>
   );
 }

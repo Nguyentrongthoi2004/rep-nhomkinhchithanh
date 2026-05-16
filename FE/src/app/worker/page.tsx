@@ -58,7 +58,7 @@ export default function WorkerDashboard() {
         .from("phancong")
         .select(`mapc, madh, trangthai, donhang(khachhang(hoten))`)
         .eq("matho", userRow.mand)
-        .not("trangthai", "eq", "HOAN_THANH")
+        .in("trangthai", ["CHO_THUC_HIEN", "DANG_THUC_HIEN"])
         .order("mapc", { ascending: false })
         .limit(5);
 

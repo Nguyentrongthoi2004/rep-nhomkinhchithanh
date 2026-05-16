@@ -39,6 +39,10 @@ type NotificationsResponse = {
   unreadCount: number;
 };
 
+type NotificationSummary = {
+  unreadCount: number;
+};
+
 const TYPE_LABELS: Record<string, string> = {
   phan_cong: "Phân công",
   assignment: "Phân công",
@@ -82,6 +86,10 @@ export default function AdminHeader() {
           "Quản trị viên";
         setDisplayName(name);
         setAccountEmail(user?.email ?? "");
+      })
+      .catch(() => {
+        setDisplayName("Quản trị viên");
+        setAccountEmail("");
       });
   }, []);
 
@@ -89,7 +97,7 @@ export default function AdminHeader() {
     setNotificationsLoading(true);
     setNotificationsError("");
     try {
-      const data = await apiData<NotificationsResponse>("/api/admin/notifications");
+      const data = await apiData<NotificationsResponse>("/api/admin/notifications?limit=20");
       setNotifications(data.items ?? []);
       setUnreadCount(data.unreadCount ?? 0);
     } catch (err: unknown) {
@@ -106,9 +114,18 @@ export default function AdminHeader() {
     }
   }, []);
 
+  const loadNotificationSummary = useCallback(async () => {
+    try {
+      const data = await apiData<NotificationSummary>("/api/admin/notifications/summary");
+      setUnreadCount(data.unreadCount ?? 0);
+    } catch {
+      setUnreadCount(0);
+    }
+  }, []);
+
   useEffect(() => {
-    void loadNotifications();
-  }, [loadNotifications]);
+    void loadNotificationSummary();
+  }, [loadNotificationSummary]);
 
   useEffect(() => {
     if (showNotifications) void loadNotifications();
@@ -129,35 +146,51 @@ export default function AdminHeader() {
 
   const handleMarkAllRead = () => {
     void (async () => {
-      await apiJson("/api/admin/notifications/mark-all-read", { method: "POST" });
-      await refreshNotifications();
+      try {
+        await apiJson("/api/admin/notifications/mark-all-read", { method: "POST" });
+        await refreshNotifications();
+      } catch (err: unknown) {
+        setNotificationsError(err instanceof Error ? err.message : String(err));
+      }
     })();
   };
 
   const handleDeleteRead = () => {
     void (async () => {
-      await apiJson("/api/admin/notifications/read", { method: "DELETE" });
-      await refreshNotifications();
+      try {
+        await apiJson("/api/admin/notifications/read", { method: "DELETE" });
+        await refreshNotifications();
+      } catch (err: unknown) {
+        setNotificationsError(err instanceof Error ? err.message : String(err));
+      }
     })();
   };
 
   const handleDeleteOne = (item: NotificationItem) => {
     void (async () => {
-      await apiJson(`/api/admin/notifications/${item.matb}`, { method: "DELETE" });
-      await refreshNotifications();
+      try {
+        await apiJson(`/api/admin/notifications/${item.matb}`, { method: "DELETE" });
+        await refreshNotifications();
+      } catch (err: unknown) {
+        setNotificationsError(err instanceof Error ? err.message : String(err));
+      }
     })();
   };
 
   const openItem = (item: NotificationItem) => {
     void (async () => {
-      if (!item.isRead) {
-        await apiJson(`/api/admin/notifications/${item.matb}/read`, { method: "POST" }).catch(() => null);
-      }
-      setShowNotifications(false);
-      if (item.href) {
-        router.push(item.href);
-      } else {
-        await refreshNotifications();
+      try {
+        if (!item.isRead) {
+          await apiJson(`/api/admin/notifications/${item.matb}/read`, { method: "POST" }).catch(() => null);
+        }
+        setShowNotifications(false);
+        if (item.href) {
+          router.push(item.href);
+        } else {
+          await refreshNotifications();
+        }
+      } catch (err: unknown) {
+        setNotificationsError(err instanceof Error ? err.message : String(err));
       }
     })();
   };

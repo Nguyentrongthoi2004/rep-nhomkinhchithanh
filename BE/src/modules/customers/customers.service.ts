@@ -7,6 +7,7 @@ const SELECT = `
   makh,
   hoten,
   sdt,
+  email,
   diachi,
   donhang (
     madh,
@@ -16,7 +17,7 @@ const SELECT = `
   )
 `;
 
-const FLAT_SELECT = "makh, hoten, sdt, diachi";
+const FLAT_SELECT = "makh, hoten, sdt, email, diachi";
 
 export const customersService = {
   async list() {
@@ -38,7 +39,7 @@ export const customersService = {
   async create(dto: CreateCustomerDto) {
     const { data, error } = await supabaseAdmin
       .from(TABLE)
-      .insert({ hoten: dto.hoten, sdt: dto.sdt, diachi: dto.diachi ?? null })
+      .insert({ hoten: dto.hoten, sdt: dto.sdt, email: dto.email ?? null, diachi: dto.diachi ?? null })
       .select(FLAT_SELECT)
       .single();
     if (error) {
@@ -52,6 +53,7 @@ export const customersService = {
     const payload: Record<string, unknown> = {};
     if (dto.hoten !== undefined) payload.hoten = dto.hoten;
     if (dto.sdt !== undefined) payload.sdt = dto.sdt;
+    if (dto.email !== undefined) payload.email = dto.email ?? null;
     if (dto.diachi !== undefined) payload.diachi = dto.diachi;
 
     const { data, error } = await supabaseAdmin

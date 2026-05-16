@@ -10,6 +10,20 @@ type ApiEnvelope<T> = {
   requestId?: string;
 };
 
+export class ApiError extends Error {
+  details?: unknown;
+  requestId?: string;
+  status: number;
+
+  constructor(message: string, options: { details?: unknown; requestId?: string; status: number }) {
+    super(message);
+    this.name = "ApiError";
+    this.details = options.details;
+    this.requestId = options.requestId;
+    this.status = options.status;
+  }
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
 let browserSupabase: ReturnType<typeof createClient> | null = null;
@@ -60,7 +74,11 @@ export async function apiJson<T>(path: string, init: RequestInit = {}) {
   const json = (await res.json().catch(() => ({}))) as ApiEnvelope<T>;
 
   if (!res.ok) {
-    throw new Error(json.error || "Request failed");
+    throw new ApiError(json.error || "Request failed", {
+      details: json.details,
+      requestId: json.requestId,
+      status: res.status,
+    });
   }
 
   return json;

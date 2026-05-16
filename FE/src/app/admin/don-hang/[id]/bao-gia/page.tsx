@@ -15,7 +15,7 @@ type OrderDetail = {
   baogia_gui_luc: string | null;
   baogia_email: string | null;
   tonggiatri: number;
-  khachhang: { hoten: string; sdt: string; diachi: string | null } | null;
+  khachhang: { hoten: string; sdt: string; email: string | null; diachi: string | null } | null;
   chitietdh: Array<{
     mactdh: number;
     mavt: number;
@@ -95,7 +95,7 @@ export default function QuotePage() {
   const openEmail = () => {
     setEmailResult(null);
     setEmailErr("");
-    setEmailTo(order?.baogia_email || "");
+    setEmailTo(order?.khachhang?.email || order?.baogia_email || "");
     setEmailOpen(true);
   };
 

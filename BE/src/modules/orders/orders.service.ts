@@ -10,7 +10,7 @@ const ORDER_SELECT = `
   ngaytao,
   trangthai,
   tonggiatri,
-  khachhang:makh ( makh, hoten, sdt, diachi ),
+  khachhang:makh ( makh, hoten, sdt, email, diachi ),
   chitietdh (
     mactdh,
     mavt,
@@ -23,6 +23,15 @@ const ORDER_SELECT = `
   )
 `;
 
+const ORDER_LIST_SELECT = `
+  madh,
+  ngaytao,
+  trangthai,
+  tonggiatri,
+  khachhang:makh ( makh, hoten, sdt, email, diachi ),
+  chitietdh ( mactdh )
+`;
+
 const ORDER_WITH_QUOTE_SELECT = `
   madh,
   ngaytao,
@@ -30,7 +39,7 @@ const ORDER_WITH_QUOTE_SELECT = `
   baogia_gui_luc,
   baogia_email,
   tonggiatri,
-  khachhang:makh ( makh, hoten, sdt, diachi ),
+  khachhang:makh ( makh, hoten, sdt, email, diachi ),
   chitietdh (
     mactdh,
     mavt,
@@ -52,7 +61,7 @@ const BRIEF_SELECT = `
   madh,
   trangthai,
   ngaytao,
-  khachhang:makh ( hoten )
+  khachhang:makh ( hoten, email )
 `;
 
 function toWholeMillimeters(value: number) {
@@ -119,7 +128,7 @@ async function resolveLineUnitPrices(items: CreateOrderItem[]): Promise<number[]
 
 export const ordersService = {
   async list() {
-    const { data, error } = await supabaseAdmin.from("donhang").select(ORDER_SELECT).order("madh", { ascending: false });
+    const { data, error } = await supabaseAdmin.from("donhang").select(ORDER_LIST_SELECT).order("madh", { ascending: false });
     if (error) throw HttpError.internal(error.message);
     return data ?? [];
   },
@@ -145,7 +154,7 @@ export const ordersService = {
   },
 
   async create(dto: CreateOrderDto) {
-    const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null);
+    const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null, dto.email);
 
     const { data: order, error: orderErr } = await supabaseAdmin
       .from("donhang")
@@ -269,7 +278,7 @@ export const ordersService = {
       throw HttpError.badRequest("Chỉ cho phép lập/sửa BOM trước khi đơn được duyệt giá.");
     }
 
-    const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null);
+    const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null, dto.email);
     const lineUnitPrices = await resolveLineUnitPrices(dto.items);
     const detailPayload = dto.items.map((item, i) => ({
       madh: id,
@@ -336,7 +345,7 @@ export const ordersService = {
       throw HttpError.badRequest("Chỉ cho phép sửa thông tin khách hàng trước khi đơn được duyệt giá.");
     }
 
-    const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null);
+    const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null, dto.email);
     let { data, error } = await supabaseAdmin
       .from("donhang")
       .update({ makh: customerId, baogia_gui_luc: null, baogia_email: null })
@@ -391,7 +400,7 @@ export const ordersService = {
     if (error) throw HttpError.internal(error.message);
   },
 
-  async getOrCreateCustomer(customerName: string, phone: string, address: string | null) {
+  async getOrCreateCustomer(customerName: string, phone: string, address: string | null, email?: string | null) {
     const { data: existing, error: findErr } = await supabaseAdmin
       .from("khachhang")
       .select("makh")
@@ -399,13 +408,15 @@ export const ordersService = {
       .maybeSingle();
     if (findErr) throw HttpError.internal(findErr.message);
     if (existing) {
-      await supabaseAdmin.from("khachhang").update({ hoten: customerName, diachi: address }).eq("makh", existing.makh);
+      const updatePayload: Record<string, unknown> = { hoten: customerName, diachi: address };
+      if (email !== undefined) updatePayload.email = email ?? null;
+      await supabaseAdmin.from("khachhang").update(updatePayload).eq("makh", existing.makh);
       return existing.makh as number;
     }
 
     const { data, error } = await supabaseAdmin
       .from("khachhang")
-      .insert({ hoten: customerName, sdt: phone, diachi: address })
+      .insert({ hoten: customerName, sdt: phone, email: email ?? null, diachi: address })
       .select("makh")
       .single();
     if (error) throw HttpError.internal(error.message);

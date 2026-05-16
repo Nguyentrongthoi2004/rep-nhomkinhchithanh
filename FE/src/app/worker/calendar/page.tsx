@@ -63,7 +63,8 @@ export default function WorkerCalendarPage() {
           mapc, madh, trangthai,
           donhang(ngaytao, khachhang(hoten))
         `)
-        .eq("matho", userRow.mand);
+        .eq("matho", userRow.mand)
+        .in("trangthai", ["CHO_THUC_HIEN", "DANG_THUC_HIEN", "HOAN_THANH"]);
 
       setTasks((data as unknown as WorkTask[]) || []);
     } catch (e) {

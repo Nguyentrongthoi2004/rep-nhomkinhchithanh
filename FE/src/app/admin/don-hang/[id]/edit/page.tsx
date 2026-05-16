@@ -21,7 +21,7 @@ type OrderDetail = {
   ngaytao: string;
   trangthai: string;
   tonggiatri: number;
-  khachhang: { hoten: string; sdt: string; diachi: string | null } | null;
+  khachhang: { hoten: string; sdt: string; email: string | null; diachi: string | null } | null;
   chitietdh: Array<{
     mactdh: number;
     mavt: number;
@@ -72,6 +72,7 @@ export default function AdminOrderEditPage() {
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [customer, setCustomer] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [lines, setLines] = useState<EditLine[]>([]);
 
@@ -88,6 +89,7 @@ export default function AdminOrderEditPage() {
       setMaterials(mats);
       setCustomer(order.khachhang?.hoten || "");
       setPhone(order.khachhang?.sdt || "");
+      setEmail(order.khachhang?.email || "");
       setAddress(order.khachhang?.diachi || "");
 
       const mapped = (order.chitietdh ?? []).map((it) => {
@@ -178,6 +180,7 @@ export default function AdminOrderEditPage() {
         body: JSON.stringify({
           customer,
           phone,
+          email: email.trim() || null,
           address: address.trim() || null,
           totalCost,
           items: payloadItems,
@@ -233,6 +236,7 @@ export default function AdminOrderEditPage() {
             <div className="text-sm font-bold text-gray-100">Khách hàng</div>
             <Field label="Tên khách hàng / công trình" value={customer} onChange={setCustomer} />
             <Field label="Số điện thoại" value={phone} onChange={setPhone} />
+            <Field label="Email" value={email} onChange={setEmail} type="email" inputMode="email" />
             <Field label="Địa chỉ" value={address} onChange={setAddress} />
 
             <div className="pt-3 border-t border-white/5">
@@ -332,18 +336,21 @@ function Field({
   onChange,
   placeholder,
   inputMode,
+  type = "text",
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  type?: React.HTMLInputTypeAttribute;
 }) {
   return (
     <label className="block space-y-2">
       <span className="text-xs text-gray-400">{label}</span>
       <input
         value={value}
+        type={type}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         inputMode={inputMode}
