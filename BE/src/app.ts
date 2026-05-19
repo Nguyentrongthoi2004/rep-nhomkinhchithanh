@@ -7,6 +7,8 @@ import { apiRouter } from "@/routes";
 import { errorHandler, notFound } from "@/middlewares/error";
 import { requestContext } from "@/middlewares/requestContext";
 
+// Khởi tạo máy chủ Express với các tầng xử lý: CORS, Helmet bảo mật, bộ phân tích JSON, ghi nhật ký yêu cầu.
+// Tất cả API được gắn tại tiền tố /api (xem routes/index.ts).
 export function createApp(): Express {
   const app = express();
 
@@ -17,7 +19,7 @@ export function createApp(): Express {
   app.use(
     cors({
       origin: (origin, cb) => {
-        // Allow non-browser tools (no Origin header) and whitelisted origins
+        // Cho phép công cụ không phải trình duyệt (không có Origin) và các origin trong danh sách cho phép.
         if (!origin) return cb(null, true);
         if (env.corsOrigins.includes(origin)) return cb(null, true);
         cb(new Error(`CORS: origin ${origin} is not allowed`));

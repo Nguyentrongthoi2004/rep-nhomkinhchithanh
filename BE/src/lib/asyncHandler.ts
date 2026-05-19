@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 /**
- * Wraps async route handlers so that rejected promises reach the error middleware.
+ * Bọc hàm xử lý đường dẫn bất đồng bộ để lỗi được chuyển về middleware xử lý lỗi.
  */
 export function asyncHandler<Req extends Request = Request>(
   fn: (req: Req, res: Response, next: NextFunction) => Promise<unknown>,

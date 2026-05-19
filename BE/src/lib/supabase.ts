@@ -2,8 +2,8 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { env } from "@/config/env";
 
 /**
- * Service-role client (bypasses RLS). Only use server-side for admin/internal operations.
- * Do NOT expose the key or derived clients to the browser.
+ * Supabase client dùng khóa service-role nên bỏ qua RLS.
+ * Chỉ dùng ở server cho tác vụ quản trị/nội bộ, tuyệt đối không đưa khóa/client này ra trình duyệt.
  */
 export const supabaseAdmin: SupabaseClient = createClient(
   env.SUPABASE_URL,
@@ -14,9 +14,8 @@ export const supabaseAdmin: SupabaseClient = createClient(
 );
 
 /**
- * Build an anon-scoped client for verifying user JWTs.
- * We pass the user's JWT as the access token so `supabase.auth.getUser()` works
- * and RLS policies (if used) honor that user.
+ * Tạo client anon theo JWT của người dùng để xác minh phiên đăng nhập.
+ * JWT được gắn vào yêu cầu để `supabase.auth.getUser()` hoạt động và RLS (nếu bật) hiểu đúng người dùng.
  */
 export function createUserScopedClient(accessToken: string): SupabaseClient {
   return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {

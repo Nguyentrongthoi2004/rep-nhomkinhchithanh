@@ -17,7 +17,7 @@ export default function NhanSuPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Modal states
+  // Trạng thái hộp thoại
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Employee | null>(null);
@@ -122,9 +122,9 @@ export default function NhanSuPage() {
   return (
     <div className="space-y-6">
       
-      {/* Header */}
+      {/* Đầu trang */}
       <div className="flex justify-between items-center bg-[#0a0a0c] p-6 rounded-2xl border border-white/5 shadow-sm relative overflow-hidden">
-        {/* Glow effect at background */}
+        {/* Hiệu ứng sáng nền */}
         <div className="absolute right-0 top-0 w-64 h-64 bg-blue-500/10 rounded-full blur-[80px] pointer-events-none" />
         
         <div className="relative z-10">
@@ -150,7 +150,7 @@ export default function NhanSuPage() {
         </div>
       </div>
 
-      {/* Data Table */}
+      {/* Bảng dữ liệu */}
       <div className="bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
@@ -247,12 +247,12 @@ export default function NhanSuPage() {
         )}
       </div>
 
-      {/* Modal / Popup Form */}
+      {/* Hộp thoại form thêm/sửa */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
             
-            {/* Header Modal */}
+            {/* Đầu hộp thoại */}
             <div className="px-6 py-5 border-b border-white/5 flex justify-between items-center bg-[#0a0a0c]">
               <h3 className="text-lg font-semibold text-white flex items-center">
                 <UserPlus className="w-5 h-5 mr-2 text-blue-400" />
@@ -345,7 +345,7 @@ export default function NhanSuPage() {
                 </div>
               </div>
 
-              {/* Actions Modal */}
+              {/* Nút thao tác modal */}
               <div className="pt-4 mt-6 border-t border-white/5 flex justify-end space-x-3">
                 <button
                   type="button"
@@ -370,7 +370,7 @@ export default function NhanSuPage() {
         </div>
       )}
 
-      {/* Change Password Modal */}
+      {/* Hộp thoại đổi mật khẩu */}
       {isPasswordModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-sm shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 overflow-hidden">

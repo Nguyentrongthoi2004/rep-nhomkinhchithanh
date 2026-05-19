@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Contact, Edit2, Loader2, Plus, Search, Save, Trash2, X } from "lucide-react";
 import { apiData, apiJson } from "@/lib/api";
+import { ConfirmDialog, InlineNotice, type NoticeState } from "@/components/admin/Feedback";
+import { ListPagination } from "@/components/admin/ListPagination";
+import { DEFAULT_PAGE_SIZE, paginate } from "@/lib/list-controls";
 
 type Customer = {
   makh: number;
@@ -23,6 +26,9 @@ export default function CustomersPage() {
   const [form, setForm] = useState(blankForm);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -42,6 +48,11 @@ export default function CustomersPage() {
     if (!q) return rows;
     return rows.filter((x) => `${x.hoten} ${x.sdt} ${x.email || ""} ${x.diachi || ""} KH-${x.makh}`.toLowerCase().includes(q));
   }, [rows, search]);
+  const paged = useMemo(() => paginate(filtered, page, DEFAULT_PAGE_SIZE), [filtered, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   const showCreate = () => {
     setEditing(null);
@@ -66,19 +77,19 @@ export default function CustomersPage() {
       setOpen(false);
       reload();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      setNotice({ tone: "error", text: err instanceof Error ? err.message : String(err) });
     } finally {
       setSaving(false);
     }
   };
 
   const remove = async (row: Customer) => {
-    if (!confirm(`Xóa khách hàng "${row.hoten}"?`)) return;
     try {
       await apiJson(`/api/admin/customers/${row.makh}`, { method: "DELETE" });
+      setNotice({ tone: "ok", text: `Đã xóa khách hàng ${row.hoten}.` });
       reload();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      setNotice({ tone: "error", text: err instanceof Error ? err.message : String(err) });
     }
   };
 
@@ -108,7 +119,41 @@ export default function CustomersPage() {
         />
       </div>
 
-      <div className="bg-[#0a0a0c] border border-white/5 rounded-2xl overflow-hidden">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
+
+      {!loading && (
+        <div className="space-y-3 md:hidden">
+          {paged.items.map((row) => (
+            <div key={row.makh} className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-sm font-bold text-sky-300">KH-{row.makh}</p>
+                  <p className="mt-1 text-base font-bold text-gray-100">{row.hoten}</p>
+                </div>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-gray-300">
+                  {row.donhang?.length || 0} đơn
+                </span>
+              </div>
+              <div className="mt-3 space-y-1 text-sm">
+                <p className="text-gray-300">{row.sdt}</p>
+                <p className={`break-all ${row.email ? "text-sky-300" : "text-gray-600"}`}>{row.email || "Chưa có email"}</p>
+                <p className="line-clamp-2 text-gray-500">{row.diachi || "Chưa có địa chỉ"}</p>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => showEdit(row)} className="rounded-lg bg-blue-500/10 px-3 py-2 text-sm font-bold text-blue-200">
+                  Sửa
+                </button>
+                <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-lg bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
+                  Xóa
+                </button>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-8 text-center text-sm text-gray-500">Không có khách hàng phù hợp.</div>}
+        </div>
+      )}
+
+      <div className="hidden bg-[#0a0a0c] border border-white/5 rounded-2xl overflow-hidden md:block">
         {loading ? (
           <div className="py-16 flex justify-center text-gray-400">
             <Loader2 className="w-8 h-8 animate-spin" />
@@ -127,7 +172,7 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filtered.map((row) => (
+              {paged.items.map((row) => (
                 <tr key={row.makh} className="hover:bg-white/3">
                   <td className="p-4 font-mono text-sky-300">KH-{row.makh}</td>
                   <td className="p-4 font-semibold text-gray-100">{row.hoten}</td>
@@ -146,7 +191,7 @@ export default function CustomersPage() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => remove(row)}
+                        onClick={() => setDeleteTarget(row)}
                         className="p-2 text-gray-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg"
                         title="Xóa"
                         aria-label="Xóa khách hàng"
@@ -168,6 +213,16 @@ export default function CustomersPage() {
           </table>
         )}
       </div>
+      {!loading && (
+        <ListPagination
+          page={paged.page}
+          pageCount={paged.pageCount}
+          total={filtered.length}
+          start={paged.start}
+          end={paged.end}
+          onPageChange={setPage}
+        />
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -200,6 +255,20 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Xóa khách hàng ${deleteTarget.hoten}` : ""}
+        description="Chỉ xóa khi chắc chắn khách hàng này không còn cần theo dõi. Nếu khách đã có đơn hàng thật, nên giữ hồ sơ để không mất liên kết lịch sử."
+        confirmLabel="Xóa khách"
+        tone="danger"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          const row = deleteTarget;
+          if (!row) return;
+          await remove(row);
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

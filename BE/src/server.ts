@@ -20,7 +20,7 @@ function shutdown(signal: string) {
     }
     process.exit(0);
   });
-  // Hard-exit after 10s if close hangs
+  // Thoát cưỡng bức sau 10 giây nếu đóng máy chủ bị treo.
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 

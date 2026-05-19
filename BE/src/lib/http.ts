@@ -12,7 +12,7 @@ export function sendNoContent(res: Response) {
   return res.status(204).end();
 }
 
-/** Standard application error with HTTP status code + optional details. */
+/** Lỗi chuẩn của ứng dụng, gồm HTTP status code và chi tiết bổ sung nếu có. */
 export class HttpError extends Error {
   public readonly status: number;
   public readonly details?: unknown;

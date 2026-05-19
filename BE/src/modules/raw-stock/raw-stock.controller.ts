@@ -16,7 +16,7 @@ export const rawStockController = {
     sendOk(res, rows);
   },
 
-  /** Admin list with paging, filters and global summary counts for dashboard cards */
+  /** Danh sách quản trị viên có phân trang, bộ lọc và số liệu tổng cho các thẻ tổng quan. */
   async groupedByImportDay(req: Request, res: Response) {
     const q = req.query as unknown as RawStockGroupedByDayQuery;
     sendOk(res, await rawStockService.groupedByImportDay(q));
@@ -53,7 +53,7 @@ export const rawStockController = {
     sendNoContent(res);
   },
 
-  /** Worker action: POST /api/worker/raw-stock/cut */
+  /** Hành động phía thợ: POST /api/worker/raw-stock/cut. */
   async cut(req: Request, res: Response) {
     const user = req.user;
     if (!user) throw HttpError.unauthorized();

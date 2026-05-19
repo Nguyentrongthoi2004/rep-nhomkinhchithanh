@@ -50,6 +50,7 @@ export const rawStockListQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(15),
   mavt: z.preprocess(optionalPositiveIntFromQuery, z.number().int().positive().optional()),
   malonhap: z.preprocess(optionalPositiveIntFromQuery, z.number().int().positive().optional()),
+  minLength: z.preprocess(optionalPositiveIntFromQuery, z.number().int().positive().optional()),
   trangthai: z.preprocess((v) => {
     if (v === undefined || v === null || v === "") return undefined;
     return v;

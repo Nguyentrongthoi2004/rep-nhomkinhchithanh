@@ -48,7 +48,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Role gating: ADMIN không được vào /worker và WORKER không được vào /admin
+  // Chặn quyền theo vai trò: ADMIN không được vào /worker và WORKER không được vào /admin.
   const isAdminRoute = pathname.startsWith("/admin");
   const isWorkerRoute = pathname.startsWith("/worker");
 
@@ -61,7 +61,7 @@ export async function proxy(request: NextRequest) {
       (user.user_metadata?.vaitro as string | undefined) ||
       null;
 
-    // Fallback: đọc role từ BE (nguoidung) để support master admin không có metadata
+    // Dự phòng: đọc vai trò từ BE (nguoidung) để hỗ trợ master admin chưa có metadata.
     if ((!role || role === "UNKNOWN") && accessToken) {
       try {
         const base = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
@@ -76,7 +76,7 @@ export async function proxy(request: NextRequest) {
           role = json?.data?.vaitro ?? role;
         }
       } catch {
-        // ignore
+        // Bỏ qua lỗi dự phòng để tầng xử lý tiếp tục chạy theo cookie hiện có.
       }
     }
 

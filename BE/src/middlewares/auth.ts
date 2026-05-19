@@ -6,10 +6,12 @@ import { createUserScopedClient, supabaseAdmin } from "@/lib/supabase";
 import type { AuthUser } from "@/types/express";
 
 /**
- * Verifies the Supabase JWT in the Authorization header and loads the
- * MiniERP user profile (nguoidung) into req.user.
- *
- * Call this before any route that requires auth.
+ * Middleware xác thực người dùng:
+ * 1. Lấy mã JWT từ header Authorization (Bearer)
+ * 2. Gọi Supabase Auth để xác minh mã còn hiệu lực
+ * 3. Tra bảng "nguoidung" để lấy hồ sơ nghiệp vụ (mã NV, vai trò ADMIN/WORKER)
+ * 4. Gắn thông tin người dùng vào req.user để các đường dẫn phía sau sử dụng
+ * Nếu mã không hợp lệ hoặc người dùng bị khóa (NGHI_VIEC) → trả lỗi 401/403
  */
 export const authMiddleware: RequestHandler = asyncHandler(async (req, _res, next) => {
   const authHeader = req.header("authorization") || req.header("Authorization");
@@ -29,7 +31,7 @@ export const authMiddleware: RequestHandler = asyncHandler(async (req, _res, nex
   const login = normalizeLoginFromEmail(data.user.email);
   const emailLower = data.user.email.trim().toLowerCase();
 
-  // Try lookup by login first, then by raw email (master admin)
+  // Tìm hồ sơ nguoidung: ưu tiên theo tendangnhap (worker), nếu không thấy thì thử theo email quản trị viên gốc.
   const byLogin = await supabaseAdmin
     .from("nguoidung")
     .select("mand, tendangnhap, vaitro, trangthai")

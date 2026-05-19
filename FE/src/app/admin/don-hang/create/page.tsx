@@ -12,6 +12,7 @@ type OrderDetail = {
   khachhang: { hoten: string; sdt: string; email: string | null; diachi: string | null } | null;
 };
 
+// Trang tạo đơn hàng mới: nhập thông tin KH (tên, SĐT, email, địa chỉ) → POST /api/admin/orders → chuyển sang bước lập BOM
 export default function CreateOrderPage() {
   const router = useRouter();
   const [editingId, setEditingId] = useState(0);

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiData, apiJson } from "@/lib/api";
+import { ConfirmDialog, InlineNotice, type NoticeState } from "@/components/admin/Feedback";
 
 interface VatTu {
   mavt: number;
@@ -60,10 +61,12 @@ export default function MaterialPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const fetchMaterialsSeq = useRef(0);
 
-  // Modal States
+  // Trạng thái hộp thoại
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<VatTu | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<VatTu | null>(null);
   
   const [formData, setFormData] = useState({
     tenvt: "",
@@ -179,15 +182,15 @@ export default function MaterialPage() {
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa mã vật tư: ${name}?`)) return;
     try {
       await apiJson(`/api/admin/materials/${id}`, { method: "DELETE" });
+      setNotice({ tone: "ok", text: `Đã xóa vật tư ${name}.` });
       fetchMaterialList();
     } catch (err: unknown) {
       if (err instanceof Error) {
-        alert("Lỗi khi xóa: " + err.message);
+        setNotice({ tone: "error", text: "Lỗi khi xóa: " + err.message });
       } else {
-        alert("Lỗi khi xóa: " + String(err));
+        setNotice({ tone: "error", text: "Lỗi khi xóa: " + String(err) });
       }
     }
   };
@@ -195,7 +198,7 @@ export default function MaterialPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.tenvt || !formData.madm || formData.dongianhap < 0) {
-      alert("Vui lòng điền thông tin hợp lệ!");
+      setNotice({ tone: "warn", text: "Vui lòng điền thông tin hợp lệ." });
       return;
     }
 
@@ -221,12 +224,13 @@ export default function MaterialPage() {
         });
       }
       setIsModalOpen(false);
+      setNotice({ tone: "ok", text: editingItem ? "Đã cập nhật vật tư." : "Đã thêm vật tư mới." });
       fetchMaterialList();
     } catch (err: unknown) {
       if (err instanceof Error) {
-        alert("Lỗi lưu dữ liệu: " + err.message);
+        setNotice({ tone: "error", text: "Lỗi lưu dữ liệu: " + err.message });
       } else {
-        alert("Lỗi lưu dữ liệu: " + String(err));
+        setNotice({ tone: "error", text: "Lỗi lưu dữ liệu: " + String(err) });
       }
     } finally {
       setIsSubmitting(false);
@@ -236,7 +240,7 @@ export default function MaterialPage() {
   return (
     <div className="space-y-6">
       
-      {/* Header */}
+      {/* Đầu trang */}
       <div className="flex justify-between items-center bg-[#0a0a0c] p-6 rounded-2xl border border-white/5 shadow-sm">
         <div>
           <h1 className="text-2xl font-bold text-gray-100 flex items-center">
@@ -271,8 +275,9 @@ export default function MaterialPage() {
           {errorMsg}
         </div>
       )}
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
 
-      {/* Toolbar */}
+      {/* Thanh công cụ */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative max-w-md w-full min-w-[200px]">
@@ -363,8 +368,51 @@ export default function MaterialPage() {
         </div>
       </div>
 
-      {/* Data Table */}
-      <div className="bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg">
+      {/* Bảng dữ liệu */}
+      {!loading && (
+        <div className="space-y-3 md:hidden">
+          {materials.map((item, idx) => {
+            const tonThanh = Math.max(0, Math.round(Number(item.tonKhoThanh ?? 0)));
+            const tonMm = Math.max(0, Math.round(Number(item.tonKhoTongMm ?? 0)));
+            return (
+              <div key={item.mavt} className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-sm font-bold text-emerald-300">VT-{item.mavt}</p>
+                    <p className="mt-1 text-base font-bold text-gray-100">{item.tenvt}</p>
+                    <p className="mt-1 text-xs text-gray-500">{item.danhmuc?.tendm || "Chưa phân loại"}</p>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-300">
+                    #{(page - 1) * pageSize + idx + 1}
+                  </span>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500">Đơn giá</p>
+                    <p className="font-mono font-bold text-gray-100">{formatCurrency(item.dongianhap)}</p>
+                    <p className="text-xs text-gray-500">/{item.donvitinh}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">Tồn kho phôi</p>
+                    <p className="font-mono font-bold text-emerald-300">{tonThanh} thanh</p>
+                    {tonMm > 0 && <p className="text-xs text-gray-500">{tonMm.toLocaleString("vi-VN")} mm</p>}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => openEditModal(item)} className="rounded-lg bg-blue-500/10 px-3 py-2 text-sm font-bold text-blue-200">
+                    Sửa
+                  </button>
+                  <button type="button" onClick={() => setDeleteTarget(item)} className="rounded-lg bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
+                    Xóa
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {materials.length === 0 && <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-8 text-center text-sm text-gray-500">Không tìm thấy vật tư phù hợp.</div>}
+        </div>
+      )}
+      <div className="hidden bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg md:block">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-4" />
@@ -449,7 +497,7 @@ export default function MaterialPage() {
                           type="button"
                           title={`Xoá vật tư ${item.tenvt}`}
                           aria-label={`Xoá vật tư ${item.tenvt}`}
-                          onClick={() => handleDelete(item.mavt, item.tenvt)}
+                          onClick={() => setDeleteTarget(item)}
                           className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -493,7 +541,7 @@ export default function MaterialPage() {
         </div>
       )}
 
-      {/* ADD / EDIT MODAL */}
+      {/* Hộp thoại thêm/sửa */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
@@ -582,6 +630,21 @@ export default function MaterialPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Xóa vật tư VT-${deleteTarget.mavt}` : ""}
+        description="Chỉ xóa khi chắc chắn vật tư này không còn dùng trong BOM, kho phôi hoặc dữ liệu lịch sử. Với vật tư đã phát sinh nghiệp vụ, nên ngưng sử dụng thay vì xóa."
+        confirmLabel="Xóa vật tư"
+        tone="danger"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          const item = deleteTarget;
+          if (!item) return;
+          await handleDelete(item.mavt, item.tenvt);
+          setDeleteTarget(null);
+        }}
+      />
 
     </div>
   );

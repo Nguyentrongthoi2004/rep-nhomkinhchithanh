@@ -16,7 +16,7 @@ const envSchema = z.object({
 const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
-  // Pretty-print all validation errors then exit
+  // In lỗi validate cấu hình rõ ràng rồi dừng tiến trình.
   console.error("\n[env] Invalid environment variables:");
   for (const issue of parsed.error.issues) {
     console.error(` - ${issue.path.join(".")}: ${issue.message}`);

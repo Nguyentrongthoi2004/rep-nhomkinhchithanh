@@ -19,6 +19,7 @@ const PAYMENT_SELECT = `
   )
 `;
 
+// Tính số tiền có dấu: giao dịch HUY_DON → âm, các loại khác → dương
 function signedAmount(row: { loaigd: string; sotien: number | string }) {
   const amount = Number(row.sotien || 0);
   return row.loaigd === "HUY_DON" ? -amount : amount;
@@ -29,6 +30,7 @@ function formatVnd(amount: number | string | null | undefined) {
 }
 
 export const paymentsService = {
+  // Danh sách thanh toán: gộp đơn hàng + giao dịch → tính đã thanh toán / còn nợ cho từng đơn
   async list() {
     const [{ data: orders, error: ordersErr }, { data: payments, error: paymentsErr }] = await Promise.all([
       supabaseAdmin
@@ -58,6 +60,7 @@ export const paymentsService = {
     });
   },
 
+  // Ghi nhận thanh toán: kiểm tra đơn đã duyệt giá, tính công nợ, insert giao dịch, tự động chuyển trạng thái DA_COC/DA_THANH_TOAN
   async create(dto: CreatePaymentDto) {
     const { data: order, error: orderErr } = await supabaseAdmin
       .from("donhang")
@@ -108,6 +111,8 @@ export const paymentsService = {
     if (dto.loaigd !== "HUY_DON") {
       const paidAfter = paidBefore + dto.sotien;
       const total = Number(order.tonggiatri || 0);
+      // Nếu chọn "Đặt cọc" nhưng số tiền trả đủ công nợ, nghiệp vụ vẫn phải chốt là đã thanh toán.
+      // Điều này tránh trạng thái mâu thuẫn "còn nợ 0đ nhưng đơn vẫn Đã cọc".
       const nextStatus = paidAfter >= total ? "DA_THANH_TOAN" : "DA_COC";
       await supabaseAdmin
         .from("donhang")

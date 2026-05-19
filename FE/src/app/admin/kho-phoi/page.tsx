@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiData, apiJson } from "@/lib/api";
+import { ConfirmDialog, InlineNotice, type NoticeState } from "@/components/admin/Feedback";
 
 interface KhoPhoiType {
   maphoi: number;
@@ -153,7 +154,7 @@ export default function RawMaterialInventoryPage() {
     return out;
   }, []);
 
-  // Create modal
+  // Hộp thoại nhập phôi mới
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [materials, setMaterials] = useState<VatTuOption[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -180,10 +181,12 @@ export default function RawMaterialInventoryPage() {
     [quickRows],
   );
 
-  // Edit modal
+  // Hộp thoại sửa phôi
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editing, setEditing] = useState<KhoPhoiType | null>(null);
   const [editForm, setEditForm] = useState({ chieudaihientai: 0, trangthai: "MOI" });
+  const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<KhoPhoiType | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(searchInput.trim()), 320);
@@ -275,7 +278,7 @@ export default function RawMaterialInventoryPage() {
         chieudaibandau: p.chieudaibandau || (list[0]?.chieudaimacdinh ?? 6000),
       }));
     } catch (err: unknown) {
-      // keep silent; page still works without create
+      // Bỏ qua lỗi này; trang vẫn dùng được nếu API tạo lô chưa sẵn sàng.
       console.error(err);
     }
   }, []);
@@ -311,7 +314,7 @@ export default function RawMaterialInventoryPage() {
 
     const openQuickImport = () => {
       if (!materials.length) {
-        alert("Đang tải danh sách vật tư — thử lại sau vài giây.");
+        setNotice({ tone: "warn", text: "Đang tải danh sách vật tư, thử lại sau vài giây." });
         return;
       }
       setQuickRows((rows) => (rows.length ? rows : [makeQuickRow(materials)]));
@@ -320,7 +323,7 @@ export default function RawMaterialInventoryPage() {
 
     const addQuickRow = () => {
       if (quickRows.length >= QUICK_MAX_LINES) {
-        alert(`Tối đa ${QUICK_MAX_LINES} dòng mỗi lần nhập.`);
+        setNotice({ tone: "warn", text: `Tối đa ${QUICK_MAX_LINES} dòng mỗi lần nhập.` });
         return;
       }
       setQuickRows((rows) => [...rows, makeQuickRow(materials)]);
@@ -340,12 +343,12 @@ export default function RawMaterialInventoryPage() {
           chieudaibandau: Math.floor(r.chieudaibandau),
         }));
       if (!items.length) {
-        alert("Thêm ít nhất một dòng: chọn vật tư, chiều dài và số lượng thanh.");
+        setNotice({ tone: "warn", text: "Thêm ít nhất một dòng: chọn vật tư, chiều dài và số lượng thanh." });
         return;
       }
       const totalBars = items.reduce((s, i) => s + i.quantity, 0);
       if (totalBars > QUICK_MAX_TOTAL_BARS) {
-        alert(`Tổng số thanh một lần không vượt quá ${QUICK_MAX_TOTAL_BARS} (hiện ${totalBars}). Chia thành nhiều lần nhập.`);
+        setNotice({ tone: "warn", text: `Tổng số thanh một lần không vượt quá ${QUICK_MAX_TOTAL_BARS} (hiện ${totalBars}). Chia thành nhiều lần nhập.` });
         return;
       }
       setIsSubmitting(true);
@@ -360,10 +363,11 @@ export default function RawMaterialInventoryPage() {
         setQuickOpen(false);
         setQuickNcc("");
         setQuickRows([]);
+        setNotice({ tone: "ok", text: `Đã nhập bổ sung ${totalBars} thanh phôi.` });
         fetchInventory();
         if (viewMode === "byDay") void fetchGroupedByDay();
       } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : String(err));
+        setNotice({ tone: "error", text: err instanceof Error ? err.message : String(err) });
       } finally {
         setIsSubmitting(false);
       }
@@ -377,9 +381,9 @@ export default function RawMaterialInventoryPage() {
 
     const handleCreate = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!createForm.mavt) return alert("Vui lòng chọn vật tư");
-      if (createForm.quantity <= 0) return alert("Số lượng không hợp lệ");
-      if (createForm.chieudaibandau <= 0) return alert("Chiều dài không hợp lệ");
+      if (!createForm.mavt) return setNotice({ tone: "warn", text: "Vui lòng chọn vật tư." });
+      if (createForm.quantity <= 0) return setNotice({ tone: "warn", text: "Số lượng không hợp lệ." });
+      if (createForm.chieudaibandau <= 0) return setNotice({ tone: "warn", text: "Chiều dài không hợp lệ." });
       setIsSubmitting(true);
       try {
         await apiJson("/api/admin/raw-stock", {
@@ -394,9 +398,10 @@ export default function RawMaterialInventoryPage() {
           }),
         });
         setIsCreateOpen(false);
+        setNotice({ tone: "ok", text: `Đã nhập ${createForm.quantity} thanh phôi.` });
         fetchInventory();
       } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : String(err));
+        setNotice({ tone: "error", text: err instanceof Error ? err.message : String(err) });
       } finally {
         setIsSubmitting(false);
       }
@@ -415,9 +420,10 @@ export default function RawMaterialInventoryPage() {
           }),
         });
         setIsEditOpen(false);
+        setNotice({ tone: "ok", text: `Đã cập nhật UID-${editing.maphoi.toString().padStart(5, "0")}.` });
         fetchInventory();
       } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : String(err));
+        setNotice({ tone: "error", text: err instanceof Error ? err.message : String(err) });
       } finally {
         setIsSubmitting(false);
       }
@@ -432,13 +438,13 @@ export default function RawMaterialInventoryPage() {
     };
 
     const handleDelete = async (item: KhoPhoiType) => {
-      if (!confirm(`Xóa UID-${item.maphoi.toString().padStart(5, "0")}?`)) return;
       setIsSubmitting(true);
       try {
         await apiJson(`/api/admin/raw-stock/${item.maphoi}`, { method: "DELETE" });
+        setNotice({ tone: "ok", text: `Đã xóa UID-${item.maphoi.toString().padStart(5, "0")}.` });
         fetchInventory();
       } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : String(err));
+        setNotice({ tone: "error", text: err instanceof Error ? err.message : String(err) });
       } finally {
         setIsSubmitting(false);
       }
@@ -447,7 +453,7 @@ export default function RawMaterialInventoryPage() {
     return (
       <div className="space-y-6">
         
-        {/* Header */}
+        {/* Đầu trang */}
         <div className="flex justify-between items-center bg-[#0a0a0c] p-6 rounded-2xl border border-white/5 shadow-sm">
           <div>
              <h1 className="text-2xl font-bold text-gray-100 flex items-center">
@@ -484,6 +490,7 @@ export default function RawMaterialInventoryPage() {
             </button>
           </div>
         </div>
+        <InlineNotice notice={notice} onClose={() => setNotice(null)} />
 
         {errorMsg && (
           <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-300">{errorMsg}</div>
@@ -518,7 +525,7 @@ export default function RawMaterialInventoryPage() {
           </div>
         </div>
   
-        {/* Stats (toàn kho — không phụ thuộc phân trang) */}
+        {/* Thống kê toàn kho, không phụ thuộc phân trang */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-[#0a0a0c] border border-white/5 p-5 rounded-2xl flex items-center shadow-lg">
             <div className="p-3 bg-emerald-500/10 rounded-full mr-4 border border-emerald-500/20">
@@ -555,7 +562,7 @@ export default function RawMaterialInventoryPage() {
           </div>
         </div>
 
-        {/* Toolbar */}
+        {/* Thanh công cụ */}
         {viewMode === "list" ? (
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex flex-1 flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center">
@@ -750,7 +757,7 @@ export default function RawMaterialInventoryPage() {
           </div>
         )}
 
-        {/* Grouped-by-day view */}
+        {/* Chế độ xem nhóm theo ngày */}
         {viewMode === "byDay" && (
           <div className="space-y-3">
             {groupLoading ? (
@@ -844,9 +851,47 @@ export default function RawMaterialInventoryPage() {
           </div>
         )}
 
-        {/* Inventory Table */}
+        {/* Bảng tồn kho */}
         {viewMode === "list" && (
-        <div className="bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg">
+        <>
+        {!loading && (
+          <div className="space-y-3 md:hidden">
+            {inventory.map((item) => (
+              <div key={item.maphoi} className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-sm font-bold text-cyan-300">UID-{item.maphoi.toString().padStart(5, "0")}</p>
+                    <p className="mt-1 text-base font-bold text-gray-100">{item.vattu?.tenvt}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Nhập: {item.lonhap?.ngaynhap ? new Date(item.lonhap.ngaynhap).toLocaleDateString("vi-VN") : "N/A"}
+                    </p>
+                  </div>
+                  {getStatusBadge(item.trangthai)}
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500">Ban đầu</p>
+                    <p className="font-mono font-bold text-gray-100">{item.chieudaibandau} mm</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">Hiện tại</p>
+                    <p className="font-mono font-bold text-cyan-200">{item.chieudaihientai} mm</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => openEdit(item)} className="rounded-lg bg-blue-500/10 px-3 py-2 text-sm font-bold text-blue-200">
+                    Sửa
+                  </button>
+                  <button type="button" onClick={() => setDeleteTarget(item)} className="rounded-lg bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
+                    Xóa
+                  </button>
+                </div>
+              </div>
+            ))}
+            {inventory.length === 0 && <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-8 text-center text-sm text-gray-500">Không tìm thấy phôi phù hợp.</div>}
+          </div>
+        )}
+        <div className="hidden bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg md:block">
           {loading ? (
              <div className="flex justify-center items-center py-20 text-gray-400"><Loader2 className="w-8 h-8 animate-spin" /></div>
           ) : (
@@ -892,7 +937,7 @@ export default function RawMaterialInventoryPage() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDelete(item)}
+                        onClick={() => setDeleteTarget(item)}
                         className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
                         title="Xóa"
                         aria-label="Xóa phôi"
@@ -910,6 +955,7 @@ export default function RawMaterialInventoryPage() {
           </table>
           )}
         </div>
+        </>
         )}
 
       {!loading && viewMode === "list" && listTotal > 0 && (
@@ -941,7 +987,7 @@ export default function RawMaterialInventoryPage() {
         </div>
       )}
 
-        {/* QUICK IMPORT MODAL — nhiều loại / số lượng lớn trong một lô */}
+        {/* Hộp thoại nhập nhanh nhiều loại/số lượng lớn trong một lô */}
         {quickOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
@@ -1107,7 +1153,7 @@ export default function RawMaterialInventoryPage() {
           </div>
         )}
 
-        {/* CREATE MODAL */}
+        {/* Hộp thoại tạo mới */}
         {isCreateOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
@@ -1207,7 +1253,7 @@ export default function RawMaterialInventoryPage() {
           </div>
         )}
 
-        {/* EDIT MODAL */}
+        {/* Hộp thoại chỉnh sửa */}
         {isEditOpen && editing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
@@ -1275,6 +1321,22 @@ export default function RawMaterialInventoryPage() {
             </div>
           </div>
         )}
+
+        <ConfirmDialog
+          open={!!deleteTarget}
+          title={deleteTarget ? `Xóa UID-${deleteTarget.maphoi.toString().padStart(5, "0")}` : ""}
+          description="Chỉ xóa phôi khi đây là dữ liệu nhập sai. Nếu phôi đã lỗi hoặc đã dùng trong sơ đồ cắt, nên chuyển trạng thái Bỏ đi để giữ lịch sử kho."
+          confirmLabel="Xóa phôi"
+          tone="danger"
+          busy={isSubmitting}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={async () => {
+            const item = deleteTarget;
+            if (!item) return;
+            await handleDelete(item);
+            setDeleteTarget(null);
+          }}
+        />
 
     </div>
   );

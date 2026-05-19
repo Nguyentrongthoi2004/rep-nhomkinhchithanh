@@ -172,6 +172,8 @@ export default function OrderBomPage() {
       setOrder(loadedOrder);
       setMaterials(list);
 
+      // Chọn sẵn vật tư hợp lý để bước lập BOM không bắt quản trị viên cấu hình từ đầu.
+      // Nếu đơn đã có BOM, phía dưới sẽ phục hồi về manualLines để sửa tiếp.
       const bars = list.filter((m) => m.chieudaimacdinh);
       const glasses = list.filter(isGlass);
       setFrameId((p) => p || bars[0]?.mavt || list[0]?.mavt || 0);
@@ -215,6 +217,8 @@ export default function OrderBomPage() {
   const hasSize = typeof width === "number" && typeof height === "number" && width > 0 && height > 0;
 
   const manualBom = useMemo(() => {
+    // Chuẩn hóa dòng nhập thủ công thành payload chung cho backend.
+    // Cho phép xóa tạm số lượng trong ô nhập bằng chuỗi rỗng, chỉ dòng hợp lệ mới vào BOM.
     return manualLines
       .filter((l) => l.mavt > 0 && l.name.trim() && typeof l.qty === "number" && l.qty > 0)
       .map((l) => {
@@ -245,6 +249,7 @@ export default function OrderBomPage() {
     [frame, glass, hasSize, height, width, wing],
   );
   const bom = useMemo(
+    // Chế độ mẫu cửa vẫn cộng thêm vật tư bổ sung để khách mua thêm phụ kiện/vật tư ngoài mẫu.
     () => (mode === "MANUAL_BOM" ? manualBom : [...doorBom, ...manualBom]),
     [doorBom, manualBom, mode],
   );
@@ -272,6 +277,7 @@ export default function OrderBomPage() {
     setSaving(true);
     setErrorMsg("");
     try {
+      // Payload vẫn gửi thông tin KH hiện tại để backend không làm mất email/địa chỉ khi lưu BOM.
       await apiJson(`/api/admin/orders/${id}/edit`, {
         method: "PATCH",
         body: JSON.stringify({
@@ -301,6 +307,7 @@ export default function OrderBomPage() {
     setManualLines((prev) =>
       prev.map((l) => {
         if (l.id !== lineId) return l;
+        // Đổi vật tư thì xóa unitPrice override để đơn giá được tính lại theo vật tư mới.
         const base = { ...l, mavt, name: material?.tenvt || l.name || "Hạng mục", kind, unitPrice: undefined };
         if (kind === "LINEAR") return { ...base, length: l.length ?? 1000, w: undefined, h: undefined };
         if (kind === "SHEET") return { ...base, w: l.w ?? 1000, h: l.h ?? 1000, length: undefined };
@@ -312,6 +319,7 @@ export default function OrderBomPage() {
   const addManual = () => {
     const first = materials[0] || null;
     if (!first) return;
+    // Mỗi lần bấm chỉ thêm 1 dòng, tránh lỗi sinh cả cụm bảng làm trang kéo dài.
     setManualLines((prev) => [...prev, makeManualLine(first)]);
   };
 

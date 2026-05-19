@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ClipboardCheck, Loader2, Package, Play, RefreshCw, Ruler, X, XCircle } from "lucide-react";
+import { AlertTriangle, Check, ClipboardCheck, Loader2, Package, Play, RefreshCw, Ruler, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import { apiData, apiJson } from "@/lib/api";
 
@@ -197,6 +197,16 @@ export default function WorkerTasksPage() {
                 >
                   <Ruler className="w-4 h-4 mr-2" /> Sơ đồ cắt
                 </Link>
+                {task.trangthai !== "HOAN_THANH" && (
+                  <Link
+                    href={`/worker/cat?mapc=${task.mapc}&report=1`}
+                    className="col-span-2 h-12 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 text-sm font-bold inline-flex items-center justify-center"
+                    title="Báo sự cố từ sơ đồ cắt của nhiệm vụ"
+                    aria-label="Báo sự cố từ sơ đồ cắt của nhiệm vụ"
+                  >
+                    <AlertTriangle className="w-4 h-4 mr-2" /> Báo sự cố
+                  </Link>
+                )}
                 {task.trangthai === "CHO_THUC_HIEN" && (
                   <button onClick={() => updateStatus(task.mapc, "DANG_THUC_HIEN")} disabled={busyId === task.mapc} className="col-span-2 h-12 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-sm flex items-center justify-center disabled:opacity-60">
                     {busyId === task.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />} Bắt đầu

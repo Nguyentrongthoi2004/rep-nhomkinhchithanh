@@ -109,6 +109,7 @@ type GroupRow = {
 };
 
 export const rawStockService = {
+  // Lấy toàn bộ danh sách phôi trong kho
   async list() {
     const { data, error } = await supabaseAdmin
       .from(TABLE)
@@ -129,7 +130,7 @@ export const rawStockService = {
   },
 
   async listPaged(query: RawStockListQuery): Promise<RawStockPageResult> {
-    const { page, pageSize, mavt, trangthai, sortBy, order } = query;
+    const { page, pageSize, mavt, trangthai, minLength, sortBy, order } = query;
     const ascending = order === "asc";
 
     let filterByMaphoi: number | undefined;
@@ -187,6 +188,13 @@ export const rawStockService = {
       qb = qb.eq("trangthai", trangthai);
     }
 
+    if (minLength !== undefined) {
+      qb = qb.gte("chieudaihientai", minLength);
+      if (!trangthai) {
+        qb = qb.neq("trangthai", "BO_DI");
+      }
+    }
+
     const fromIdx = (page - 1) * pageSize;
     const toIdx = fromIdx + pageSize - 1;
 
@@ -235,7 +243,7 @@ export const rawStockService = {
 
     if (batchIds.length === 0) return { days: [], totalThanhMatched: 0 };
 
-    // Bước 2: lấy kho theo danh sách lô, có thể thêm filter vật tư
+    // Bước 2: lấy kho theo danh sách lô, có thể thêm bộ lọc vật tư.
     const all: GroupRow[] = [];
     let from = 0;
     for (;;) {
@@ -332,7 +340,7 @@ export const rawStockService = {
     return data;
   },
 
-  /** Admin: create a batch + N raw-stock records */
+  // Quản trị viên nhập lô phôi mới vào kho. Tạo 1 lô nhập + N thanh phôi (mỗi thanh = 1 bản ghi Immutable ID).
   async createBatch(dto: CreateBatchDto) {
     const { data: batch, error: batchErr } = await supabaseAdmin
       .from(BATCH_TABLE)
@@ -359,7 +367,7 @@ export const rawStockService = {
       .insert(rows)
       .select("maphoi, mavt, malonhap, chieudaibandau, chieudaihientai, trangthai");
     if (insErr) {
-      // Attempt to rollback the batch row if we failed
+      // Nếu tạo phôi lỗi sau khi đã tạo lô, cố gắng hoàn tác bản ghi lô để tránh dữ liệu mồ côi.
       await supabaseAdmin.from(BATCH_TABLE).delete().eq("malonhap", batch.malonhap);
       throw HttpError.internal(insErr.message);
     }
@@ -367,7 +375,7 @@ export const rawStockService = {
     return { batch, items: inserted ?? [] };
   },
 
-  /** Admin: patch a single raw-stock record */
+  // Quản trị viên cập nhật thông tin 1 thanh phôi (chiều dài hiện tại, trạng thái).
   async update(id: number, dto: UpdateRawStockDto) {
     const payload: Record<string, unknown> = {};
     if (dto.chieudaihientai !== undefined) payload.chieudaihientai = dto.chieudaihientai;
@@ -397,14 +405,9 @@ export const rawStockService = {
     }
   },
 
-  /**
-   * Worker action: record a cut on a raw-stock piece.
-   *  - subtract cutLength from chieudaihientai
-   *  - toggle status to BO_DI when remainder is 0, else CON_DU
-   *  - append a row in nhatkygiacong (loai_su_kien = CAT)
-   */
+  // Thợ ghi nhận cắt phôi: trừ chiều dài, cập nhật trạng thái (CON_DU/BO_DI), ghi nhật ký gia công.
   async recordCut(dto: CutActionDto, workerId: number) {
-    // 1. Read current state
+    // 1. Đọc trạng thái hiện tại của phôi.
     const current = await this.getById(dto.maphoi);
     const before = current.chieudaihientai as number;
     const after = before - dto.payload.cutLength;
@@ -416,7 +419,7 @@ export const rawStockService = {
 
     const nextStatus = after === 0 ? "BO_DI" : before === after ? current.trangthai : "CON_DU";
 
-    // 2. Update the raw-stock row
+    // 2. Cập nhật lại bản ghi phôi.
     const { data: updated, error: upErr } = await supabaseAdmin
       .from(TABLE)
       .update({ chieudaihientai: after, trangthai: nextStatus })
@@ -425,7 +428,7 @@ export const rawStockService = {
       .single();
     if (upErr) throw HttpError.internal(upErr.message);
 
-    // 3. Log the event
+    // 3. Ghi nhật ký sự kiện cắt phôi.
     const { error: logErr } = await supabaseAdmin.from(LOG_TABLE).insert({
       maphoi: dto.maphoi,
       matho: workerId,
@@ -435,7 +438,7 @@ export const rawStockService = {
       ghichu: dto.payload.ghichu ?? null,
     });
     if (logErr) {
-      // Non-fatal for the worker flow, but we surface it so ops can fix RLS/schema
+      // Không làm hỏng luồng worker, nhưng vẫn báo lỗi để vận hành kiểm tra RLS/schema.
       throw HttpError.internal(`Updated stock but failed to log event: ${logErr.message}`);
     }
 

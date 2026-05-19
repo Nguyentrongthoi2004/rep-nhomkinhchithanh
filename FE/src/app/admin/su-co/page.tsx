@@ -6,6 +6,11 @@ import { apiData } from "@/lib/api";
 
 type IssueReport = {
   mank: number;
+  solanbao?: number;
+  nguoibao?: string[];
+  masdcs?: number[];
+  mapcs?: number[];
+  madhs?: number[];
   maphoi: number;
   masdc: number | null;
   mapc: number | null;
@@ -56,6 +61,8 @@ export default function AdminIssuesPage() {
 
   const scrapIssue = async (issue: IssueReport) => {
     const isScrapped = issue.khothanhphoi?.trangthai === "BO_DI";
+    // Một UID có thể bị worker báo nhiều lần. Backend sẽ đóng toàn bộ sự cố đang mở cùng UID,
+    // nên quản trị viên chỉ cần xác nhận trên một thẻ đại diện.
     const ok = confirm(
       isScrapped
         ? `Đóng các báo cáo còn lại của UID-${issue.maphoi}? Phôi này đã bị bỏ trước đó.`
@@ -83,6 +90,7 @@ export default function AdminIssuesPage() {
     }
     setBusyId(trimIssue.mank);
     try {
+      // Cắt bỏ đoạn lỗi giữ lại phần phôi còn dùng được; nếu chiều dài về 0 backend tự chuyển BO_DI.
       const rows = await apiData<IssueReport[]>(`/api/admin/issues/${trimIssue.mank}/trim`, {
         method: "POST",
         body: JSON.stringify({ cutLength, ghichu: trimNote || null }),
@@ -136,13 +144,22 @@ export default function AdminIssuesPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap gap-1.5">
                       <span className="text-[11px] font-mono text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-0.5">UID-{issue.maphoi}</span>
-                      {issue.masdc ? <span className="text-[11px] font-mono text-red-200 bg-red-500/10 border border-red-500/20 rounded-md px-2 py-0.5">SDC-{issue.masdc}</span> : null}
-                      {issue.mapc ? <span className="text-[11px] font-mono text-sky-300 bg-sky-500/10 border border-sky-500/20 rounded-md px-2 py-0.5">PC-{issue.mapc}</span> : null}
-                      {issue.phancong?.madh ? <span className="text-[11px] font-mono text-gray-300 bg-white/5 border border-white/10 rounded-md px-2 py-0.5">DH-{issue.phancong.madh}</span> : null}
+                      <span className="text-[11px] font-bold text-red-100 bg-red-500/10 border border-red-500/20 rounded-md px-2 py-0.5">
+                        {issue.solanbao ?? 1} lần báo
+                      </span>
+                      {(issue.masdcs?.length ? issue.masdcs : issue.masdc ? [issue.masdc] : []).slice(0, 3).map((masdc) => (
+                        <span key={`sdc-${masdc}`} className="text-[11px] font-mono text-red-200 bg-red-500/10 border border-red-500/20 rounded-md px-2 py-0.5">SDC-{masdc}</span>
+                      ))}
+                      {(issue.mapcs?.length ? issue.mapcs : issue.mapc ? [issue.mapc] : []).slice(0, 3).map((mapc) => (
+                        <span key={`pc-${mapc}`} className="text-[11px] font-mono text-sky-300 bg-sky-500/10 border border-sky-500/20 rounded-md px-2 py-0.5">PC-{mapc}</span>
+                      ))}
+                      {(issue.madhs?.length ? issue.madhs : issue.phancong?.madh ? [issue.phancong.madh] : []).slice(0, 3).map((madh) => (
+                        <span key={`dh-${madh}`} className="text-[11px] font-mono text-gray-300 bg-white/5 border border-white/10 rounded-md px-2 py-0.5">DH-{madh}</span>
+                      ))}
                     </div>
                     <h3 className="text-base font-bold text-gray-100 mt-2">{stock?.vattu?.tenvt || "Phôi chưa rõ vật tư"}</h3>
                     <p className="text-xs text-gray-400 mt-1">
-                      Báo bởi {issue.nguoidung?.hoten || "Worker"} · {new Date(issue.thoigian).toLocaleString("vi-VN")}
+                      Báo bởi {(issue.nguoibao?.length ? issue.nguoibao.join(", ") : issue.nguoidung?.hoten) || "Worker"} · mới nhất {new Date(issue.thoigian).toLocaleString("vi-VN")}
                     </p>
                   </div>
                   <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border ${
@@ -166,7 +183,7 @@ export default function AdminIssuesPage() {
 
                 {isScrapped && (
                   <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                    Phôi này đã bị bỏ. Bấm đóng báo cáo để xử lý nốt các log sự cố cũ cùng UID/PC/SDC.
+                    Phôi này đã bị bỏ. Bấm đóng báo cáo để xử lý nốt các log sự cố cũ cùng UID.
                   </div>
                 )}
 

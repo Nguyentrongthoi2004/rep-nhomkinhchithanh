@@ -2,6 +2,8 @@ export type TimeFilter = "all" | "today" | "month" | "year";
 
 export const DEFAULT_PAGE_SIZE = 8;
 
+// Bộ lọc thời gian dùng chung cho các màn danh sách xử lý ở phía trình duyệt.
+// So sánh theo lịch cục bộ của trình duyệt để khớp cách quản trị viên xem "hôm nay/tháng này".
 export function matchesTimeFilter(value: string, filter: TimeFilter, now = new Date()) {
   if (filter === "all") return true;
 
@@ -17,6 +19,8 @@ export function matchesTimeFilter(value: string, filter: TimeFilter, now = new D
   return sameYear;
 }
 
+// Phân trang phía trình duyệt cho các bảng nhỏ/vừa. Hàm luôn trả page hợp lệ
+// để giao diện không bị rỗng khi tìm kiếm/bộ lọc làm số trang giảm.
 export function paginate<T>(items: T[], page: number, pageSize = DEFAULT_PAGE_SIZE) {
   const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
   const safePage = Math.min(Math.max(1, page), pageCount);

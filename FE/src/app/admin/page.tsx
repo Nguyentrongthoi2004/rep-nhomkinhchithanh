@@ -7,7 +7,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 
 import { ElementType } from 'react';
 
-// Reusable Components
+// Component dùng lại trong dashboard
 interface StatCardProps {
   title: string;
   value: string | number;
@@ -36,7 +36,7 @@ const StatCard = ({ title, value, change, icon: Icon, isIncrease }: StatCardProp
       <span className="text-gray-500 ml-2">so với tháng trước</span>
     </div>
 
-    {/* Subtle Glow Effect */}
+    {/* Hiệu ứng sáng nền nhẹ */}
     <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-blue-500/10 blur-2xl rounded-full group-hover:bg-blue-500/20 transition-all"></div>
   </div>
 );
@@ -53,6 +53,7 @@ export default function AdminDashboard() {
   });
   const [materialBars, setMaterialBars] = useState<Array<{ name: string; usage: number }>>([]);
 
+  // Tải dữ liệu dashboard: lấy đơn hàng, nhân sự, vật tư từ API → tính KPI (doanh thu tuần, đơn mới, thợ...)
   useEffect(() => {
     setMounted(true);
     let cancelled = false;
@@ -108,13 +109,13 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       
-      {/* Page Header */}
+      {/* Đầu trang */}
       <div>
         <h1 className="text-2xl font-bold text-gray-100">Tổng quan Hệ thống</h1>
         <p className="text-gray-400 text-sm mt-1">Trạng thái nhà xưởng và kinh doanh tính đến hôm nay.</p>
       </div>
 
-      {/* KPI Cards */}
+      {/* Thẻ KPI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Tổng Doanh Thu Hàng Tuần" 
@@ -146,10 +147,10 @@ export default function AdminDashboard() {
         />
       </div>
 
-      {/* Charts Section */}
+      {/* Khu vực biểu đồ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Replace "fake" charts with real material distribution */}
+        {/* Biểu đồ thật theo phân bổ vật tư, không dùng số liệu giả */}
         <div className="lg:col-span-3 bg-white/5 border border-white/10 rounded-xl p-6">
           <h3 className="text-lg font-medium text-gray-200 mb-2">Phân bổ mã vật tư theo danh mục</h3>
           <p className="text-xs text-gray-500 mb-6">Dữ liệu lấy từ database (không dùng mock).</p>

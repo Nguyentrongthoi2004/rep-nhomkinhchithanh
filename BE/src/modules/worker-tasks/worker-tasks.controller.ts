@@ -5,6 +5,13 @@ import { workerTasksService } from "./worker-tasks.service";
 import type { RejectTaskDto, UpdateTaskDto } from "./worker-tasks.schema";
 
 export const workerTasksController = {
+  async summary(req: Request, res: Response) {
+    const user = req.user;
+    if (!user) throw HttpError.unauthorized();
+    const data = await workerTasksService.summaryForWorker(user.mand);
+    sendOk(res, data);
+  },
+
   async list(req: Request, res: Response) {
     const user = req.user;
     if (!user) throw HttpError.unauthorized();

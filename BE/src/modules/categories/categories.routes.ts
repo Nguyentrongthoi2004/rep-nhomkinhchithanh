@@ -13,7 +13,7 @@ import {
 
 export const categoriesRouter = Router();
 
-// All endpoints here require an authenticated ADMIN
+// Tất cả endpoint trong module này yêu cầu ADMIN đã xác thực.
 categoriesRouter.use(authMiddleware, requireRole("ADMIN"));
 
 categoriesRouter.get("/", asyncHandler(categoriesController.list));

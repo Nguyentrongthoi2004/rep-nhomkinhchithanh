@@ -29,22 +29,24 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
 let browserSupabase: ReturnType<typeof createClient> | null = null;
 
 function getSupabaseClient() {
+  // Giữ một đối tượng Supabase duy nhất trên trình duyệt để tránh tạo bộ lắng nghe phiên lặp lại.
+  // mỗi lần gọi apiFetch.
   browserSupabase ??= createClient();
   return browserSupabase;
 }
 
-/**
- * Trên localhost luôn gọi Same-Origin `/api/...` để Next rewrite tới BE (xem `next.config.ts`).
- * Tránh nhầm khi `.env` còn URL production → DB trống dù Supabase local đã có dữ liệu.
- */
+// Xây dựng URL cho API call:
+// Trên trình duyệt: luôn dùng cùng nguồn /api/* để Next.js rewrite tới BE (hỗ trợ cả mobile qua LAN)
+// Trên máy chủ: dùng API_BASE_URL từ .env
 function buildApiUrl(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  // Browser: always prefer same-origin `/api/*` so it works on LAN/phone.
-  // If API_BASE_URL points to localhost, calling it from a phone would fail.
+  // Trên trình duyệt luôn ưu tiên cùng nguồn `/api/*` để chạy được cả khi test bằng điện thoại qua LAN.
+  // Nếu gọi thẳng API_BASE_URL=localhost từ điện thoại thì yêu cầu sẽ trỏ vào chính điện thoại và lỗi.
   if (typeof window !== "undefined") return normalizedPath;
   return `${API_BASE_URL}${normalizedPath}`;
 }
 
+// Hàm fetch chính: tự động gắn JWT token từ Supabase session vào header Authorization
 export async function apiFetch(path: string, init: RequestInit = {}) {
   const { data } = await getSupabaseClient().auth.getSession();
   const headers = new Headers(init.headers);

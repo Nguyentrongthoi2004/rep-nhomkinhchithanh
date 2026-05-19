@@ -7,7 +7,7 @@ export default function WorkerHeader() {
     <header className="fixed top-0 left-0 right-0 h-16 admin-metal-panel/75 backdrop-blur-md border-b border-white/10 z-50 flex items-center justify-between px-4 overflow-hidden">
       <div className="admin-metal-shine" />
 
-      {/* Brand / Title */}
+      {/* Thương hiệu / Tiêu đề */}
       <div className="relative z-10 flex items-center gap-2.5 min-w-0">
         <div className="brand-icon flex items-center justify-center shrink-0">
           <Hexagon className="w-4 h-4 text-slate-100 drop-shadow-[0_0_18px_rgba(255,255,255,0.18)]" />
@@ -22,7 +22,7 @@ export default function WorkerHeader() {
         </div>
       </div>
 
-      {/* Quick Actions */}
+      {/* Thao tác nhanh */}
       <div className="flex items-center gap-2 relative z-10">
         <button
           className="relative p-2.5 bg-white/5 border border-white/10 rounded-full text-slate-300 hover:bg-white/10 active:scale-95 transition-all"

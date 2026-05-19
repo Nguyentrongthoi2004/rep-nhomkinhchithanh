@@ -9,6 +9,8 @@ import { rejectTaskSchema, taskIdParamSchema, updateTaskSchema } from "./worker-
 export const workerTasksRouter = Router();
 workerTasksRouter.use(authMiddleware, requireRole("WORKER", "ADMIN"));
 
+workerTasksRouter.get("/summary", asyncHandler(workerTasksController.summary));
+
 workerTasksRouter.get("/", asyncHandler(workerTasksController.list));
 
 workerTasksRouter.patch(

@@ -32,6 +32,7 @@ const money = (value: number) => new Intl.NumberFormat("vi-VN", { style: "curren
 const moneyPlain = (value: number) => `${new Intl.NumberFormat("vi-VN").format(value || 0)} đ`;
 
 function parseCurrencyInput(raw: string): { value: number; valid: boolean } {
+  // Cho phép nhập 7858808, 7.858.808 hoặc 7,858,808 nhưng luôn trả number sạch cho backend.
   const text = raw.trim();
   if (!text) return { value: 0, valid: true };
   if (/[^0-9.,\s]/.test(text)) return { value: 0, valid: false };
@@ -42,6 +43,7 @@ function parseCurrencyInput(raw: string): { value: number; valid: boolean } {
 }
 
 function formatCurrencyInput(raw: string): string {
+  // Định dạng trực tiếp trong ô nhập để quản trị viên đọc được số tiền lớn ngay khi nhập.
   const parsed = parseCurrencyInput(raw);
   if (!parsed.valid || parsed.value <= 0) return raw;
   return new Intl.NumberFormat("vi-VN").format(parsed.value);
@@ -74,9 +76,12 @@ function formatPaymentMethod(code: string): string {
 }
 
 function getPaymentFilterDate(row: OrderPayment) {
+  // Ưu tiên ngày giao dịch gần nhất; đơn chưa giao dịch thì dùng ngày tạo đơn để vẫn lọc được.
   return row.giaodich[0]?.ngaygd ?? row.ngaytao;
 }
 
+// Trang quản lý thanh toán: hiển thị công nợ từng đơn, ghi nhận giao dịch (đặt cọc/tạm ứng/hoàn tất/hủy)
+// Tự động chuyển trạng thái đơn hàng khi thanh toán đủ, hỗ trợ gửi email biên lai
 export default function PaymentsPage() {
   const [rows, setRows] = useState<OrderPayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +104,7 @@ export default function PaymentsPage() {
     try {
       const data = await apiData<OrderPayment[]>("/api/admin/payments");
       setRows(data);
+      // Chọn sẵn đơn có thể thanh toán để hộp thoại mở ra không trỏ vào đơn chưa duyệt giá.
       const firstPayable = data.find((row) => !["KHAO_SAT", "BAO_GIA_NHAP"].includes(row.trangthai)) ?? data[0];
       setForm((p) => ({ ...p, madh: p.madh || firstPayable?.madh || 0 }));
     } finally {
@@ -200,6 +206,8 @@ export default function PaymentsPage() {
           });
           emailMsg = ` Email xác nhận đã gửi tới ${receiptEmailTrimmed}.`;
           if (selectedOrder.khachhang?.makh && !selectedOrder.khachhang.email) {
+            // Nếu khách chưa có email trong hồ sơ nhưng quản trị viên nhập email biên lai,
+            // cập nhật ngược vào khachhang để lần sau báo giá/thanh toán tự điền.
             await apiJson(`/api/admin/customers/${selectedOrder.khachhang.makh}`, {
               method: "PATCH",
               body: JSON.stringify({ email: receiptEmailTrimmed }),
@@ -216,7 +224,7 @@ export default function PaymentsPage() {
       setNotice({ type: emailMsg.includes("lỗi") ? "warn" : "ok", text: `Đã ghi nhận thanh toán DH-${form.madh}.${emailMsg}` });
       reload();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      setNotice({ type: "warn", text: err instanceof Error ? err.message : String(err) });
     } finally {
       setSaving(false);
     }
@@ -279,7 +287,57 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      <div className="bg-[#0a0a0c] border border-white/5 rounded-2xl overflow-hidden">
+      {!loading && (
+        <div className="space-y-3 md:hidden">
+          {pagedRows.items.map((row) => {
+            const latest = row.giaodich[0];
+            return (
+              <div key={row.madh} className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-sm font-bold text-emerald-300">DH-{row.madh}</p>
+                    <p className="mt-1 text-base font-bold text-gray-100">{row.khachhang?.hoten || "Khách lẻ"}</p>
+                    <p className="text-xs text-gray-500">{row.khachhang?.sdt || "Chưa có SĐT"}</p>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-gray-300">
+                    {formatOrderStatus(row.trangthai)}
+                  </span>
+                </div>
+                <p className={`mt-2 break-all text-xs ${row.khachhang?.email ? "font-mono text-sky-300" : "text-gray-600"}`}>
+                  {row.khachhang?.email || "Chưa có email"}
+                </p>
+                <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500">Giá trị</p>
+                    <p className="font-mono font-bold text-gray-100">{money(row.tonggiatri)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Đã thu</p>
+                    <p className="font-mono font-bold text-emerald-300">{money(row.dathanhtoan)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Còn nợ</p>
+                    <p className="font-mono font-bold text-amber-300">{money(row.conno)}</p>
+                  </div>
+                </div>
+                <div className="mt-3 text-sm text-gray-400">
+                  {latest ? (
+                    <div className="space-y-1">
+                      <p>{formatTransactionType(latest.loaigd)} · {formatPaymentMethod(latest.phuongthuc)} · {money(latest.sotien)}</p>
+                      {latest.ghichu && <p className="line-clamp-2 text-xs text-gray-500">Ghi chú: {latest.ghichu}</p>}
+                    </div>
+                  ) : (
+                    "Chưa có giao dịch"
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-8 text-center text-sm text-gray-500">Không có dữ liệu thanh toán phù hợp.</div>}
+        </div>
+      )}
+
+      <div className="hidden bg-[#0a0a0c] border border-white/5 rounded-2xl overflow-hidden md:block">
         {loading ? (
           <div className="py-16 flex justify-center text-gray-400">
             <Loader2 className="w-8 h-8 animate-spin" />
@@ -352,6 +410,18 @@ export default function PaymentsPage() {
           />
         )}
       </div>
+      {!loading && (
+        <div className="md:hidden">
+          <ListPagination
+            page={pagedRows.page}
+            pageCount={pagedRows.pageCount}
+            total={filtered.length}
+            start={pagedRows.start}
+            end={pagedRows.end}
+            onPageChange={setPage}
+          />
+        </div>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">

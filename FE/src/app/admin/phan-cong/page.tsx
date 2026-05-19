@@ -7,8 +7,9 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { apiJson } from "@/lib/api";
+import { InlineNotice, type NoticeState } from "@/components/admin/Feedback";
 
-// ─── Types (khớp 100% với schema Supabase) ───
+// ─── Kiểu dữ liệu khớp với schema Supabase ───
 interface Worker {
   mand: number;
   hoten: string;
@@ -54,6 +55,8 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   TU_CHOI: { label: "Từ Chối", color: "bg-red-500/20 text-red-300 border-red-500/25" },
 };
 
+// Trang phân công thợ: giao đơn hàng cho worker, kiểm tra thợ bận, xem BOM chi tiết
+// Dữ liệu lấy từ Supabase trực tiếp (workers, orders) + API (phân công)
 export default function AdminPhanCongPage() {
   const supabase = useMemo(() => createClient(), []);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -62,14 +65,15 @@ export default function AdminPhanCongPage() {
   const [loading, setLoading] = useState(true);
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
 
-  // Modal state
+  // Trạng thái hộp thoại
   const [showModal, setShowModal] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<string>("");
   const [selectedOrder, setSelectedOrder] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState<NoticeState | null>(null);
 
-  // ─── Fetch dữ liệu thật từ Supabase ───
+  // ─── Tải dữ liệu thật từ Supabase ───
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -121,7 +125,7 @@ export default function AdminPhanCongPage() {
       list.push(a);
       map.set(a.madh, list);
     }
-    // keep stable ordering: newest mapc first inside each order
+    // Giữ thứ tự ổn định: phân công mới nhất đứng trước trong từng đơn.
     for (const [madh, list] of map.entries()) {
       list.sort((x, y) => y.mapc - x.mapc);
       map.set(madh, list);
@@ -184,7 +188,7 @@ export default function AdminPhanCongPage() {
       });
       fetchData();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      setNotice({ tone: "error", text: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -193,7 +197,7 @@ export default function AdminPhanCongPage() {
   return (
     <div className="space-y-6">
 
-      {/* Header */}
+      {/* Đầu trang */}
       <div className="flex justify-between items-center bg-[#0a0a0c] p-6 rounded-2xl border border-white/5 shadow-sm">
         <div>
           <h1 className="text-2xl font-bold text-gray-100 flex items-center">
@@ -211,8 +215,9 @@ export default function AdminPhanCongPage() {
           <UserPlus className="w-5 h-5 mr-2" /> Giao Việc Mới
         </button>
       </div>
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
 
-      {/* KPI */}
+      {/* Chỉ số nhanh */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-[#0a0a0c] border border-white/5 p-5 rounded-2xl flex items-center">
           <div className="p-3 bg-blue-500/10 rounded-full mr-4 border border-blue-500/20">
@@ -267,7 +272,7 @@ export default function AdminPhanCongPage() {
           ) : (
             <div className="divide-y divide-white/5">
               {Array.from(assignmentsByOrder.entries())
-                .sort((a, b) => b[0] - a[0]) // newest order id first (matches existing behavior roughly)
+                .sort((a, b) => b[0] - a[0]) // Đơn mới nhất đứng trước, gần với hành vi cũ.
                 .map(([madh, list]) => {
                   const orderName = list[0]?.donhang?.khachhang?.hoten || "Không rõ KH";
                   const anyDoing = list.some((x) => x.trangthai === "DANG_THUC_HIEN");
@@ -382,7 +387,7 @@ export default function AdminPhanCongPage() {
             </div>
           ) : (
             <div>
-              {/* Header BOM */}
+              {/* Tiêu đề BOM */}
               <div className="px-4 py-3 bg-emerald-500/5 border-b border-emerald-500/10">
                 <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
                   {openOrder.chitietdh.length} hạng mục cần sản xuất · Trị giá{" "}
@@ -429,7 +434,7 @@ export default function AdminPhanCongPage() {
         </div>
       </div>
 
-      {/* Modal Giao Việc */}
+      {/* Hộp thoại giao việc */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#12141a] border border-white/10 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
@@ -502,7 +507,7 @@ export default function AdminPhanCongPage() {
                 )}
               </div>
 
-              {/* Preview BOM khi chọn đơn */}
+              {/* Xem trước BOM khi chọn đơn */}
               {selectedOrder && (() => {
                 const ord = orders.find(o => o.madh === Number(selectedOrder));
                 if (!ord || ord.chitietdh.length === 0) return null;

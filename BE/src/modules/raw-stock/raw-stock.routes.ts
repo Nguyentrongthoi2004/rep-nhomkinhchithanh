@@ -13,7 +13,7 @@ import {
   updateRawStockSchema,
 } from "./raw-stock.schema";
 
-/** Admin-scoped routes: /api/admin/raw-stock */
+/** Đường dẫn dành cho quản trị viên: /api/admin/raw-stock. */
 export const adminRawStockRouter = Router();
 adminRawStockRouter.use(authMiddleware, requireRole("ADMIN"));
 
@@ -50,7 +50,7 @@ adminRawStockRouter.delete(
   asyncHandler(rawStockController.remove),
 );
 
-/** Worker-scoped routes: /api/worker/raw-stock */
+/** Đường dẫn dành cho thợ: /api/worker/raw-stock. */
 export const workerRawStockRouter = Router();
 workerRawStockRouter.use(authMiddleware, requireRole("WORKER", "ADMIN"));
 

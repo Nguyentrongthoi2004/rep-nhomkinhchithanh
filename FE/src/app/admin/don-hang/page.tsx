@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiData, apiJson } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
 import { CustomerContactModal, type CustomerContact } from "@/components/admin/CustomerContactModal";
+import { ConfirmDialog, InlineNotice, type NoticeState } from "@/components/admin/Feedback";
 import { ListPagination } from "@/components/admin/ListPagination";
 import { DEFAULT_PAGE_SIZE, matchesTimeFilter, paginate, type TimeFilter } from "@/lib/list-controls";
 
@@ -18,12 +19,22 @@ interface Order {
   chitietdh: { mactdh: number }[];
 }
 
+// Trang danh sách đơn hàng quản trị: hiển thị tất cả đơn với bộ lọc trạng thái, tìm kiếm, phân trang.
+// Hỗ trợ: xem chi tiết, sửa KH, lập BOM, hủy đơn, xóa đơn
 export default function OrderListPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<CustomerContact | null>(null);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    tone?: "danger" | "warn" | "ok";
+    run: () => Promise<void>;
+  } | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [page, setPage] = useState(1);
 
@@ -47,16 +58,24 @@ export default function OrderListPage() {
   }, [searchTerm, timeFilter]);
 
   const handleDeleteOrder = async (madh: number) => {
-    if (!confirm(`Xóa đơn hàng DH-${madh}? (Sẽ xóa cả BOM chi tiết)`)) return;
-    setBusyId(madh);
-    try {
-      await apiJson(`/api/admin/orders/${madh}`, { method: "DELETE" });
-      reloadOrders();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusyId(null);
-    }
+    setConfirmAction({
+      title: `Xóa đơn hàng DH-${madh}`,
+      description: "Thao tác này sẽ xóa đơn hàng và các dòng BOM liên quan. Chỉ thực hiện khi chắc chắn đây là dữ liệu nhập sai hoặc đơn test.",
+      confirmLabel: "Xóa đơn",
+      tone: "danger",
+      run: async () => {
+        setBusyId(madh);
+        try {
+          await apiJson(`/api/admin/orders/${madh}`, { method: "DELETE" });
+          setNotice({ tone: "ok", text: `Đã xóa đơn hàng DH-${madh}.` });
+          await reloadOrders();
+        } catch (err: unknown) {
+          setNotice({ tone: "error", text: err instanceof Error ? err.message : String(err) });
+        } finally {
+          setBusyId(null);
+        }
+      },
+    });
   };
 
   const updateStatus = async (madh: number, trangthai: string) => {
@@ -66,9 +85,10 @@ export default function OrderListPage() {
         method: "PATCH",
         body: JSON.stringify({ trangthai }),
       });
+      setNotice({ tone: "ok", text: `Đã cập nhật trạng thái DH-${madh}.` });
       reloadOrders();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      setNotice({ tone: "error", text: err instanceof Error ? err.message : String(err) });
     } finally {
       setBusyId(null);
     }
@@ -160,7 +180,70 @@ export default function OrderListPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0a0a0c] shadow-lg">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
+
+      {!loading && (
+        <div className="space-y-3 md:hidden">
+          {pagedOrders.items.map((order) => {
+            const workLink = order.trangthai === "KHAO_SAT" ? `/admin/don-hang/${order.madh}/bom` : `/admin/don-hang/${order.madh}/bao-gia`;
+            const workTitle = order.trangthai === "KHAO_SAT" ? "Lập BOM" : "Xem báo giá";
+            return (
+              <div key={order.madh} className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4 shadow-lg">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <Link href={`/admin/don-hang/${order.madh}`} className="font-mono text-sm font-bold text-orange-300">
+                      DH-{order.madh}
+                    </Link>
+                    <p className="mt-1 text-base font-bold text-gray-100">{order.khachhang?.hoten || "Không tên"}</p>
+                    <p className="text-xs text-gray-500">Lập ngày: {new Date(order.ngaytao).toLocaleDateString("vi-VN")}</p>
+                  </div>
+                  {getStatusBadge(order.trangthai)}
+                </div>
+                <div className="mt-3 space-y-1 text-sm">
+                  <p className="text-gray-300">{order.khachhang?.sdt || "Chưa có SĐT"}</p>
+                  <p className={`break-all ${order.khachhang?.email ? "text-sky-300" : "text-gray-600"}`}>
+                    {order.khachhang?.email || "Chưa có email"}
+                  </p>
+                  <p className="line-clamp-2 text-gray-500">{order.khachhang?.diachi || "Chưa có địa chỉ"}</p>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500">BOM</p>
+                    <p className="font-semibold text-gray-200">{order.chitietdh?.length || 0} hạng mục</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">Giá trị</p>
+                    <p className="font-mono font-bold text-gray-100">{formatCurrency(order.tonggiatri)}</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-4 gap-2">
+                  <Link href={`/admin/don-hang/${order.madh}`} className="rounded-lg bg-white/5 px-3 py-2 text-center text-xs font-bold text-gray-200">
+                    Chi tiết
+                  </Link>
+                  {order.khachhang && (
+                    <button type="button" onClick={() => setEditingCustomer(order.khachhang)} className="rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200">
+                      Sửa KH
+                    </button>
+                  )}
+                  {["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai) ? (
+                    <Link href={workLink} className="rounded-lg bg-orange-500/10 px-3 py-2 text-center text-xs font-bold text-orange-200">
+                      {workTitle}
+                    </Link>
+                  ) : (
+                    <span className="rounded-lg bg-white/5 px-3 py-2 text-center text-xs font-bold text-gray-500">BOM</span>
+                  )}
+                  <button type="button" onClick={() => handleDeleteOrder(order.madh)} className="rounded-lg bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">
+                    Xóa
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {filteredOrders.length === 0 && <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-8 text-center text-sm text-gray-500">Chưa có đơn hàng phù hợp.</div>}
+        </div>
+      )}
+
+      <div className="hidden overflow-hidden rounded-2xl border border-white/5 bg-[#0a0a0c] shadow-lg md:block">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="mb-4 h-8 w-8 animate-spin text-orange-500" />
@@ -287,12 +370,39 @@ export default function OrderListPage() {
           />
         )}
       </div>
+      {!loading && (
+        <div className="md:hidden">
+          <ListPagination
+            page={pagedOrders.page}
+            pageCount={pagedOrders.pageCount}
+            total={filteredOrders.length}
+            start={pagedOrders.start}
+            end={pagedOrders.end}
+            onPageChange={setPage}
+          />
+        </div>
+      )}
 
       <CustomerContactModal
         open={!!editingCustomer}
         customer={editingCustomer}
         onClose={() => setEditingCustomer(null)}
         onSaved={reloadOrders}
+      />
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || ""}
+        description={confirmAction?.description || ""}
+        confirmLabel={confirmAction?.confirmLabel}
+        tone={confirmAction?.tone}
+        busy={busyId != null}
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={async () => {
+          const action = confirmAction;
+          if (!action) return;
+          await action.run();
+          setConfirmAction(null);
+        }}
       />
     </div>
   );

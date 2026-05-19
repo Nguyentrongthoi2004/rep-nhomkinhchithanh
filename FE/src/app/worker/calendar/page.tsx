@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
-// ─── Types ───
+// ─── Kiểu dữ liệu ───
 interface WorkTask {
   mapc: number;
   madh: number;
@@ -19,7 +19,7 @@ interface WorkTask {
 
 interface CalendarNote {
   id: string;
-  dateKey: string; // "YYYY-MM-DD"
+  dateKey: string; // Định dạng "YYYY-MM-DD"
   text: string;
   createdAt: string;
 }
@@ -36,12 +36,12 @@ export default function WorkerCalendarPage() {
   const [tasks, setTasks] = useState<WorkTask[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
 
-  // Ghi chú cá nhân (LocalStorage)
+  // Ghi chú cá nhân (lưu trong localStorage)
   const [notes, setNotes] = useState<CalendarNote[]>([]);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [noteText, setNoteText] = useState("");
 
-  // ─── Fetch phân công của thợ ───
+  // ─── Tải phân công của thợ ───
   const fetchTasks = useCallback(async () => {
     setLoadingTasks(true);
     try {
@@ -74,10 +74,10 @@ export default function WorkerCalendarPage() {
     }
   }, []);
 
-  // ─── Load notes từ localStorage ───
+  // ─── Tải ghi chú từ localStorage ───
   useEffect(() => {
     const saved = localStorage.getItem(NOTES_KEY);
-    if (saved) { try { setNotes(JSON.parse(saved)); } catch { /* ignore */ } }
+    if (saved) { try { setNotes(JSON.parse(saved)); } catch { /* Bỏ qua dữ liệu ghi chú lỗi */ } }
     fetchTasks();
   }, [fetchTasks]);
 
@@ -104,7 +104,7 @@ export default function WorkerCalendarPage() {
     saveNotes(notes.filter(n => n.id !== id));
   };
 
-  // ─── Calendar Logic ───
+  // ─── Logic lịch ───
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -115,7 +115,7 @@ export default function WorkerCalendarPage() {
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
 
-  // Tasks có ngày tạo trong tháng này
+  // Nhiệm vụ có ngày tạo trong tháng này
   const getTasksForDay = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     return tasks.filter(t => {
@@ -140,7 +140,7 @@ export default function WorkerCalendarPage() {
   return (
     <div className="min-h-full bg-[#030508] text-gray-200 flex flex-col">
 
-      {/* Header */}
+      {/* Đầu trang */}
       <div className="pt-10 pb-6 px-5 bg-linear-to-b from-purple-900/30 to-[#030508] sticky top-0 z-20">
         <h1 className="text-xl font-bold text-gray-100 flex items-center">
           <CalendarIcon className="w-6 h-6 mr-2 text-purple-400" />
@@ -148,7 +148,7 @@ export default function WorkerCalendarPage() {
         </h1>
       </div>
 
-      {/* Month Navigation */}
+      {/* Điều hướng tháng */}
       <div className="px-5 mb-4 flex items-center justify-between">
         <button onClick={prevMonth} className="p-2 bg-white/5 rounded-full hover:bg-white/10" aria-label="Tháng trước" title="Tháng trước">
           <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -161,17 +161,17 @@ export default function WorkerCalendarPage() {
         </button>
       </div>
 
-      {/* Calendar Grid */}
+      {/* Lưới lịch */}
       <div className="px-5">
         <div className="bg-[#12141a] rounded-2xl p-4 border border-white/5 shadow-lg">
-          {/* Weekday headers */}
+          {/* Tiêu đề các thứ trong tuần */}
           <div className="grid grid-cols-7 gap-1 mb-2">
             {WEEKDAYS.map(d => (
               <div key={d} className="text-center text-[10px] font-bold text-gray-500">{d}</div>
             ))}
           </div>
 
-          {/* Day cells */}
+          {/* Ô ngày */}
           <div className="grid grid-cols-7 gap-1">
             {Array.from({ length: firstDayOfMonth }).map((_, i) => (
               <div key={`e-${i}`} className="aspect-square" />
@@ -206,7 +206,7 @@ export default function WorkerCalendarPage() {
             })}
           </div>
 
-          {/* Legend */}
+          {/* Chú giải */}
           <div className="flex items-center space-x-4 mt-3 pt-3 border-t border-white/5">
             <div className="flex items-center text-[10px] text-gray-500">
               <div className="w-2 h-2 rounded-full bg-blue-500 mr-1.5" /> Việc Xưởng
@@ -218,7 +218,7 @@ export default function WorkerCalendarPage() {
         </div>
       </div>
 
-      {/* Detail Panel for Selected Day */}
+      {/* Khung chi tiết ngày đang chọn */}
       {selectedDay !== null && (
         <div className="px-5 mt-5 mb-4">
           <div className="flex justify-between items-center mb-3">
@@ -233,7 +233,7 @@ export default function WorkerCalendarPage() {
             </button>
           </div>
 
-          {/* Tasks of day */}
+          {/* Nhiệm vụ trong ngày */}
           {loadingTasks ? (
             <div className="flex items-center text-xs text-gray-500 mb-3">
               <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Đang tải...
@@ -244,7 +244,7 @@ export default function WorkerCalendarPage() {
             </p>
           ) : null}
 
-          {/* Work tasks */}
+          {/* Công việc sản xuất */}
           {selectedTasks.map(t => (
             <div key={t.mapc} className="bg-[#12141a] p-3 rounded-xl border border-white/5 flex items-start mb-2">
               <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 mr-3 shrink-0" />
@@ -269,7 +269,7 @@ export default function WorkerCalendarPage() {
             </div>
           ))}
 
-          {/* Notes */}
+          {/* Ghi chú */}
           {selectedNotes.map(note => (
             <div key={note.id} className="bg-amber-500/5 p-3 rounded-xl border border-amber-500/15 flex items-start mb-2">
               <StickyNote className="w-4 h-4 text-amber-400 mr-3 mt-0.5 shrink-0" />
@@ -287,7 +287,7 @@ export default function WorkerCalendarPage() {
         </div>
       )}
 
-      {/* Modal Ghi Chú */}
+      {/* Hộp thoại ghi chú */}
       {showNoteModal && (
         <div className="fixed inset-0 z-200 flex items-end justify-center p-4 pb-[80px] bg-black/70 backdrop-blur-sm">
           <div className="bg-[#12141a] border border-white/10 rounded-2xl w-full max-w-sm p-5 shadow-2xl">

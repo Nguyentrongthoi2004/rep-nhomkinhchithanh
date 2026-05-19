@@ -5,8 +5,8 @@ import { HttpError } from "@/lib/http";
 type Source = "body" | "query" | "params";
 
 /**
- * Validates a part of the request with a Zod schema. Replaces the source
- * with the parsed value so downstream handlers get typed data.
+ * Kiểm tra một phần của yêu cầu bằng Zod schema.
+ * Sau khi parse thành công, ghi lại dữ liệu đã chuẩn hóa để các tầng sau dùng đúng kiểu.
  */
 export function validate<S extends ZodTypeAny>(schema: S, source: Source = "body"): RequestHandler {
   return (req, _res, next) => {
@@ -23,7 +23,7 @@ export function validate<S extends ZodTypeAny>(schema: S, source: Source = "body
         ),
       );
     }
-    // Narrow types for downstream
+    // Gán dữ liệu đã validate lại vào req để các tầng sau dùng kiểu dữ liệu hẹp hơn.
     (req as unknown as Record<Source, z.infer<S>>)[source] = result.data;
     next();
   };

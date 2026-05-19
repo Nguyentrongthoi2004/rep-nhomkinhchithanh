@@ -23,6 +23,7 @@ type CuttingPlan = {
   masdc: number;
   mapc: number;
   trangthai: string;
+  coSuCoMo?: boolean;
   khothanhphoi: {
     maphoi: number;
     chieudaibandau: number;
@@ -53,6 +54,8 @@ type ShortageDetails = {
 type SupplementDraft = Record<number, { quantity: string; length: string }>;
 
 function getShortageDetails(error: unknown): StockShortage[] | null {
+  // Backend trả lỗi nghiệp vụ INSUFFICIENT_STOCK trong phần chi tiết của ApiError.
+  // Giao diện tách riêng lỗi này thành hộp thoại nhập bổ sung thay vì thông báo lỗi đỏ chung.
   if (!(error instanceof ApiError)) return null;
   const details = error.details as ShortageDetails | undefined;
   if (details?.code !== "INSUFFICIENT_STOCK" || !Array.isArray(details.shortages)) return null;
@@ -74,6 +77,7 @@ function stockSourceClass(status?: string) {
 
 function planStatusLabel(status: string, isScrap: boolean) {
   if (isScrap) return "Phôi lỗi";
+  if (status === "DANG_CAT") return "Chờ xử lý lỗi";
   const labels: Record<string, string> = {
     CHO_THUC_HIEN: "Chờ thực hiện",
     DANG_THUC_HIEN: "Đang cắt",
@@ -113,6 +117,8 @@ function toPositiveInt(raw: string | undefined, fallback: number) {
 }
 
 function getPlanMetrics(plan: CuttingPlan) {
+  // Sơ đồ đã hoàn thành đã trừ chiều dài phôi trong DB, nên inputLength phải ước tính lại
+  // từ chiều dài đã dùng + phần dư để biểu đồ không hiển thị sai tỷ lệ sử dụng.
   const currentLength = Number(plan.khothanhphoi?.chieudaihientai ?? 0);
   const originalLength = Number(plan.khothanhphoi?.chieudaibandau ?? 0);
   const usedLength = plan.chitietcat.reduce((sum, cut) => sum + Number(cut.chieudaicat || 0), 0);
@@ -126,6 +132,8 @@ function getPlanMetrics(plan: CuttingPlan) {
   return { currentLength, originalLength, inputLength, usedLength, remainder, usageRate };
 }
 
+// Trang tối ưu cắt: chọn phân công → tạo sơ đồ cắt (FFD 1D-CSP) → hiển thị biểu đồ trực quan
+// Xử lý thiếu phôi: đề xuất nhập bổ sung → nhập kho → chạy lại tối ưu
 export default function CuttingOptimizationPage() {
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [plans, setPlans] = useState<CuttingPlan[]>([]);
@@ -139,6 +147,8 @@ export default function CuttingOptimizationPage() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const applyShortages = useCallback((rows: StockShortage[]) => {
+    // Đồng bộ bảng thiếu phôi với draft nhập bổ sung.
+    // Khi rows rỗng, banner đề xuất sẽ tự ẩn sau khi nhập đủ và generate lại thành công.
     setShortages(rows);
     setSupplementDraft(
       Object.fromEntries(
@@ -223,6 +233,7 @@ export default function CuttingOptimizationPage() {
     setImporting(true);
     setErrorMsg("");
     try {
+      // Quản trị viên xác nhận thì mới tạo lô/phôi mới; hệ thống không tự nhập kho khi chỉ phát hiện thiếu.
       const items = shortages.map((item) => ({
         mavt: item.mavt,
         chieudaibandau: Math.max(toPositiveInt(supplementDraft[item.mavt]?.length, item.suggestedLength), item.suggestedLength),
@@ -237,6 +248,7 @@ export default function CuttingOptimizationPage() {
         }),
       });
       applyShortages([]);
+      // Sau khi nhập bổ sung, chạy lại tối ưu ngay để chứng minh kho đã đủ và ẩn đề xuất nếu thành công.
       await generate();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -464,6 +476,7 @@ export default function CuttingOptimizationPage() {
               {selectedPlans.map((plan) => {
                 const metrics = getPlanMetrics(plan);
                 const isScrap = plan.khothanhphoi?.trangthai === "BO_DI";
+                const hasOpenIssue = Boolean(plan.coSuCoMo) || plan.trangthai === "DANG_CAT";
                 return (
                   <div key={plan.masdc} className={`rounded-2xl border p-4 ${isScrap ? "border-red-500/30 bg-red-500/5" : "border-white/10 bg-white/3"}`}>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
@@ -480,8 +493,8 @@ export default function CuttingOptimizationPage() {
                         <div className="mt-2 text-sm font-semibold text-gray-100">{plan.khothanhphoi?.vattu?.tenvt || "Vật tư chưa xác định"}</div>
                         <div className="mt-1 text-xs text-gray-500">Mã phân công PC-{plan.mapc}</div>
                       </div>
-                      <span className={`w-fit text-[11px] font-bold px-2.5 py-1 rounded-lg border ${isScrap ? "bg-red-500/10 text-red-300 border-red-500/20" : plan.trangthai === "HOAN_THANH" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-blue-500/10 text-blue-300 border-blue-500/20"}`}>
-                        {planStatusLabel(plan.trangthai, isScrap)}
+                      <span className={`w-fit text-[11px] font-bold px-2.5 py-1 rounded-lg border ${isScrap ? "bg-red-500/10 text-red-300 border-red-500/20" : hasOpenIssue ? "bg-amber-500/10 text-amber-300 border-amber-500/20" : plan.trangthai === "HOAN_THANH" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-blue-500/10 text-blue-300 border-blue-500/20"}`}>
+                        {hasOpenIssue && !isScrap ? "Chờ xử lý lỗi" : planStatusLabel(plan.trangthai, isScrap)}
                       </span>
                     </div>
 
@@ -544,6 +557,11 @@ export default function CuttingOptimizationPage() {
                     {isScrap && (
                       <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                         Phôi này đã bị đánh dấu bỏ đi. Hãy tạo lại sơ đồ cắt để hệ thống chọn phôi khác.
+                      </div>
+                    )}
+                    {hasOpenIssue && !isScrap && (
+                      <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                        UID này đang có sự cố mở. Worker chưa thể hoàn thành sơ đồ cho đến khi Admin xử lý ở màn Sự cố phôi.
                       </div>
                     )}
                   </div>

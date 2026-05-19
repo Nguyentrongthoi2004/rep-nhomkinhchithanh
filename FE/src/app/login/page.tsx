@@ -26,6 +26,7 @@ export default function LoginPage() {
     ghichu: "",
   });
 
+  // Xử lý đăng nhập: Supabase Auth xác thực → ensure-profile cho quản trị viên gốc → lấy vai trò → chuyển sang trang quản trị viên/thợ.
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -56,8 +57,8 @@ export default function LoginPage() {
         return;
       }
 
-      // Nếu user đăng nhập bằng Gmail Master Admin, server sẽ tự tạo hồ sơ nghiệp vụ (nguoidung) 1 lần.
-      // Chỉ gọi khi user nhập email đúng MASTER_ADMIN_EMAIL để tránh spam warning cho worker.
+      // Nếu người dùng đăng nhập bằng Gmail quản trị viên gốc, máy chủ sẽ tự tạo hồ sơ nghiệp vụ (nguoidung) 1 lần.
+      // Chỉ gọi khi người dùng nhập email đúng MASTER_ADMIN_EMAIL để tránh cảnh báo lặp cho worker.
       const masterAdminEmail = (process.env.NEXT_PUBLIC_MASTER_ADMIN_EMAIL || "").trim().toLowerCase();
       if (masterAdminEmail && email === masterAdminEmail) {
         try {
@@ -79,7 +80,7 @@ export default function LoginPage() {
         return;
       }
 
-      // Redirect based on role
+      // Chuyển trang theo vai trò nghiệp vụ
       if (profile?.vaitro === "ADMIN") {
         router.push("/admin/vat-tu");
       } else {
@@ -96,11 +97,11 @@ export default function LoginPage() {
   return (
     <div className="flex h-screen w-full login-metal-bg text-white font-sans overflow-hidden antialiased relative">
       <div className="admin-metal-glow" />
-      {/* Left Pane - Form */}
+      {/* Khung trái - Form đăng nhập */}
       <div className="w-full lg:w-[45%] flex flex-col p-6 sm:p-10 lg:p-14 relative z-10 admin-metal-panel">
         <div className="admin-metal-shine" />
         
-        {/* Top Header */}
+        {/* Đầu trang trên cùng */}
         <div className="flex justify-between items-center w-full max-w-[420px] mx-auto mb-8">
           <div className="flex items-center gap-2.5">
             <div className="brand-icon flex items-center justify-center">
@@ -114,7 +115,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Center Form */}
+        {/* Form chính ở giữa */}
         <div className="w-full max-w-[380px] mx-auto flex-1 flex flex-col justify-center">
           <div className="space-y-3 mb-10 text-center sm:text-left">
             <h1 className="text-[2.5rem] font-semibold tracking-tight text-slate-100 leading-none">Xin chào!</h1>
@@ -206,7 +207,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Bottom Footer */}
+        {/* Chân trang dưới cùng */}
         <div className="w-full max-w-[420px] mx-auto mt-8 text-xs text-zinc-600 flex justify-between">
           <span>&copy; MiniERP.</span>
           <span className="flex gap-4">
@@ -216,7 +217,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Request Access Modal */}
+      {/* Hộp thoại yêu cầu cấp quyền */}
       {isRequestOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden relative">
@@ -362,14 +363,14 @@ export default function LoginPage() {
         </div>
       )}
 
-      {/* Right Pane - Image Hero */}
+      {/* Khung phải - Hình minh họa thương hiệu */}
       <div className="hidden lg:flex flex-1 relative items-center justify-center bg-[#050505] overflow-hidden border-l border-white/10">
-        {/* Glow effect matching the silver theme */}
+        {/* Hiệu ứng sáng nhẹ theo tông kim loại */}
         <div className="absolute inset-0 bg-linear-to-tr from-slate-800/20 via-transparent to-transparent z-10 mix-blend-screen pointer-events-none" />
         <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-linear-to-t from-[#050505] via-black/80 to-transparent z-10 pointer-events-none" />
         <div className="absolute top-0 left-0 right-0 h-32 bg-linear-to-b from-[#050505] to-transparent z-10 pointer-events-none" />
         
-        {/* Background Image (Silver/Aluminum Glass Theme) */}
+        {/* Ảnh nền theo chủ đề nhôm kính */}
         <Image
           src="/hero_bg.png"
           alt="Aluminum and Glass Architecture"
@@ -379,7 +380,7 @@ export default function LoginPage() {
           priority
         />
 
-        {/* Right Pane Content */}
+        {/* Nội dung khung phải */}
         <div className="relative z-20 w-full px-16 xl:px-24 flex flex-col h-full justify-between py-14">
           <div className="flex flex-col items-end w-full text-right">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-black/40 border border-slate-500/30 backdrop-blur-md mb-6 animate-in fade-in slide-in-from-top-4 duration-700 shadow-[0_0_15px_rgba(255,255,255,0.05)]">

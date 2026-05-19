@@ -1,16 +1,16 @@
-/** Augments Express Request with our authenticated user context. */
+/** Mở rộng Express Request để chứa ngữ cảnh người dùng đã xác thực. */
 export {};
 
 export type AuthUser = {
-  /** Supabase auth user id (uuid) */
+  /** ID người dùng Supabase Auth (uuid) */
   authId: string;
-  /** MiniERP user id (from nguoidung.mand) */
+  /** ID người dùng nghiệp vụ MiniERP (nguoidung.mand) */
   mand: number;
-  /** Login/username (nguoidung.tendangnhap) — normalized lowercase */
+  /** Tên đăng nhập (nguoidung.tendangnhap), đã chuẩn hóa chữ thường */
   tendangnhap: string;
-  /** Full email used by Supabase Auth */
+  /** Email đầy đủ dùng bởi Supabase Auth */
   email: string;
-  /** Business role */
+  /** Vai trò nghiệp vụ */
   vaitro: "ADMIN" | "WORKER";
 };
 
@@ -18,7 +18,7 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthUser;
-      /** Short, random id useful for log correlation */
+      /** ID ngắn, ngẫu nhiên, dùng để đối chiếu log theo yêu cầu */
       requestId?: string;
     }
   }

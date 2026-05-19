@@ -25,7 +25,7 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* ===== MiniERP: Metallic admin theme ===== */
+/* ===== MiniERP: Giao diện quản trị tông kim loại ===== */
 
 @keyframes metalShimmer {
   0% {
@@ -122,7 +122,7 @@ body {
     linear-gradient(180deg, #050507 0%, #07070a 60%, #050507 100%);
 }
 
-/* Brand */
+/* Thương hiệu */
 .brand-mark {
   position: relative;
   display: inline-flex;

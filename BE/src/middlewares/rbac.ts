@@ -5,8 +5,8 @@ import type { AuthUser } from "@/types/express";
 type Role = AuthUser["vaitro"];
 
 /**
- * Allow the request only if the authenticated user's role is in the given list.
- * Must run AFTER authMiddleware.
+ * Kiểm tra quyền truy cập theo vai trò (ADMIN / WORKER).
+ * Phải chạy SAU authMiddleware. Nếu vai trò không nằm trong danh sách cho phép → trả lỗi 403.
  */
 export function requireRole(...roles: Role[]): RequestHandler {
   return (req, _res, next) => {

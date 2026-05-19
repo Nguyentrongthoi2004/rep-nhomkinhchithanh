@@ -21,7 +21,7 @@ const MARKET_PRICES = [
   { code: "KHOA", name: "Thân khóa đa điểm", price: 134000, unit: "cái", brand: "TESA" },
 ];
 
-// ─── 1D-CSP: First Fit Decreasing ───
+// ─── 1D-CSP: chiến lược xếp giảm dần vào thanh phù hợp đầu tiên (FFD) ───
 interface CutItem { id: string; length: number; label: string; qty: number }
 interface CutResult {
   barIndex: number;
@@ -37,14 +37,14 @@ const COLORS = [
 ];
 
 function runCSP(items: CutItem[]): CutResult[] {
-  // Mở rộng qty → list từng nhát cắt
+  // Mở rộng số lượng → danh sách từng nhát cắt
   const expanded: { label: string; length: number; color: string }[] = [];
   items.forEach((item, idx) => {
     for (let q = 0; q < item.qty; q++) {
       expanded.push({ label: `${item.label} (${q + 1})`, length: item.length, color: COLORS[idx % COLORS.length] });
     }
   });
-  // Sắp xếp giảm dần (First Fit Decreasing)
+  // Sắp xếp giảm dần theo chiến lược FFD.
   expanded.sort((a, b) => b.length - a.length);
 
   const bars: { cuts: typeof expanded; remaining: number }[] = [];
@@ -123,13 +123,13 @@ export default function WorkerSimulatorPage() {
 
   return (
     <div className="min-h-full bg-[#030508] text-gray-200 flex flex-col">
-      {/* Header */}
+      {/* Đầu trang */}
       <div className="pt-10 pb-4 px-5 bg-linear-to-b from-cyan-900/30 to-[#030508] sticky top-0 z-20">
         <h1 className="text-xl font-bold text-gray-100 flex items-center">
           <Scissors className="w-6 h-6 mr-2 text-cyan-400" /> Tối Ưu Cắt 1D-CSP
         </h1>
         <p className="text-[11px] text-gray-500 mt-1">Thuật toán First Fit Decreasing · Kerf {BLADE_KERF}mm · Thanh {BAR_LENGTH}mm</p>
-        {/* Tab */}
+        {/* Tab chức năng */}
         <div className="flex mt-3 p-1 bg-[#12141a] rounded-xl border border-white/5">
           <button onClick={() => setActiveTab("simulator")} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${activeTab === "simulator" ? "bg-cyan-600 text-white" : "text-gray-400"}`}>
             Mô Phỏng Cắt
@@ -140,7 +140,7 @@ export default function WorkerSimulatorPage() {
         </div>
       </div>
 
-      {/* ─── TAB: SIMULATOR ─── */}
+      {/* ─── TAB: MÔ PHỎNG ─── */}
       {activeTab === "simulator" && (
         <div className="px-4 pb-8 space-y-4 flex-1">
 
@@ -189,7 +189,7 @@ export default function WorkerSimulatorPage() {
               </div>
             )}
 
-            {/* Danh sách items */}
+            {/* Danh sách chi tiết nhập */}
             {items.length === 0 ? (
               <p className="text-center text-gray-600 text-xs py-4">Chưa có chi tiết. Nhập ở trên.</p>
             ) : (
@@ -208,7 +208,7 @@ export default function WorkerSimulatorPage() {
               </div>
             )}
 
-            {/* Action buttons */}
+            {/* Nút thao tác */}
             <div className="flex space-x-2 mt-4">
               <button onClick={reset} className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-gray-400" aria-label="Đặt lại" title="Đặt lại">
                 <RotateCcw className="w-4 h-4" />
@@ -305,7 +305,7 @@ export default function WorkerSimulatorPage() {
                     </svg>
                   </div>
 
-                  {/* Legend */}
+                  {/* Chú giải */}
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {bar.cuts.map((cut, i) => (
                       <span key={i} className="flex items-center text-[10px] text-gray-400">

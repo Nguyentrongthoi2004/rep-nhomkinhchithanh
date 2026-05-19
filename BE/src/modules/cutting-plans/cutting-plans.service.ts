@@ -148,6 +148,7 @@ async function getRuleValue(code: string, fallback: number) {
   return Number(data?.giatri ?? fallback);
 }
 
+// Chuyển BOM thành danh sách mảnh cắt riêng lẻ (mỗi số lượng = N mảnh), sắp giảm dần theo chiều dài
 function expandPieces(items: BomItem[]) {
   const pieces: CutPiece[] = [];
   for (const item of items) {
@@ -166,6 +167,8 @@ function expandPieces(items: BomItem[]) {
 }
 
 function estimateBarsForPieces(pieces: MissingCutPiece[], suggestedLength: number, kerf: number, safeMargin: number) {
+  // Ước lượng số phôi cần nhập thêm bằng chính chiến lược FFD thu nhỏ.
+  // Con số này dùng cho hộp thoại "Đề xuất nhập bổ sung", không tự động nhập nếu quản trị viên chưa xác nhận.
   const capacity = suggestedLength - safeMargin * 2;
   const bars: number[] = [];
 
@@ -183,6 +186,8 @@ function estimateBarsForPieces(pieces: MissingCutPiece[], suggestedLength: numbe
 }
 
 function suggestStockLength(pieces: MissingCutPiece[], kerf: number, safeMargin: number) {
+  // Mặc định đề xuất phôi 6000mm; nếu chi tiết dài hơn chuẩn thì làm tròn lên bội 100mm
+  // để vẫn có thể cắt được đoạn dài nhất cộng độ hao lưỡi cưa và biên an toàn.
   const longestPiece = pieces.reduce((max, piece) => Math.max(max, piece.length), 0);
   const minimumUsableLength = longestPiece + kerf + safeMargin * 2;
   const standardLength = 6000;
@@ -190,6 +195,8 @@ function suggestStockLength(pieces: MissingCutPiece[], kerf: number, safeMargin:
 }
 
 function buildShortages(missingPieces: MissingCutPiece[], stocks: RawStock[], kerf: number, safeMargin: number) {
+  // Gom thiếu phôi theo vật tư để UI hiển thị một dòng/mã vật tư,
+  // thay vì bắn nhiều lỗi rời rạc cho từng nhát cắt.
   const grouped = new Map<number, MissingCutPiece[]>();
   for (const piece of missingPieces) {
     const rows = grouped.get(piece.mavt) ?? [];
@@ -214,6 +221,10 @@ function buildShortages(missingPieces: MissingCutPiece[], stocks: RawStock[], ke
   });
 }
 
+// Thuật toán tối ưu cắt 1D-CSP: xếp giảm dần vào thanh phù hợp đầu tiên (FFD).
+// Duyệt từng mảnh cần cắt (giảm dần) → tìm phôi phù hợp nhất (ưu tiên CON_DU trước, rồi MOI)
+// Trừ độ hao lưỡi cưa và biên an toàn cho mỗi thanh
+// Nếu không đủ phôi → trả lỗi INSUFFICIENT_STOCK kèm danh sách thiếu
 function planCuts(pieces: CutPiece[], stocks: RawStock[], kerf: number, safeMargin: number) {
   const bars: PlannedBar[] = stocks
     .filter((s) => s.trangthai !== "BO_DI" && s.chieudaihientai > safeMargin * 2)
@@ -293,7 +304,23 @@ async function listPlansForAssignment(mapc: number) {
     .eq("mapc", mapc)
     .order("masdc", { ascending: true });
   if (error) throw HttpError.internal(error.message);
-  return data ?? [];
+  return attachOpenIssueFlags(data ?? []);
+}
+
+async function attachOpenIssueFlags<T extends { maphoi?: number }>(plans: T[]) {
+  const stockIds = [...new Set(plans.map((plan) => plan.maphoi).filter((maphoi): maphoi is number => Boolean(maphoi)))];
+  if (stockIds.length === 0) return plans;
+
+  const { data, error } = await supabaseAdmin
+    .from("nhatkygiacong")
+    .select("maphoi")
+    .eq("sukien", "LOI")
+    .eq("trangthaixuly", "CHO_XU_LY")
+    .in("maphoi", stockIds);
+  if (error) throw HttpError.internal(error.message);
+
+  const openIssueStockIds = new Set((data ?? []).map((row) => row.maphoi as number));
+  return plans.map((plan) => ({ ...plan, coSuCoMo: openIssueStockIds.has(plan.maphoi as number) }));
 }
 
 async function hasOpenIssue(input: { maphoi: number; mapc?: number | null; masdc?: number | null }) {
@@ -311,29 +338,62 @@ async function hasOpenIssue(input: { maphoi: number; mapc?: number | null; masdc
   return (data ?? []).length > 0;
 }
 
-function updateOpenIssueScope(input: { maphoi: number; mapc: number | null; masdc: number | null }, payload: Record<string, unknown>) {
-  let query = supabaseAdmin
+function groupIssueReportsByStock(rows: unknown[]) {
+  const typedRows = rows as Array<Record<string, unknown> & {
+    maphoi?: number;
+    mapc?: number | null;
+    masdc?: number | null;
+    matho?: number | null;
+    phancong?: { madh?: number | null } | null;
+    nguoidung?: { hoten?: string | null } | null;
+  }>;
+  const grouped = new Map<number, typeof typedRows>();
+
+  for (const row of typedRows) {
+    if (!row.maphoi) continue;
+    const group = grouped.get(row.maphoi) ?? [];
+    group.push(row);
+    grouped.set(row.maphoi, group);
+  }
+
+  return [...grouped.values()].map((group) => {
+    const representative = group[0];
+    const unique = <T>(values: T[]) => [
+      ...new Set(values.filter((value): value is NonNullable<T> => value !== null && value !== undefined)),
+    ];
+    return {
+      ...representative,
+      solanbao: group.length,
+      nguoibao: unique(group.map((item) => item.nguoidung?.hoten || (item.matho ? `Worker ${item.matho}` : null))),
+      masdcs: unique(group.map((item) => item.masdc)),
+      mapcs: unique(group.map((item) => item.mapc)),
+      madhs: unique(group.map((item) => item.phancong?.madh ?? null)),
+      manks: group.map((item) => item.mank),
+    };
+  });
+}
+
+function closeOpenIssuesByStock(maphoi: number, payload: Record<string, unknown>) {
+  return supabaseAdmin
     .from("nhatkygiacong")
     .update(payload)
     .eq("sukien", "LOI")
     .eq("trangthaixuly", "CHO_XU_LY")
-    .eq("maphoi", input.maphoi);
-
-  query = input.mapc === null ? query.is("mapc", null) : query.eq("mapc", input.mapc);
-  query = input.masdc === null ? query.is("masdc", null) : query.eq("masdc", input.masdc);
-  return query;
+    .eq("maphoi", maphoi);
 }
 
 export const cuttingPlansService = {
+  // Quản trị viên xem danh sách tất cả sơ đồ cắt.
   async listAdmin() {
     const { data, error } = await supabaseAdmin
       .from("sodocat")
       .select(PLAN_SELECT)
       .order("masdc", { ascending: false });
     if (error) throw HttpError.internal(error.message);
-    return data ?? [];
+    return attachOpenIssueFlags(data ?? []);
   },
 
+  // Quản trị viên xem danh sách báo cáo sự cố phôi (chỉ lấy sự cố đang CHO_XU_LY).
   async listIssueReports() {
     const { data, error } = await supabaseAdmin
       .from("nhatkygiacong")
@@ -344,16 +404,10 @@ export const cuttingPlansService = {
       .limit(100);
     if (error) throw HttpError.internal(error.message);
     const rows = data ?? [];
-    const seen = new Set<string>();
-    return rows.filter((row) => {
-      const item = row as { maphoi?: number; mapc?: number | null; masdc?: number | null };
-      const key = `${item.maphoi ?? "x"}:${item.mapc ?? "x"}:${item.masdc ?? "x"}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    return groupIssueReportsByStock(rows);
   },
 
+  // Quản trị viên xử lý sự cố: bỏ phôi (chuyển trạng thái BO_DI) và đóng sự cố.
   async scrapIssue(issueId: number, adminId: number) {
     const { data: issue, error } = await supabaseAdmin
       .from("nhatkygiacong")
@@ -369,15 +423,12 @@ export const cuttingPlansService = {
     const now = new Date().toISOString();
     const [{ error: stockErr }, { error: issueErr }] = await Promise.all([
       supabaseAdmin.from("khothanhphoi").update({ trangthai: "BO_DI" }).eq("maphoi", typed.maphoi),
-      updateOpenIssueScope(
-        { maphoi: typed.maphoi, mapc: typed.mapc, masdc: typed.masdc },
-        {
-          trangthaixuly: "DA_XU_LY",
-          huongxuly: "BO_PHOI",
-          xulyluc: now,
-          nguoixuly: adminId,
-        },
-      ),
+      closeOpenIssuesByStock(typed.maphoi, {
+        trangthaixuly: "DA_XU_LY",
+        huongxuly: "BO_PHOI",
+        xulyluc: now,
+        nguoixuly: adminId,
+      }),
     ]);
     if (stockErr) throw HttpError.internal(stockErr.message);
     if (issueErr) throw HttpError.internal(issueErr.message);
@@ -385,6 +436,7 @@ export const cuttingPlansService = {
     return this.listIssueReports();
   },
 
+  // Quản trị viên xử lý sự cố: cắt bỏ đoạn lỗi (trừ chiều dài, cập nhật trạng thái phôi).
   async trimIssue(issueId: number, adminId: number, dto: TrimIssueDto) {
     const { data: issue, error } = await supabaseAdmin
       .from("nhatkygiacong")
@@ -413,21 +465,20 @@ export const cuttingPlansService = {
     const nextStatus = after > 0 ? "CON_DU" : "BO_DI";
     const now = new Date().toISOString();
 
-    const [{ error: stockErr }, { error: issueErr }] = await Promise.all([
+    const [{ error: stockErr }, { error: issueErr }, { error: planResetErr }] = await Promise.all([
       supabaseAdmin.from("khothanhphoi").update({ chieudaihientai: after, trangthai: nextStatus }).eq("maphoi", typed.maphoi),
-      updateOpenIssueScope(
-        { maphoi: typed.maphoi, mapc: typed.mapc, masdc: typed.masdc },
-        {
-          trangthaixuly: "DA_XU_LY",
-          huongxuly: `CAT_BO_DOAN_LOI_${dto.cutLength}MM${dto.ghichu ? `: ${dto.ghichu}` : ""}`,
-          chieudaisau: after,
-          xulyluc: now,
-          nguoixuly: adminId,
-        },
-      ),
+      closeOpenIssuesByStock(typed.maphoi, {
+        trangthaixuly: "DA_XU_LY",
+        huongxuly: `CAT_BO_DOAN_LOI_${dto.cutLength}MM${dto.ghichu ? `: ${dto.ghichu}` : ""}`,
+        chieudaisau: after,
+        xulyluc: now,
+        nguoixuly: adminId,
+      }),
+      supabaseAdmin.from("sodocat").update({ trangthai: "CHO_DUYET" }).eq("maphoi", typed.maphoi).eq("trangthai", "DANG_CAT"),
     ]);
     if (stockErr) throw HttpError.internal(stockErr.message);
     if (issueErr) throw HttpError.internal(issueErr.message);
+    if (planResetErr) throw HttpError.internal(planResetErr.message);
 
     return this.listIssueReports();
   },
@@ -439,7 +490,7 @@ export const cuttingPlansService = {
       .eq("phancong.matho", matho)
       .order("masdc", { ascending: false });
     if (error) throw HttpError.internal(error.message);
-    return (data ?? []).filter((row) => row.phancong !== null);
+    return attachOpenIssueFlags((data ?? []).filter((row) => row.phancong !== null));
   },
 
   async getForAssignment(mapc: number) {
@@ -447,6 +498,7 @@ export const cuttingPlansService = {
     return listPlansForAssignment(mapc);
   },
 
+  // Tạo sơ đồ cắt cho phân công: lấy BOM → expandPieces → planCuts (FFD) → lưu vào sodocat + chitietcat
   async createForAssignment(mapc: number) {
     const assignment = await getAssignment(mapc);
     if (["KHAO_SAT", "BAO_GIA_NHAP"].includes(assignment.donhang?.trangthai as string)) {
@@ -501,6 +553,7 @@ export const cuttingPlansService = {
     return listPlansForAssignment(mapc);
   },
 
+  // Thợ xác nhận hoàn thành sơ đồ cắt: trừ chiều dài phôi, ghi nhật ký, tự động hoàn thành phân công nếu tất cả sơ đồ xong.
   async completePlan(masdc: number, matho: number) {
     const { data: plan, error } = await supabaseAdmin
       .from("sodocat")
@@ -514,15 +567,20 @@ export const cuttingPlansService = {
       masdc: number;
       mapc: number;
       maphoi: number;
+      trangthai: string;
       khothanhphoi: { chieudaihientai: number; trangthai: string } | null;
       phancong: { matho: number } | null;
       chitietcat: Array<{ mactc: number; chieudaicat: number; trangthai: string }>;
     };
     if (typed.phancong?.matho !== matho) throw HttpError.forbidden("Cutting plan is not assigned to this worker");
+    if (typed.trangthai === "HOAN_THANH") {
+      throw HttpError.badRequest("Sơ đồ cắt này đã hoàn thành, không thể xác nhận lại");
+    }
     if (typed.khothanhphoi?.trangthai === "BO_DI") {
       throw HttpError.badRequest("Phôi này đã bị đánh dấu bỏ đi, cần tạo sơ đồ cắt mới bằng phôi khác");
     }
-    if (await hasOpenIssue({ maphoi: typed.maphoi, mapc: typed.mapc, masdc })) {
+    // Chặn hoàn thành khi phôi đang chờ quản trị viên xử lý sự cố để tránh dùng lại phôi lỗi.
+    if (await hasOpenIssue({ maphoi: typed.maphoi })) {
       throw HttpError.badRequest("Phôi này đang có sự cố chờ Admin xử lý, chưa thể xác nhận hoàn thành");
     }
 
@@ -564,10 +622,11 @@ export const cuttingPlansService = {
     return listPlansForAssignment(typed.mapc);
   },
 
+  // Thợ báo sự cố cắt hỏng: ghi nhật ký LOI vào nhatkygiacong, gửi thông báo cho quản trị viên.
   async reportIssue(masdc: number, matho: number, input: ReportIssueDto) {
     const { data: plan, error } = await supabaseAdmin
       .from("sodocat")
-      .select("masdc, mapc, maphoi, khothanhphoi:maphoi(chieudaihientai, trangthai), phancong:mapc(matho, madh)")
+      .select("masdc, mapc, maphoi, trangthai, khothanhphoi:maphoi(chieudaihientai, trangthai), phancong:mapc(matho, madh)")
       .eq("masdc", masdc)
       .maybeSingle();
     if (error) throw HttpError.internal(error.message);
@@ -575,14 +634,18 @@ export const cuttingPlansService = {
     const typed = plan as unknown as {
       mapc: number;
       maphoi: number;
+      trangthai: string;
       khothanhphoi: { chieudaihientai: number; trangthai: string } | null;
       phancong: { matho: number; madh: number } | null;
     };
     if (typed.phancong?.matho !== matho) throw HttpError.forbidden("Cutting plan is not assigned to this worker");
+    if (typed.trangthai === "HOAN_THANH") {
+      throw HttpError.badRequest("Sơ đồ cắt này đã hoàn thành, không thể báo thêm sự cố");
+    }
     if (typed.khothanhphoi?.trangthai === "BO_DI") {
       throw HttpError.badRequest("Phôi này đã bị đánh dấu bỏ đi, không thể báo thêm sự cố");
     }
-    if (await hasOpenIssue({ maphoi: typed.maphoi, mapc: typed.mapc, masdc })) {
+    if (await hasOpenIssue({ maphoi: typed.maphoi })) {
       throw HttpError.conflict("Sự cố của phôi này đã được báo và đang chờ Admin xử lý");
     }
 

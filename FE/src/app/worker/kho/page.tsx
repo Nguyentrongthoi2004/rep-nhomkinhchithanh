@@ -109,7 +109,7 @@ export default function WorkerKhoPage() {
 
   return (
     <div className="space-y-4 pb-4">
-      {/* Header */}
+      {/* Đầu trang */}
       <section className="relative overflow-hidden rounded-3xl admin-metal-panel border border-white/10 px-5 py-5">
         <div className="admin-metal-shine" />
         <div className="relative z-10 flex items-start justify-between gap-3">
@@ -132,7 +132,7 @@ export default function WorkerKhoPage() {
         </div>
       </section>
 
-      {/* Search + Filter */}
+      {/* Tìm kiếm và bộ lọc */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="w-4.5 h-4.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -153,7 +153,7 @@ export default function WorkerKhoPage() {
         </div>
       )}
 
-      {/* List */}
+      {/* Danh sách kho */}
       <div className="space-y-2.5">
         {loading ? (
           <div className="py-16 flex justify-center text-slate-400">
@@ -200,7 +200,7 @@ export default function WorkerKhoPage() {
                   <StatusBadge status={it.trangthai} />
                 </div>
 
-                {/* Progress */}
+                {/* Thanh tiến độ tồn kho */}
                 <progress
                   className={`worker-progress mt-3 ${
                     isNew ? "worker-progress--new" : isScrap ? "worker-progress--scrap" : "worker-progress--usable"
@@ -214,7 +214,7 @@ export default function WorkerKhoPage() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Hộp thoại chi tiết */}
       {isModalOpen && selected && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-[#121418] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full max-w-md shadow-[0_-20px_60px_-10px_rgba(0,0,0,0.7)] overflow-hidden">

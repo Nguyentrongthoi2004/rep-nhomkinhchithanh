@@ -119,7 +119,7 @@ export default function WorkerCaNhanPage() {
 
   return (
     <div className="space-y-4 pb-4 px-5 pt-6">
-      {/* Profile Hero */}
+      {/* Khối hồ sơ cá nhân */}
       <section className="relative overflow-hidden rounded-3xl bg-linear-to-br from-[#12141a] to-[#0a0a0c] border border-white/10 px-5 py-6 shadow-xl">
         <div className="absolute top-0 right-0 w-32 h-32 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex items-center gap-4">
@@ -148,7 +148,7 @@ export default function WorkerCaNhanPage() {
         </div>
       </section>
 
-      {/* Change password */}
+      {/* Đổi mật khẩu */}
       <section className="rounded-3xl border border-white/10 bg-[#0c0d11]/85 p-5">
         <div className="flex items-center gap-2 mb-4">
           <div className="w-9 h-9 rounded-xl bg-amber-400/15 border border-amber-300/25 flex items-center justify-center">
@@ -226,7 +226,7 @@ export default function WorkerCaNhanPage() {
         </form>
       </section>
 
-      {/* Logout */}
+      {/* Đăng xuất */}
       <button
         onClick={handleLogout}
         disabled={loggingOut}

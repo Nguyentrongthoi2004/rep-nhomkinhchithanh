@@ -30,6 +30,54 @@ const REJECT_REASON_LABEL: Record<string, string> = {
 };
 
 export const workerTasksService = {
+  async summaryForWorker(matho: number) {
+    const [{ data: worker, error: workerError }, { data: tasks, error: taskError }, { count: issueCount, error: issueError }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("nguoidung")
+          .select("mand, hoten, sdt, vaitro")
+          .eq("mand", matho)
+          .maybeSingle(),
+        supabaseAdmin
+          .from(TABLE)
+          .select("mapc, madh, trangthai, donhang:madh(khachhang:makh(hoten))")
+          .eq("matho", matho)
+          .in("trangthai", ["CHO_THUC_HIEN", "DANG_THUC_HIEN", "HOAN_THANH"])
+          .order("mapc", { ascending: false }),
+        supabaseAdmin
+          .from("nhatkygiacong")
+          .select("mank", { count: "exact", head: true })
+          .eq("matho", matho)
+          .eq("sukien", "LOI")
+          .eq("trangthaixuly", "CHO_XU_LY"),
+      ]);
+
+    if (workerError) throw HttpError.internal(workerError.message);
+    if (taskError) throw HttpError.internal(taskError.message);
+    if (issueError) throw HttpError.internal(issueError.message);
+
+    const rows = (tasks ?? []) as { mapc: number; madh: number; trangthai: string; donhang?: unknown }[];
+    const counts = rows.reduce(
+      (acc, task) => {
+        if (task.trangthai === "CHO_THUC_HIEN") acc.pending += 1;
+        if (task.trangthai === "DANG_THUC_HIEN") acc.active += 1;
+        if (task.trangthai === "HOAN_THANH") acc.done += 1;
+        return acc;
+      },
+      { pending: 0, active: 0, done: 0, issues: issueCount ?? 0, unread: 0 },
+    );
+
+    const notificationSummary = await notificationsService.summary(matho);
+    counts.unread = notificationSummary.unreadCount;
+
+    return {
+      worker,
+      counts,
+      latestTasks: rows.slice(0, 5),
+    };
+  },
+
+  // Lấy danh sách công việc của worker theo mã thợ (chỉ lấy CHO_THUC_HIEN, DANG_THUC_HIEN, HOAN_THANH)
   async listForWorker(matho: number) {
     const { data, error } = await supabaseAdmin
       .from(TABLE)
@@ -53,8 +101,9 @@ export const workerTasksService = {
     return data;
   },
 
+  // Thợ cập nhật trạng thái nhiệm vụ (VD: chuyển sang DANG_THUC_HIEN).
   async updateStatus(mapc: number, matho: number, dto: UpdateTaskDto) {
-    // Ensure the task belongs to this worker
+    // Đảm bảo nhiệm vụ thuộc về worker này
     const current = await this.getForWorker(mapc, matho) as { trangthai?: string };
     if (current.trangthai === "TU_CHOI") throw HttpError.badRequest("Nhiệm vụ đã bị từ chối");
 
@@ -68,6 +117,7 @@ export const workerTasksService = {
     return data;
   },
 
+  // Thợ từ chối nhiệm vụ: ghi lý do từ chối, gửi thông báo cho quản trị viên.
   async reject(mapc: number, matho: number, dto: RejectTaskDto) {
     const current = await this.getForWorker(mapc, matho) as {
       mapc: number;
@@ -82,6 +132,8 @@ export const workerTasksService = {
       throw HttpError.badRequest("Nhiệm vụ đã được từ chối trước đó");
     }
 
+    // Lưu một chuỗi lý do đầy đủ để quản trị viên nhìn ngay trong màn phân công,
+    // đồng thời vẫn giữ mã lý do trong payload thông báo để sau này thống kê được.
     const reasonLabel = REJECT_REASON_LABEL[dto.lydo] ?? dto.lydo;
     const note = dto.ghichu?.trim();
     const reasonText = note ? `${reasonLabel}: ${note}` : reasonLabel;

@@ -19,6 +19,7 @@ type BusyAssignmentRow = {
 };
 
 export const assignmentsService = {
+  // Kiểm tra thợ có đang bận phân công khác không (trạng thái CHO_THUC_HIEN hoặc DANG_THUC_HIEN)
   async getBusyAssignmentForWorker(matho: number, excludeMapc?: number) {
     let q = supabaseAdmin
       .from("phancong")
@@ -41,6 +42,7 @@ export const assignmentsService = {
     return data ?? [];
   },
 
+  // Phân công thợ cho đơn hàng: kiểm tra đơn đã duyệt giá, thợ là WORKER đang làm việc, thợ không bận
   async create(dto: CreateAssignmentDto) {
     const { data: order, error: orderErr } = await supabaseAdmin
       .from("donhang")
@@ -79,6 +81,7 @@ export const assignmentsService = {
     return data;
   },
 
+  // Cập nhật trạng thái phân công: nếu chuyển sang DANG_THUC_HIEN thì kiểm tra thợ không bận việc khác
   async update(id: number, dto: UpdateAssignmentDto) {
     if (dto.trangthai === "DANG_THUC_HIEN") {
       const { data: current, error: curErr } = await supabaseAdmin

@@ -2,7 +2,7 @@ import type { ErrorRequestHandler, RequestHandler } from "express";
 import { HttpError } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
-/** 404 for routes that fell through. */
+/** Trả 404 cho route không khớp handler nào. */
 export const notFound: RequestHandler = (req, res) => {
   res.status(404).json({
     ok: false,
@@ -12,7 +12,7 @@ export const notFound: RequestHandler = (req, res) => {
   });
 };
 
-/** Central error handler — last middleware on the app. */
+/** Middleware xử lý lỗi tập trung, phải đặt cuối cùng trong app. */
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   void _next;
 

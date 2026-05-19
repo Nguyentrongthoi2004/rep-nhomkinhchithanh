@@ -20,7 +20,7 @@ export default function CategoryPage() {
   const [total, setTotal] = useState(0);
   const [items, setItems] = useState<DanhMuc[]>([]);
 
-  // Modal
+  // Hộp thoại thêm/sửa
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<DanhMuc | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -105,7 +105,7 @@ export default function CategoryPage() {
   return (
     <div className="space-y-6">
       
-      {/* Header */}
+      {/* Đầu trang */}
       <div className="flex justify-between items-center bg-[#0a0a0c] p-6 rounded-2xl border border-white/5 shadow-sm">
         <div>
           <h1 className="text-2xl font-bold text-gray-100 flex items-center">
@@ -130,7 +130,7 @@ export default function CategoryPage() {
         </div>
       )}
 
-      {/* Toolbar */}
+      {/* Thanh công cụ */}
       <div className="flex items-center space-x-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -153,7 +153,7 @@ export default function CategoryPage() {
         </select>
       </div>
 
-      {/* Data Table */}
+      {/* Bảng dữ liệu */}
       <div className="bg-[#0a0a0c] rounded-2xl border border-white/5 overflow-hidden shadow-lg relative">
         {loading ? (
            <div className="p-10 flex justify-center text-gray-400"><Loader2 className="animate-spin w-8 h-8" /></div>
@@ -261,7 +261,7 @@ export default function CategoryPage() {
         </div>
       </div>
 
-      {/* ADD / EDIT MODAL */}
+      {/* Hộp thoại thêm/sửa */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 overflow-hidden">

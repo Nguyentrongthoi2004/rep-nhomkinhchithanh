@@ -30,6 +30,8 @@ export function CustomerContactModal({ open, customer, onClose, onSaved }: Props
 
   useEffect(() => {
     if (!open || !customer) return;
+    // Dữ liệu truyền từ danh sách đôi khi là bản rút gọn. Điền trước để hộp thoại mở nhanh,
+    // sau đó gọi API chi tiết để không bị mất SĐT/email/địa chỉ khi người dùng lưu.
     setName(customer.hoten || "");
     setPhone(customer.sdt || "");
     setEmail(customer.email || "");
@@ -64,6 +66,8 @@ export function CustomerContactModal({ open, customer, onClose, onSaved }: Props
     setSaving(true);
     setErrorMsg("");
     try {
+      // Chỉ cập nhật hồ sơ khách hàng, không đụng BOM/trạng thái đơn hàng.
+      // Email rỗng được gửi null để tương thích dữ liệu cũ chưa có email.
       await apiJson(`/api/admin/customers/${customer.makh}`, {
         method: "PATCH",
         body: JSON.stringify({

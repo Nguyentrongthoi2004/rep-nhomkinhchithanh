@@ -64,10 +64,12 @@ const BRIEF_SELECT = `
   khachhang:makh ( hoten, email )
 `;
 
+// Chuyển đổi kích thước sang milimet nguyên (làm tròn xuống)
 function toWholeMillimeters(value: number) {
   return Math.trunc(value);
 }
 
+// Tạo mô tả dòng BOM: nếu có W×H thì hiển thị kích thước, nếu không thì chỉ tên vật tư
 function buildOrderItemDescription(item: CreateOrderItem) {
   if (item.w !== undefined && item.h !== undefined) {
     return `${item.name} (${toWholeMillimeters(item.w)} x ${toWholeMillimeters(item.h)} mm)`;
@@ -80,6 +82,7 @@ function getStoredCutLength(item: CreateOrderItem) {
   return null;
 }
 
+// Tính đơn giá từ master data vật tư: theo tỉ lệ chiều dài hoặc diện tích (W×H)
 function unitPriceFromMaterialMaster(
   item: CreateOrderItem,
   vt: { dongianhap: number; dongiaban: number | null; chieudaimacdinh: number | null },
@@ -107,6 +110,7 @@ function formatVnd(amount: number | string | null | undefined) {
   return `${Number(amount || 0).toLocaleString("vi-VN")} đ`;
 }
 
+// Tính đơn giá cho từng dòng BOM: ưu tiên giá frontend gửi lên, nếu không thì tính từ bảng vattu.
 async function resolveLineUnitPrices(items: CreateOrderItem[]): Promise<number[]> {
   if (items.length === 0) return [];
   const mavts = [...new Set(items.map((i) => i.mavt))];
@@ -127,6 +131,7 @@ async function resolveLineUnitPrices(items: CreateOrderItem[]): Promise<number[]
 }
 
 export const ordersService = {
+  // Lấy danh sách tất cả đơn hàng, sắp xếp mới nhất trước
   async list() {
     const { data, error } = await supabaseAdmin.from("donhang").select(ORDER_LIST_SELECT).order("madh", { ascending: false });
     if (error) throw HttpError.internal(error.message);
@@ -137,6 +142,8 @@ export const ordersService = {
     const withQuote = await supabaseAdmin.from("donhang").select(ORDER_WITH_QUOTE_SELECT).eq("madh", id).maybeSingle();
     let data: unknown = withQuote.data;
     let error = withQuote.error;
+    // Một số DB cũ chưa chạy migration 07 chưa có baogia_*.
+    // Cơ chế dự phòng này giúp xem đơn vẫn chạy, còn thao tác báo giá sẽ báo thiếu migration rõ ràng.
     if (isMissingQuoteTrackingColumn(error)) {
       const retry = await supabaseAdmin.from("donhang").select(ORDER_SELECT).eq("madh", id).maybeSingle();
       data = retry.data;
@@ -153,6 +160,7 @@ export const ordersService = {
     return data ?? [];
   },
 
+  // Xử lý tạo đơn hàng mới: tìm/tạo khách hàng theo SĐT → insert đơn → lập BOM → gửi thông báo
   async create(dto: CreateOrderDto) {
     const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null, dto.email);
 
@@ -199,6 +207,7 @@ export const ordersService = {
     };
   },
 
+  // Cập nhật trạng thái đơn hàng: kiểm tra quy tắc chuyển trạng thái (cần duyệt giá trước khi sản xuất)
   async updateStatus(id: number, dto: UpdateOrderStatusDto) {
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("donhang")
@@ -228,6 +237,7 @@ export const ordersService = {
     return data;
   },
 
+  // Duyệt giá đơn hàng: kiểm tra đã gửi báo giá (baogia_gui_luc != null) → chuyển trạng thái DA_DUYET_GIA
   async approvePrice(id: number) {
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("donhang")
@@ -266,6 +276,7 @@ export const ordersService = {
     return data;
   },
 
+  // Lập/sửa BOM đơn hàng: xóa BOM cũ → tính lại đơn giá → insert BOM mới → reset trạng thái về BAO_GIA_NHAP
   async updateDetails(id: number, dto: UpdateOrderDto) {
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("donhang")
@@ -306,6 +317,8 @@ export const ordersService = {
       baogia_email: null,
     };
 
+    // Khi BOM thay đổi thì báo giá cũ không còn đáng tin, vì vậy reset dấu đã gửi báo giá
+    // để buộc quản trị viên gửi lại và chỉ duyệt sau khi khách xác nhận bản mới.
     let { data: updated, error: upErr } = await supabaseAdmin
       .from("donhang")
       .update(updatePayload)
@@ -361,6 +374,7 @@ export const ordersService = {
     return data;
   },
 
+  // Ghi nhận đã gửi báo giá: lưu thời điểm gửi và email khách hàng vào đơn hàng
   async markQuoteSent(id: number, email: string) {
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("donhang")
@@ -400,6 +414,7 @@ export const ordersService = {
     if (error) throw HttpError.internal(error.message);
   },
 
+  // Tìm hoặc tạo khách hàng theo SĐT: nếu đã có thì cập nhật thông tin, nếu chưa thì tạo mới
   async getOrCreateCustomer(customerName: string, phone: string, address: string | null, email?: string | null) {
     const { data: existing, error: findErr } = await supabaseAdmin
       .from("khachhang")
@@ -409,6 +424,8 @@ export const ordersService = {
     if (findErr) throw HttpError.internal(findErr.message);
     if (existing) {
       const updatePayload: Record<string, unknown> = { hoten: customerName, diachi: address };
+      // email === undefined nghĩa là luồng cũ không gửi trường email, nên giữ nguyên email hiện có.
+      // email null nghĩa là người dùng chủ động xóa email.
       if (email !== undefined) updatePayload.email = email ?? null;
       await supabaseAdmin.from("khachhang").update(updatePayload).eq("makh", existing.makh);
       return existing.makh as number;

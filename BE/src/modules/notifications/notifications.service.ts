@@ -14,6 +14,8 @@ type NotificationRow = {
 };
 
 function normalize(row: NotificationRow) {
+  // FE dùng cấu trúc dữ liệu thân thiện hơn, còn DB giữ tên cột tiếng Việt.
+  // Trạng thái đọc hiện lưu ở thongbao.daxem; bảng legacy thongbaodadoc không còn dùng.
   const data = row.dulieu ?? {};
   return {
     matb: row.matb,
@@ -30,6 +32,7 @@ function normalize(row: NotificationRow) {
 }
 
 export const notificationsService = {
+  // Đếm riêng số thông báo chưa đọc để header không cần tải toàn bộ danh sách thông báo.
   async summary(mand: number) {
     const { count, error } = await supabaseAdmin
       .from(TABLE)
@@ -40,6 +43,7 @@ export const notificationsService = {
     return { unreadCount: count ?? 0 };
   },
 
+  // Danh sách thông báo mới nhất của 1 user, giới hạn tối đa 50 để tránh header nặng.
   async list(mand: number, limit = 20) {
     const { data, error } = await supabaseAdmin
       .from(TABLE)
@@ -56,6 +60,7 @@ export const notificationsService = {
     };
   },
 
+  // Đánh dấu đã đọc từng thông báo, ràng buộc theo mand để user không sửa thông báo người khác.
   async markRead(mand: number, matb: number) {
     const { data, error } = await supabaseAdmin
       .from(TABLE)
@@ -69,12 +74,14 @@ export const notificationsService = {
     return normalize(data as NotificationRow);
   },
 
+  // Dùng cho nút "Đánh dấu tất cả đã đọc" trong header.
   async markAllRead(mand: number) {
     const { error } = await supabaseAdmin.from(TABLE).update({ daxem: true }).eq("mand", mand).eq("daxem", false);
     if (error) throw HttpError.internal(error.message);
     return this.list(mand);
   },
 
+  // Xóa một thông báo cụ thể của user hiện tại.
   async remove(mand: number, matb: number) {
     const { error, count } = await supabaseAdmin.from(TABLE).delete({ count: "exact" }).eq("mand", mand).eq("matb", matb);
     if (error) throw HttpError.internal(error.message);
@@ -82,12 +89,14 @@ export const notificationsService = {
     return { deleted: count };
   },
 
+  // Xóa hàng loạt các thông báo đã đọc, giữ lại thông báo chưa xử lý để quản trị viên/thợ còn thấy.
   async removeRead(mand: number) {
     const { error, count } = await supabaseAdmin.from(TABLE).delete({ count: "exact" }).eq("mand", mand).eq("daxem", true);
     if (error) throw HttpError.internal(error.message);
     return { deleted: count ?? 0 };
   },
 
+  // Tạo thông báo cho 1 người dùng cụ thể
   async create(input: {
     mand: number;
     title: string;
@@ -117,6 +126,7 @@ export const notificationsService = {
     return normalize(data as NotificationRow);
   },
 
+  // Tạo thông báo cho tất cả quản trị viên: dùng khi có sự kiện quan trọng (tạo đơn, thanh toán, sự cố...).
   async createForAdmins(input: {
     title: string;
     body: string;

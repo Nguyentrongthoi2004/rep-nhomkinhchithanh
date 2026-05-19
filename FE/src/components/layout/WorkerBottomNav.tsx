@@ -34,7 +34,7 @@ export default function WorkerBottomNav() {
               href={item.href}
               className="relative flex flex-col items-center justify-center flex-1 h-full group"
             >
-              {/* Active capsule */}
+              {/* Nền nổi cho tab đang chọn */}
               <div
                 className={`absolute inset-x-3 top-2 bottom-3 rounded-2xl transition-all ${
                   isActive
@@ -44,7 +44,7 @@ export default function WorkerBottomNav() {
                 aria-hidden
               />
 
-              {/* Top indicator dot */}
+              {/* Chấm báo hiệu phía trên */}
               {isActive && (
                 <span
                   className="absolute top-1 w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]"

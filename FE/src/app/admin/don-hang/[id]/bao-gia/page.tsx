@@ -31,6 +31,8 @@ type OrderDetail = {
 const money = (value: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
 
 function buildQuoteBomFromLines(lines: OrderDetail["chitietdh"]) {
+  // Email báo giá cần BOM gọn: tách phôi nhôm và kính để template mail dễ đọc,
+  // đồng thời tính diện tích kính nếu mô tả có dạng "(W x H mm)".
   const dimInMota = /\((\d+)\s*x\s*(\d+)\s*mm\)/i;
   const phoiNhom: Array<{ code: string; name: string; length: number; qty: number }> = [];
   const kinh: Array<{ name: string; w: number; h: number; qty: number }> = [];
@@ -95,6 +97,7 @@ export default function QuotePage() {
   const openEmail = () => {
     setEmailResult(null);
     setEmailErr("");
+    // Ưu tiên email hồ sơ khách hàng; nếu chưa có thì dùng email từng gửi báo giá lần trước.
     setEmailTo(order?.khachhang?.email || order?.baogia_email || "");
     setEmailOpen(true);
   };
@@ -108,6 +111,7 @@ export default function QuotePage() {
     setEmailErr("");
     setEmailResult(null);
     try {
+      // Backend gửi email thật và markQuoteSent để mở khóa nút "Khách đã xác nhận / Duyệt giá".
       const json = await apiJson<{ messageId: string; previewUrl: string | null }>("/api/admin/emails/send-quote", {
         method: "POST",
         body: JSON.stringify({
@@ -137,6 +141,7 @@ export default function QuotePage() {
   const approvePrice = async () => {
     if (!order) return;
     if (!quoteSent) {
+      // Duyệt giá chỉ đại diện cho việc khách đã đồng ý sau khi nhận báo giá, không phải bước tự động sau lập BOM.
       setErrorMsg("Cần gửi báo giá cho khách trước khi duyệt giá.");
       return;
     }

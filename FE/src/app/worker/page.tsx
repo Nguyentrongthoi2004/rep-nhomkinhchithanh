@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   User, Bell, ChevronRight, Zap, Target, CreditCard, Clock,
   Activity, Scissors, ClipboardList, Package
 } from "lucide-react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
+import { apiData } from "@/lib/api";
 
 interface WorkerInfo {
   hoten: string;
@@ -21,8 +21,19 @@ interface Assignment {
   donhang: { khachhang: { hoten: string } | null } | null;
 }
 
+interface DashboardSummary {
+  worker: WorkerInfo | null;
+  counts: {
+    pending: number;
+    active: number;
+    done: number;
+    issues: number;
+    unread: number;
+  };
+  latestTasks: Assignment[];
+}
+
 export default function WorkerDashboard() {
-  const supabase = useMemo(() => createClient(), []);
   const [greeting, setGreeting] = useState("Xin chào");
   const [todayText, setTodayText] = useState("");
   useEffect(() => {
@@ -36,39 +47,22 @@ export default function WorkerDashboard() {
 
   const [worker, setWorker] = useState<WorkerInfo | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [counts, setCounts] = useState<DashboardSummary["counts"]>({ pending: 0, active: 0, done: 0, issues: 0, unread: 0 });
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userEmail = sessionData.session?.user?.email;
-      if (!userEmail) { setLoading(false); return; }
-
-      const { data: userRow } = await supabase
-        .from("nguoidung")
-        .select("mand, hoten, sdt, vaitro")
-        .eq("tendangnhap", userEmail)
-        .single();
-
-      if (!userRow) { setLoading(false); return; }
-      setWorker(userRow as WorkerInfo);
-
-      const { data: aData } = await supabase
-        .from("phancong")
-        .select(`mapc, madh, trangthai, donhang(khachhang(hoten))`)
-        .eq("matho", userRow.mand)
-        .in("trangthai", ["CHO_THUC_HIEN", "DANG_THUC_HIEN"])
-        .order("mapc", { ascending: false })
-        .limit(5);
-
-      setAssignments((aData as unknown as Assignment[]) || []);
+      const data = await apiData<DashboardSummary>("/api/worker/tasks/summary");
+      setWorker(data.worker);
+      setCounts(data.counts);
+      setAssignments(data.latestTasks || []);
     } catch (e) {
       console.error("Lỗi tải dashboard:", e);
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
@@ -79,7 +73,7 @@ export default function WorkerDashboard() {
   return (
     <div className="min-h-full bg-[#030508] text-gray-200">
 
-      {/* Header */}
+      {/* Đầu trang */}
       <div className="bg-linear-to-b from-blue-900/40 to-[#030508] px-5 pt-12 pb-6">
         <div className="flex justify-between items-start mb-6 gap-4">
           <div className="flex items-start space-x-3">
@@ -105,15 +99,17 @@ export default function WorkerDashboard() {
               </div>
             </div>
           </div>
-          <button className="relative p-2 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors shrink-0" title="Thông báo" aria-label="Thông báo">
+          <div className="relative p-2 bg-white/5 rounded-2xl border border-white/10 shrink-0" title="Thông báo chưa đọc" aria-label="Thông báo chưa đọc">
             <Bell className="w-5 h-5 text-gray-300" />
-            {(activeTasks.length + pendingTasks.length) > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+            {counts.unread > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 rounded-full bg-red-500 px-1 text-[10px] font-bold text-white flex items-center justify-center">
+                {counts.unread > 9 ? "9+" : counts.unread}
+              </span>
             )}
-          </button>
+          </div>
         </div>
 
-        {/* Stats Card */}
+        {/* Thẻ thống kê */}
         <div className="bg-linear-to-br from-blue-600 to-blue-900 rounded-3xl p-5 shadow-[0_10px_25px_-5px_rgba(37,99,235,0.4)] relative overflow-hidden border border-white/10">
           <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-white/10 rounded-full blur-2xl" />
           <div className="absolute bottom-[-30%] left-[-15%] w-[55%] h-[55%] bg-emerald-400/10 rounded-full blur-3xl" />
@@ -124,9 +120,9 @@ export default function WorkerDashboard() {
                 <div className="h-8 w-20 bg-white/20 rounded animate-pulse" />
               ) : (
                 <p className="text-3xl font-bold text-white flex items-center">
-                  {activeTasks.length}
+                  {counts.active}
                   <span className="text-lg text-blue-200 mx-1">/</span>
-                  {pendingTasks.length}
+                  {counts.pending}
                   <Activity className="w-5 h-5 ml-2 text-green-300" />
                 </p>
               )}
@@ -134,6 +130,11 @@ export default function WorkerDashboard() {
             <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
               <Target className="w-6 h-6 text-blue-100" />
             </div>
+          </div>
+          <div className="relative z-10 mt-3 grid grid-cols-3 gap-2 text-xs">
+            <MiniMetric label="Đã xong" value={counts.done} tone="text-emerald-100" />
+            <MiniMetric label="Sự cố mở" value={counts.issues} tone="text-rose-100" />
+            <MiniMetric label="Thông báo" value={counts.unread} tone="text-sky-100" />
           </div>
           <div className="relative z-10 mt-4 grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2">
@@ -156,7 +157,7 @@ export default function WorkerDashboard() {
         </div>
       </div>
 
-      {/* Quick Access Grid */}
+      {/* Lưới truy cập nhanh */}
       <div className="px-5 pb-6">
         <h2 className="text-sm font-bold text-gray-100 mb-4 px-1">Dịch Vụ Nhanh</h2>
         <div className="grid grid-cols-4 gap-4">
@@ -190,7 +191,7 @@ export default function WorkerDashboard() {
         </div>
       </div>
 
-      {/* Active Assignments */}
+      {/* Phân công đang thực hiện */}
       <div className="px-5 space-y-3 pb-8">
         <h2 className="text-sm font-bold text-gray-100 mb-3 px-1">Đang Thực Hiện</h2>
 
@@ -238,6 +239,15 @@ export default function WorkerDashboard() {
         )}
       </div>
 
+    </div>
+  );
+}
+
+function MiniMetric({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/10 px-3 py-2 backdrop-blur-sm">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-100/70">{label}</div>
+      <div className={`mt-0.5 text-lg font-extrabold ${tone}`}>{value}</div>
     </div>
   );
 }

@@ -17,6 +17,7 @@ type CuttingPlan = {
   masdc: number;
   mapc: number;
   trangthai: string;
+  coSuCoMo?: boolean;
   khothanhphoi: {
     maphoi: number;
     chieudaibandau: number;
@@ -68,9 +69,12 @@ function getPlanMetrics(plan: CuttingPlan) {
   return { inputLength, usedLength, remainder, usageRate };
 }
 
+// Trang cắt phôi của thợ: hiển thị sơ đồ cắt được giao, xác nhận hoàn thành từng sơ đồ, báo sự cố cắt hỏng.
+// Thiết kế ưu tiên điện thoại cho thợ dùng tại xưởng.
 function WorkerCatPageInner() {
   const searchParams = useSearchParams();
   const mapcFilter = Number(searchParams.get("mapc") || "0");
+  const reportIntent = searchParams.get("report") === "1";
   const [plans, setPlans] = useState<CuttingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -78,6 +82,7 @@ function WorkerCatPageInner() {
   const [issueType, setIssueType] = useState<(typeof ISSUE_TYPES)[number]["value"]>("CAT_SAI_KICH_THUOC");
   const [note, setNote] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [autoReportOpened, setAutoReportOpened] = useState(false);
 
   const visiblePlans = useMemo(
     () => plans.filter((plan) => (mapcFilter ? plan.mapc === mapcFilter : true)),
@@ -100,6 +105,7 @@ function WorkerCatPageInner() {
     load();
   }, [load]);
 
+  // Thợ xác nhận hoàn thành cắt: gọi API → trừ chiều dài phôi + ghi nhật ký + tự động hoàn thành phân công.
   const complete = async (id: number) => {
     if (!confirm(`Xác nhận hoàn thành SDC-${id}? Kho phôi sẽ được trừ chiều dài thật.`)) return;
     setBusyId(id);
@@ -113,12 +119,26 @@ function WorkerCatPageInner() {
     }
   };
 
-  const openReport = (plan: CuttingPlan) => {
+  const openReport = useCallback((plan: CuttingPlan) => {
     setReportPlan(plan);
     setIssueType("CAT_SAI_KICH_THUOC");
     setNote("");
-  };
+  }, []);
 
+  useEffect(() => {
+    setAutoReportOpened(false);
+  }, [mapcFilter, reportIntent]);
+
+  useEffect(() => {
+    if (!reportIntent || autoReportOpened || loading || reportPlan) return;
+    const candidate = visiblePlans.find(
+      (plan) => plan.trangthai !== "HOAN_THANH" && plan.trangthai !== "DANG_CAT" && plan.khothanhphoi?.trangthai !== "BO_DI",
+    );
+    if (candidate) openReport(candidate);
+    setAutoReportOpened(true);
+  }, [autoReportOpened, loading, openReport, reportIntent, reportPlan, visiblePlans]);
+
+  // Thợ gửi báo cáo sự cố cắt hỏng: chọn loại sự cố + mô tả → gửi API → quản trị viên xử lý.
   const report = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!reportPlan || !note.trim()) return;
@@ -176,6 +196,8 @@ function WorkerCatPageInner() {
             const metrics = getPlanMetrics(plan);
             const isDone = plan.trangthai === "HOAN_THANH";
             const isScrap = plan.khothanhphoi?.trangthai === "BO_DI";
+            const hasOpenIssue = plan.trangthai === "DANG_CAT" || Boolean(plan.coSuCoMo);
+            const isBlocked = isScrap || hasOpenIssue;
             return (
               <div key={plan.masdc} className={`rounded-2xl border p-4 ${isScrap ? "border-red-500/30 bg-red-500/5" : isDone ? "border-emerald-500/20 bg-emerald-500/5" : "border-white/10 bg-[#10131a]/90"}`}>
                 <div className="flex items-start justify-between gap-3">
@@ -193,8 +215,8 @@ function WorkerCatPageInner() {
                     </h3>
                     <p className="text-xs text-slate-400 mt-1">{plan.khothanhphoi?.vattu?.tenvt || "Vật tư"} · đầu vào {formatMm(metrics.inputLength)} · dư {formatMm(metrics.remainder)}</p>
                   </div>
-                  <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border ${isScrap ? "bg-red-500/15 text-red-300 border-red-500/30" : isDone ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" : "bg-sky-500/15 text-sky-300 border-sky-500/30"}`}>
-                    {isScrap ? "Phôi lỗi" : isDone ? "Đã cắt" : "Chờ cắt"}
+                  <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border ${isScrap ? "bg-red-500/15 text-red-300 border-red-500/30" : hasOpenIssue ? "bg-amber-500/15 text-amber-200 border-amber-500/30" : isDone ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" : "bg-sky-500/15 text-sky-300 border-sky-500/30"}`}>
+                    {isScrap ? "Phôi lỗi" : hasOpenIssue ? "Chờ xử lý lỗi" : isDone ? "Đã cắt" : "Chờ cắt"}
                   </span>
                 </div>
 
@@ -243,8 +265,13 @@ function WorkerCatPageInner() {
                     Phôi này đã bị Admin đánh dấu lỗi/bỏ đi. Không được tiếp tục cắt, hãy chờ sơ đồ thay thế.
                   </div>
                 )}
+                {hasOpenIssue && !isScrap && (
+                  <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                    Phôi này đang có sự cố chờ Admin xử lý. Không xác nhận hoàn thành cho đến khi Admin cắt bỏ đoạn lỗi hoặc thay phôi khác.
+                  </div>
+                )}
 
-                {!isDone && !isScrap && (
+                {!isDone && !isBlocked && (
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button onClick={() => complete(plan.masdc)} disabled={busyId === plan.masdc} className="h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold flex items-center justify-center disabled:opacity-60">
                       {busyId === plan.masdc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Hoàn thành

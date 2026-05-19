@@ -11,6 +11,8 @@ type Props = {
   onPageChange: (page: number) => void;
 };
 
+// Phân trang dùng lại cho các bảng quản trị. Thành phần này chỉ nhận số liệu đã tính sẵn,
+// còn logic lọc/trang nằm ở page để mỗi màn tự quyết định nguồn ngày/search.
 export function ListPagination({ page, pageCount, total, start, end, onPageChange }: Props) {
   return (
     <div className="flex flex-col gap-3 border-t border-white/5 px-4 py-3 text-sm text-gray-400 sm:flex-row sm:items-center sm:justify-between">
