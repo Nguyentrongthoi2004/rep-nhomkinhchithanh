@@ -12,10 +12,13 @@ import {
 import {
   adminCuttingPlanIssuesRouter,
   adminCuttingPlansRouter,
+  adminCuttingProposalsRouter,
   workerCuttingPlansRouter,
+  workerCuttingProposalsRouter,
 } from "@/modules/cutting-plans/cutting-plans.routes";
 import { customersRouter } from "@/modules/customers/customers.routes";
 import { healthRouter } from "@/modules/health/health.routes";
+import { imagesRouter, workerImagesRouter } from "@/modules/images/images.routes";
 import {
   materialsOptionsRouter,
   materialsRouter,
@@ -53,6 +56,7 @@ apiRouter.use("/admin/categories", categoriesRouter);
 apiRouter.use("/admin/customers", customersRouter);
 apiRouter.use("/admin/issues", adminCuttingPlanIssuesRouter);
 apiRouter.use("/admin/cutting-plans", adminCuttingPlansRouter);
+apiRouter.use("/admin/cutting-proposals", adminCuttingProposalsRouter);
 apiRouter.use("/admin/materials", materialsRouter);
 apiRouter.use("/admin/materials-options", materialsOptionsRouter);
 apiRouter.use("/admin/orders", ordersRouter);
@@ -60,6 +64,7 @@ apiRouter.use("/admin/orders-list", ordersListRouter);
 apiRouter.use("/admin/payments", paymentsRouter);
 apiRouter.use("/admin/notifications", notificationsRouter);
 apiRouter.use("/admin/emails", emailsRouter);
+apiRouter.use("/admin/images", imagesRouter);
 apiRouter.use("/admin/raw-stock", adminRawStockRouter);
 apiRouter.use("/admin/rules", rulesRouter);
 apiRouter.use("/admin/seed", adminSeedRouter);
@@ -67,6 +72,8 @@ apiRouter.use("/admin/users", usersRouter);
 
 // --- Nhóm thợ: yêu cầu authMiddleware + requireRole("WORKER") ---
 apiRouter.use("/worker/cutting-plans", workerCuttingPlansRouter);
+apiRouter.use("/worker/cutting-proposals", workerCuttingProposalsRouter);
+apiRouter.use("/worker/images", workerImagesRouter);
 apiRouter.use("/worker/notifications", notificationsRouter);
 apiRouter.use("/worker/raw-stock", workerRawStockRouter);
 apiRouter.use("/worker/tasks", workerTasksRouter);

@@ -1,7 +1,7 @@
 import { HttpError } from "@/lib/http";
 import { supabaseAdmin } from "@/lib/supabase";
 import { notificationsService } from "@/modules/notifications/notifications.service";
-import type { ReportIssueDto, TrimIssueDto } from "./cutting-plans.schema";
+import type { ReportIssueDto, SubmitProposalDto, TrimIssueDto } from "./cutting-plans.schema";
 
 type BomItem = {
   mactdh: number;
@@ -48,12 +48,35 @@ type CutPiece = {
   length: number;
   label: string;
   materialName: string;
+  reason?: string;
 };
 
 type PlannedBar = {
   stock: RawStock;
   remaining: number;
   cuts: CutPiece[];
+};
+
+type BarScore = {
+  score: number;
+  projectedRemainder: number;
+  reasons: string[];
+};
+
+type CuttingPlanMetrics = {
+  totalRequiredLength: number;
+  totalKerfLoss: number;
+  totalStockLength: number;
+  totalReusableRemainder: number;
+  totalScrapLength: number;
+  productUtilizationRate: number;
+  materialUsageRate: number;
+  selectedReasons: Record<string, string[]>;
+};
+
+type SimulateOptions = {
+  workerId?: number;
+  returnShortages?: boolean;
 };
 
 type MissingCutPiece = CutPiece & {
@@ -73,6 +96,47 @@ type StockShortage = {
   }>;
   totalPieces: number;
   neededBars: number;
+};
+
+type ProposalRemainderType = "TAI_SU_DUNG" | "PHE_LIEU" | "LO_CO";
+
+type ProposalDetailInsertRow = {
+  maphoi: number;
+  mactdh: number;
+  chieudaicat: number;
+  thutucat: number;
+  kerf_mm: number;
+  chieudaiphoi_truoccat: number;
+  phandu_saucat: number;
+  loai_phandu: ProposalRemainderType;
+  score: number;
+  lydochon: string;
+};
+
+type ProposedCut = {
+  maphoi: number;
+  mactdh: number;
+  chieudaicat: number;
+  thutucat: number;
+};
+
+type ProposalStockGroup = {
+  stock: RawStock;
+  cuts: ProposedCut[];
+};
+
+type ProposalRpcRow = {
+  status: string;
+  message: string;
+  proposal_id: number;
+  mapc: number;
+};
+
+type ProposalRpcError = {
+  code?: string;
+  message?: string;
+  details?: string | null;
+  hint?: string | null;
 };
 
 const PLAN_SELECT = `
@@ -221,32 +285,212 @@ function buildShortages(missingPieces: MissingCutPiece[], stocks: RawStock[], ke
   });
 }
 
-// Thuật toán tối ưu cắt 1D-CSP: xếp giảm dần vào thanh phù hợp đầu tiên (FFD).
-// Duyệt từng mảnh cần cắt (giảm dần) → tìm phôi phù hợp nhất (ưu tiên CON_DU trước, rồi MOI)
-// Trừ độ hao lưỡi cưa và biên an toàn cho mỗi thanh
-// Nếu không đủ phôi → trả lỗi INSUFFICIENT_STOCK kèm danh sách thiếu
-function planCuts(pieces: CutPiece[], stocks: RawStock[], kerf: number, safeMargin: number) {
-  const bars: PlannedBar[] = stocks
-    .filter((s) => s.trangthai !== "BO_DI" && s.chieudaihientai > safeMargin * 2)
-    .map((stock) => ({
-      stock,
-      remaining: stock.chieudaihientai - safeMargin * 2,
-      cuts: [],
-    }));
+function emptyCuttingMetrics(): CuttingPlanMetrics {
+  return {
+    totalRequiredLength: 0,
+    totalKerfLoss: 0,
+    totalStockLength: 0,
+    totalReusableRemainder: 0,
+    totalScrapLength: 0,
+    productUtilizationRate: 0,
+    materialUsageRate: 0,
+    selectedReasons: {},
+  };
+}
+
+function getInsufficientStockShortages(error: unknown): StockShortage[] | null {
+  if (!(error instanceof HttpError) || error.status !== 400) return null;
+  const details = error.details as { code?: string; shortages?: StockShortage[] } | undefined;
+  if (details?.code !== "INSUFFICIENT_STOCK" || !Array.isArray(details.shortages)) return null;
+  return details.shortages;
+}
+
+function scoreRemainder(remainder: number, scrapThreshold: number, minReusableLength: number) {
+  if (remainder < scrapThreshold) {
+    return {
+      score: 1200 - remainder * 0.02,
+      label: "Phần dư rất nhỏ, tận dụng gần hết phôi",
+    };
+  }
+
+  if (remainder >= minReusableLength) {
+    return {
+      score: 700 + Math.min(remainder / 25, 350),
+      label: "Phần dư đủ dài để tái sử dụng",
+    };
+  }
+
+  const middle = Math.max(1, minReusableLength - scrapThreshold);
+  const awkwardRatio = (remainder - scrapThreshold) / middle;
+  return {
+    score: -850 - awkwardRatio * 450,
+    label: "Phần dư lỡ cỡ, khó tái sử dụng",
+  };
+}
+
+function normalizeProposalRpcResult(data: unknown): ProposalRpcRow {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") {
+    throw HttpError.internal("RPC de xuat cat khong tra ve ket qua hop le");
+  }
+
+  const result = row as Partial<ProposalRpcRow>;
+  if (!result.status || !result.message || result.proposal_id === undefined || result.mapc === undefined) {
+    throw HttpError.internal("RPC de xuat cat tra ve thieu du lieu");
+  }
+
+  return {
+    status: String(result.status),
+    message: String(result.message),
+    proposal_id: Number(result.proposal_id),
+    mapc: Number(result.mapc),
+  };
+}
+
+function throwProposalRpcError(error: ProposalRpcError): never {
+  const message = error.message || "Loi RPC de xuat cat";
+  if (error.code === "P0002" || message.includes("Không tìm thấy") || message.includes("Khong tim thay")) {
+    throw HttpError.notFound(message);
+  }
+  if (error.code === "42501") {
+    throw HttpError.forbidden(message);
+  }
+  throw HttpError.internal(message, error);
+}
+
+function mapProposalRpcResult(data: unknown, successStatuses: string[]) {
+  const result = normalizeProposalRpcResult(data);
+  const payload = {
+    status: result.status,
+    message: result.message,
+    proposalId: result.proposal_id,
+    mapc: result.mapc,
+  };
+
+  if (successStatuses.includes(result.status)) return payload;
+  if (result.status === "EXPIRED" || result.status === "INVALID_STATE") {
+    throw HttpError.conflict(result.message, payload);
+  }
+  throw HttpError.internal(result.message, payload);
+}
+
+function scoreCandidateBar(
+  candidate: PlannedBar,
+  piece: CutPiece,
+  remainingPieces: CutPiece[],
+  allBars: PlannedBar[],
+  kerf: number,
+  scrapThreshold: number,
+  minReusableLength: number,
+): BarScore {
+  const needed = piece.length + kerf;
+  const projectedRemainder = candidate.remaining - needed;
+  const reasons: string[] = [];
+  let score = 0;
+
+  const remainderScore = scoreRemainder(projectedRemainder, scrapThreshold, minReusableLength);
+  score += remainderScore.score;
+  reasons.push(remainderScore.label);
+
+  if (candidate.stock.trangthai === "CON_DU") {
+    score += 120;
+    reasons.push("Ưu tiên dùng phôi dư phù hợp trước phôi mới");
+  }
+
+  const sameMaterialRemaining = remainingPieces.filter((rp) => rp.mavt === piece.mavt);
+  const nextPieceFitsRemainder = sameMaterialRemaining.some((rp) => projectedRemainder >= rp.length + kerf);
+  if (nextPieceFitsRemainder) {
+    score += 240;
+    reasons.push("Phần dư sau cắt vẫn chứa được đoạn còn lại trong BOM");
+  }
+
+  for (const futurePiece of sameMaterialRemaining) {
+    const futureNeeded = futurePiece.length + kerf;
+    const isFutureLonger = futurePiece.length > piece.length;
+    const candidateCanServeBeforeCut = candidate.remaining >= futureNeeded;
+    const candidateCanServeAfterCut = projectedRemainder >= futureNeeded;
+    if (!isFutureLonger || !candidateCanServeBeforeCut || candidateCanServeAfterCut) continue;
+
+    const otherCapableBars = allBars.filter(
+      (bar) => bar !== candidate && bar.stock.mavt === piece.mavt && bar.remaining >= futureNeeded,
+    );
+    if (otherCapableBars.length === 0) {
+      score -= 6000;
+      reasons.push(`Giữ cây dài duy nhất cho đoạn ${futurePiece.length}mm còn lại`);
+      break;
+    }
+  }
+
+  // Tie-break mềm: khi các lựa chọn gần ngang nhau, thanh tạo phần dư gọn hơn được ưu tiên.
+  score -= projectedRemainder * 0.01;
+
+  return {
+    score,
+    projectedRemainder,
+    reasons,
+  };
+}
+
+// Thuật toán Heuristic Score + Look-ahead cho bài toán cắt phôi 1D (1D-CSP).
+// Score CÀNG CAO CÀNG TỐT. SAFE_MARGIN * 2 chỉ trừ MỘT LẦN khi khởi tạo.
+function planCuts(pieces: CutPiece[], stocks: RawStock[], kerf: number, safeMargin: number, scrapThreshold: number, minReusableLength: number) {
+  const validStocks = stocks.filter(
+    (s) => s.trangthai !== "BO_DI" && s.chieudaihientai >= safeMargin * 2
+  );
+
+  // remaining = chiều dài khả dụng, đã trừ SAFE_MARGIN * 2 (biên kẹp máy 2 đầu).
+  // Các nhát cắt sau đó chỉ trừ (Piece.length + BLADE_KERF), KHÔNG trừ lặp SAFE_MARGIN.
+  const bars: PlannedBar[] = validStocks.map((stock) => ({
+    stock,
+    remaining: stock.chieudaihientai - safeMargin * 2,
+    cuts: [],
+  }));
   const missingPieces: MissingCutPiece[] = [];
 
-  for (const piece of pieces) {
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i];
     const needed = piece.length + kerf;
-    const bar = bars
-      .filter((candidate) => candidate.stock.mavt === piece.mavt && candidate.remaining >= needed)
-      .sort((a, b) => {
-        const aPriority = a.stock.trangthai === "CON_DU" ? 0 : 1;
-        const bPriority = b.stock.trangthai === "CON_DU" ? 0 : 1;
-        if (aPriority !== bPriority) return aPriority - bPriority;
-        return a.remaining - b.remaining;
-      })[0];
+    const remainingPieces = pieces.slice(i + 1);
 
-    if (!bar) {
+    let bestBar: PlannedBar | null = null;
+    let bestScore = -Infinity;
+    let bestReason = "";
+
+    const candidates = bars.filter((candidate) => candidate.stock.mavt === piece.mavt && candidate.remaining >= needed);
+
+    for (const candidate of candidates) {
+      const result = scoreCandidateBar(
+        candidate,
+        piece,
+        remainingPieces,
+        bars,
+        kerf,
+        scrapThreshold,
+        minReusableLength,
+      );
+      const score = result.score;
+      const reasonParts = [
+        ...result.reasons,
+        `dư sau cắt ${Math.max(0, Math.round(result.projectedRemainder))}mm`,
+        `score ${Math.round(score)}`,
+      ];
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestBar = candidate;
+        bestReason = reasonParts.join(", ");
+      } else if (score === bestScore) {
+        if (bestBar && candidate.stock.trangthai === "CON_DU" && bestBar.stock.trangthai !== "CON_DU") {
+          bestBar = candidate;
+          bestReason = reasonParts.join(", ");
+        } else if (bestBar && candidate.remaining < bestBar.remaining) {
+          bestBar = candidate;
+          bestReason = reasonParts.join(", ");
+        }
+      }
+    }
+
+    if (!bestBar) {
       missingPieces.push({
         ...piece,
         materialName: piece.materialName || stocks.find((stock) => stock.mavt === piece.mavt)?.vattu?.tenvt || piece.label,
@@ -254,8 +498,8 @@ function planCuts(pieces: CutPiece[], stocks: RawStock[], kerf: number, safeMarg
       continue;
     }
 
-    bar.remaining -= needed;
-    bar.cuts.push(piece);
+    bestBar.remaining -= needed;
+    bestBar.cuts.push({ ...piece, reason: bestReason } as CutPiece);
   }
 
   if (missingPieces.length > 0) {
@@ -265,7 +509,58 @@ function planCuts(pieces: CutPiece[], stocks: RawStock[], kerf: number, safeMarg
     });
   }
 
-  return bars.filter((bar) => bar.cuts.length > 0);
+  const usedBars = bars.filter((bar) => bar.cuts.length > 0);
+
+  let totalRequiredLength = 0;
+  let totalKerfLoss = 0;
+  let totalStockLength = 0;
+  let totalReusableRemainder = 0;
+  let totalScrapLength = 0;
+  const selectedReasons: Record<string, string[]> = {};
+
+  for (const bar of usedBars) {
+    totalStockLength += bar.stock.chieudaihientai;
+
+    for (const cut of bar.cuts) {
+      totalRequiredLength += cut.length;
+      totalKerfLoss += kerf;
+
+      const reason = cut.reason || "";
+      if (reason) {
+        if (!selectedReasons[bar.stock.maphoi]) {
+          selectedReasons[bar.stock.maphoi] = [];
+        }
+        selectedReasons[bar.stock.maphoi].push(`Cắt ${cut.length}mm: ${reason}`);
+      }
+    }
+
+    // actualRemainder = chiều dài vật lý thực tế còn lại trên thanh phôi sau khi cắt xong.
+    // Cộng lại safeMargin * 2 vì phần biên kẹp máy vẫn tồn tại trên thanh phôi vật lý.
+    const actualRemainder = bar.remaining + safeMargin * 2;
+    if (actualRemainder >= minReusableLength) {
+      totalReusableRemainder += actualRemainder;
+    } else {
+      totalScrapLength += actualRemainder;
+    }
+  }
+
+  // productUtilizationRate: Tỷ lệ thành phẩm / tổng nguyên liệu sử dụng.
+  const productUtilizationRate = totalStockLength > 0 ? (totalRequiredLength / totalStockLength) * 100 : 0;
+  // materialUsageRate: Tỷ lệ nguyên liệu thực sự tiêu hao (thành phẩm + kerf) / tổng.
+  const materialUsageRate = totalStockLength > 0 ? ((totalRequiredLength + totalKerfLoss) / totalStockLength) * 100 : 0;
+
+  const metrics = {
+    totalRequiredLength,
+    totalKerfLoss,
+    totalStockLength,
+    totalReusableRemainder,
+    totalScrapLength,
+    productUtilizationRate,
+    materialUsageRate,
+    selectedReasons,
+  };
+
+  return { plannedBars: usedBars, metrics };
 }
 
 async function getAssignment(mapc: number) {
@@ -498,6 +793,93 @@ export const cuttingPlansService = {
     return listPlansForAssignment(mapc);
   },
 
+  async simulateCuts(mapc: number, options: SimulateOptions = {}) {
+    const assignment = await getAssignment(mapc);
+    if (options.workerId && assignment.matho !== options.workerId) {
+      throw HttpError.forbidden("Ban khong duoc mo phong phan cong nay");
+    }
+
+    const items = assignment.donhang?.chitietdh ?? [];
+    const pieces = expandPieces(items);
+    if (pieces.length === 0) {
+      return {
+        plans: [],
+        metrics: emptyCuttingMetrics(),
+        warnings: ["Don hang khong co chi tiet cat nhom"],
+        shortages: [],
+      };
+    }
+
+    const materialIds = [...new Set(pieces.map((piece) => piece.mavt))];
+    const { data: stockRows, error: stockErr } = await supabaseAdmin
+      .from("khothanhphoi")
+      .select("maphoi, mavt, chieudaibandau, chieudaihientai, trangthai, vattu:mavt(tenvt, donvitinh)")
+      .in("mavt", materialIds)
+      .neq("trangthai", "BO_DI");
+    if (stockErr) throw HttpError.internal(stockErr.message);
+
+    const kerf = await getRuleValue("BLADE_KERF", 5);
+    const safeMargin = await getRuleValue("SAFE_MARGIN", 20);
+    const scrapThreshold = await getRuleValue("MIN_SCRAP", 100);
+    const minReusableLength = await getRuleValue("MIN_REUSABLE_LENGTH", 1500);
+
+    const stockIds = (stockRows ?? []).map((stock) => stock.maphoi as number);
+    let issueStockIds = new Set<number>();
+    if (stockIds.length > 0) {
+      const { data: issueData, error: issueErr } = await supabaseAdmin
+        .from("nhatkygiacong")
+        .select("maphoi")
+        .eq("sukien", "LOI")
+        .eq("trangthaixuly", "CHO_XU_LY")
+        .in("maphoi", stockIds);
+      if (issueErr) throw HttpError.internal(issueErr.message);
+      issueStockIds = new Set((issueData ?? []).map((row) => row.maphoi as number));
+    }
+
+    const validStocks = (stockRows ?? []).filter((stock) => !issueStockIds.has(stock.maphoi as number)) as unknown as RawStock[];
+
+    try {
+      const { plannedBars, metrics } = planCuts(pieces, validStocks, kerf, safeMargin, scrapThreshold, minReusableLength);
+      const plans = plannedBars.map((bar) => ({
+        masdc: null,
+        mapc,
+        maphoi: bar.stock.maphoi,
+        trangthai: "MO_PHONG",
+        khothanhphoi: bar.stock,
+        chitietcat: bar.cuts.map((cut, index) => ({
+          mactc: null,
+          masdc: null,
+          mactdh: cut.mactdh,
+          thutucat: index + 1,
+          chieudaicat: cut.length,
+          trangthai: "MO_PHONG",
+          chitietdh: {
+            mota: cut.label,
+            mavt: cut.mavt,
+            vattu: {
+              tenvt: cut.materialName,
+              donvitinh: "",
+            },
+          },
+        })),
+        remaining: bar.remaining + safeMargin * 2,
+      }));
+
+      return { plans, metrics, warnings: [], shortages: [] };
+    } catch (error) {
+      const shortages = getInsufficientStockShortages(error);
+      if (options.returnShortages && shortages) {
+        return {
+          plans: [],
+          metrics: emptyCuttingMetrics(),
+          warnings: ["Kho phoi khong du de mo phong cat"],
+          shortages,
+        };
+      }
+      throw error;
+    }
+  },
+
   // Tạo sơ đồ cắt cho phân công: lấy BOM → expandPieces → planCuts (FFD) → lưu vào sodocat + chitietcat
   async createForAssignment(mapc: number) {
     const assignment = await getAssignment(mapc);
@@ -518,7 +900,24 @@ export const cuttingPlansService = {
 
     const kerf = await getRuleValue("BLADE_KERF", 5);
     const safeMargin = await getRuleValue("SAFE_MARGIN", 20);
-    const plannedBars = planCuts(pieces, (stockRows ?? []) as unknown as RawStock[], kerf, safeMargin);
+    const scrapThreshold = await getRuleValue("MIN_SCRAP", 100);
+    const minReusableLength = await getRuleValue("MIN_REUSABLE_LENGTH", 1500);
+
+    const stockIds = (stockRows ?? []).map(s => s.maphoi);
+    let issueStockIds = new Set<number>();
+    if (stockIds.length > 0) {
+      const { data: issueData, error: issueErr } = await supabaseAdmin
+        .from("nhatkygiacong")
+        .select("maphoi")
+        .eq("sukien", "LOI")
+        .eq("trangthaixuly", "CHO_XU_LY")
+        .in("maphoi", stockIds);
+      if (issueErr) throw HttpError.internal(issueErr.message);
+      issueStockIds = new Set((issueData ?? []).map(r => r.maphoi as number));
+    }
+    const validStocks = (stockRows ?? []).filter(s => !issueStockIds.has(s.maphoi as number)) as unknown as RawStock[];
+
+    const { plannedBars, metrics } = planCuts(pieces, validStocks, kerf, safeMargin, scrapThreshold, minReusableLength);
 
     const { error: deleteErr } = await supabaseAdmin.from("sodocat").delete().eq("mapc", mapc);
     if (deleteErr) throw HttpError.internal(deleteErr.message);
@@ -550,7 +949,8 @@ export const cuttingPlansService = {
     const { error: cutErr } = await supabaseAdmin.from("chitietcat").insert(cutRows);
     if (cutErr) throw HttpError.internal(cutErr.message);
 
-    return listPlansForAssignment(mapc);
+    const plans = await listPlansForAssignment(mapc);
+    return { plans, metrics };
   },
 
   // Thợ xác nhận hoàn thành sơ đồ cắt: trừ chiều dài phôi, ghi nhật ký, tự động hoàn thành phân công nếu tất cả sơ đồ xong.
@@ -591,8 +991,8 @@ export const cuttingPlansService = {
     const after = before - used - kerfLoss;
     if (after < 0) throw HttpError.badRequest("So do cat vuot qua chieu dai phoi hien tai");
 
-    const SCRAP_THRESHOLD = 100; // mm - ngưỡng phế liệu
-    const nextStatus = after < SCRAP_THRESHOLD ? "BO_DI" : "CON_DU";
+    const scrapThreshold = await getRuleValue("MIN_SCRAP", 100);
+    const nextStatus = after < scrapThreshold ? "BO_DI" : "CON_DU";
 
     const [{ error: cutErr }, { error: planErr }, { error: stockErr }, { error: logErr }] = await Promise.all([
       supabaseAdmin.from("chitietcat").update({ trangthai: "DA_CAT" }).eq("masdc", masdc),
@@ -695,5 +1095,307 @@ export const cuttingPlansService = {
       .catch(() => null);
 
     return listPlansForAssignment(typed.mapc);
+  },
+
+  // --- DOT 4: PROPOSAL API ---
+  async submitProposal(mapc: number, matho: number, dto: SubmitProposalDto) {
+    const assignment = await getAssignment(mapc);
+    if (assignment.matho !== matho) throw HttpError.forbidden("Ban khong duoc phan cong don nay");
+
+    const bomItems = assignment.donhang?.chitietdh ?? [];
+    const cutBomItems = bomItems.filter((item) => Number(item.chieudaicat) > 0 && Number(item.soluong) > 0);
+    if (cutBomItems.length === 0) throw HttpError.badRequest("Don hang khong co BOM can cat");
+
+    const bomById = new Map<number, BomItem>();
+    const expectedCountByItem = new Map<number, number>();
+    for (const item of cutBomItems) {
+      bomById.set(item.mactdh, item);
+      expectedCountByItem.set(item.mactdh, item.soluong);
+    }
+
+    const seenBars = new Set<number>();
+    const submittedCountByItem = new Map<number, number>();
+    const groupsByStock = new Map<number, ProposalStockGroup>();
+
+    for (const bar of dto.simulatedBars) {
+      if (seenBars.has(bar.maphoi)) throw HttpError.badRequest(`UID-${bar.maphoi} bi lap trong de xuat`);
+      seenBars.add(bar.maphoi);
+
+      const usedOrders = new Set<number>();
+      groupsByStock.set(bar.maphoi, {
+        stock: {
+          maphoi: bar.maphoi,
+          mavt: 0,
+          chieudaibandau: 0,
+          chieudaihientai: 0,
+          trangthai: "",
+          vattu: null,
+        },
+        cuts: [],
+      });
+
+      for (const cut of bar.cuts) {
+        if (usedOrders.has(cut.thutucat)) throw HttpError.badRequest(`Thu tu cat bi lap tren UID-${bar.maphoi}`);
+        usedOrders.add(cut.thutucat);
+
+        const bomItem = bomById.get(cut.mactdh);
+        if (!bomItem) throw HttpError.badRequest(`mactdh ${cut.mactdh} khong thuoc don hang cua phan cong`);
+
+        const bomLength = Number(bomItem.chieudaicat);
+        if (Number(cut.chieudaicat) !== bomLength) {
+          throw HttpError.badRequest(`Chieu dai cat cua mactdh ${cut.mactdh} khong khop BOM`);
+        }
+
+        submittedCountByItem.set(cut.mactdh, (submittedCountByItem.get(cut.mactdh) ?? 0) + 1);
+        groupsByStock.get(bar.maphoi)?.cuts.push({
+          maphoi: bar.maphoi,
+          mactdh: cut.mactdh,
+          chieudaicat: bomLength,
+          thutucat: cut.thutucat,
+        });
+      }
+    }
+
+    for (const [mactdh, expected] of expectedCountByItem.entries()) {
+      const submitted = submittedCountByItem.get(mactdh) ?? 0;
+      if (submitted !== expected) {
+        throw HttpError.badRequest(`BOM mactdh ${mactdh} can ${expected} nhat cat, de xuat co ${submitted}`);
+      }
+    }
+    for (const mactdh of submittedCountByItem.keys()) {
+      if (!expectedCountByItem.has(mactdh)) throw HttpError.badRequest(`De xuat co mactdh la ${mactdh}`);
+    }
+
+    const stockIds = [...groupsByStock.keys()].sort((a, b) => a - b);
+    const { data: stockRows, error: stockErr } = await supabaseAdmin
+      .from("khothanhphoi")
+      .select("maphoi, mavt, chieudaibandau, chieudaihientai, trangthai, vattu:mavt(tenvt, donvitinh)")
+      .in("maphoi", stockIds);
+    if (stockErr) throw HttpError.internal(stockErr.message);
+
+    const stocksById = new Map<number, RawStock>();
+    for (const row of (stockRows ?? []) as unknown as RawStock[]) stocksById.set(row.maphoi, row);
+    for (const stockId of stockIds) {
+      const stock = stocksById.get(stockId);
+      if (!stock) throw HttpError.badRequest(`Khong tim thay phoi UID-${stockId}`);
+      if (stock.trangthai === "BO_DI") throw HttpError.badRequest(`Phoi UID-${stockId} da bi bo, khong duoc dung`);
+      const group = groupsByStock.get(stockId);
+      if (group) group.stock = stock;
+    }
+
+    const { data: issueRows, error: issueErr } = await supabaseAdmin
+      .from("nhatkygiacong")
+      .select("maphoi")
+      .eq("sukien", "LOI")
+      .eq("trangthaixuly", "CHO_XU_LY")
+      .in("maphoi", stockIds);
+    if (issueErr) throw HttpError.internal(issueErr.message);
+    const issueStockIds = new Set((issueRows ?? []).map((row) => row.maphoi as number));
+    if (issueStockIds.size > 0) {
+      throw HttpError.badRequest(`Phoi UID-${[...issueStockIds].join(", ")} dang co su co mo`);
+    }
+
+    const kerf = await getRuleValue("BLADE_KERF", 5);
+    const safeMargin = await getRuleValue("SAFE_MARGIN", 20);
+    const scrapThreshold = await getRuleValue("MIN_SCRAP", 100);
+    const minReusableLength = await getRuleValue("MIN_REUSABLE_LENGTH", 1500);
+    const oldSimulation = await this.simulateCuts(mapc, { workerId: matho, returnShortages: true });
+    const oldMetrics = oldSimulation.metrics;
+
+    let totalRequiredLength = 0;
+    let totalKerfLoss = 0;
+    let totalStockLength = 0;
+    let totalReusableRemainder = 0;
+    let totalScrapLength = 0;
+    let scoreMoi = 0;
+    const warnings: string[] = [];
+    const selectedReasons: Record<string, string[]> = {};
+    const chitietRows: ProposalDetailInsertRow[] = [];
+    const snapshotPhoi = [];
+
+    for (const group of [...groupsByStock.values()].sort((a, b) => a.stock.maphoi - b.stock.maphoi)) {
+      const stock = group.stock;
+      const sortedCuts = [...group.cuts].sort((a, b) => a.thutucat - b.thutucat);
+      const requiredLength = sortedCuts.reduce((sum, cut) => sum + cut.chieudaicat, 0);
+      const kerfLoss = sortedCuts.length * kerf;
+      const totalUsed = requiredLength + kerfLoss;
+      const availableLength = Math.max(stock.chieudaihientai - safeMargin * 2, 0);
+      if (totalUsed > availableLength) {
+        throw HttpError.badRequest(
+          `Phoi UID-${stock.maphoi} khong du chieu dai kha dung: can ${totalUsed}mm, kha dung ${availableLength}mm`,
+        );
+      }
+
+      for (const cut of sortedCuts) {
+        const bomItem = bomById.get(cut.mactdh);
+        if (!bomItem) throw HttpError.badRequest(`mactdh ${cut.mactdh} khong hop le`);
+        if (stock.mavt !== bomItem.mavt) {
+          throw HttpError.badRequest(`Phoi UID-${stock.maphoi} khong dung vat tu cho mactdh ${cut.mactdh}`);
+        }
+      }
+
+      const remainder = Math.max(stock.chieudaihientai - totalUsed, 0);
+      const remainderScore = scoreRemainder(remainder, scrapThreshold, minReusableLength);
+      let loaiPhanDu: ProposalRemainderType = "PHE_LIEU";
+      if (remainder >= minReusableLength) {
+        loaiPhanDu = "TAI_SU_DUNG";
+        totalReusableRemainder += remainder;
+      } else {
+        totalScrapLength += remainder;
+        if (remainder >= scrapThreshold) loaiPhanDu = "LO_CO";
+      }
+
+      let barScore = remainderScore.score;
+      const reasons = [remainderScore.label, `UID-${stock.maphoi}: dung ${totalUsed}mm, du ${remainder}mm`];
+      if (stock.trangthai === "CON_DU") {
+        barScore += 120;
+        reasons.push("Uu tien phoi du phu hop de don kho");
+      }
+      if (loaiPhanDu === "LO_CO") {
+        warnings.push(`UID-${stock.maphoi} con phan du lo co ${remainder}mm, can admin xem xet`);
+      }
+
+      selectedReasons[String(stock.maphoi)] = reasons;
+      scoreMoi += barScore;
+      totalRequiredLength += requiredLength;
+      totalKerfLoss += kerfLoss;
+      totalStockLength += stock.chieudaihientai;
+      snapshotPhoi.push({
+        maphoi: stock.maphoi,
+        mavt: stock.mavt,
+        chieudaihientai: stock.chieudaihientai,
+        trangthai: stock.trangthai,
+      });
+
+      sortedCuts.forEach((cut, index) => {
+        chitietRows.push({
+          maphoi: stock.maphoi,
+          mactdh: cut.mactdh,
+          chieudaicat: cut.chieudaicat,
+          thutucat: index + 1,
+          kerf_mm: kerf,
+          chieudaiphoi_truoccat: stock.chieudaihientai,
+          phandu_saucat: remainder,
+          loai_phandu: loaiPhanDu,
+          score: barScore,
+          lydochon: reasons.join("; "),
+        });
+      });
+    }
+
+    const metricsMoi: CuttingPlanMetrics = {
+      totalRequiredLength,
+      totalKerfLoss,
+      totalStockLength,
+      totalReusableRemainder,
+      totalScrapLength,
+      productUtilizationRate: totalStockLength > 0 ? (totalRequiredLength / totalStockLength) * 100 : 0,
+      materialUsageRate: totalStockLength > 0 ? ((totalRequiredLength + totalKerfLoss) / totalStockLength) * 100 : 0,
+      selectedReasons,
+    };
+
+    const snapshotBom = cutBomItems.map((item) => ({
+      mactdh: item.mactdh,
+      madh: assignment.madh,
+      mavt: item.mavt,
+      chieudaicat: item.chieudaicat,
+      soluong: item.soluong,
+    }));
+    const snapshotRules = {
+      BLADE_KERF: kerf,
+      SAFE_MARGIN: safeMargin,
+      MIN_SCRAP: scrapThreshold,
+      MIN_REUSABLE_LENGTH: minReusableLength,
+    };
+
+    const { data: dxData, error: dxErr } = await supabaseAdmin.from("dexuatcat").insert({
+      mapc,
+      matho,
+      trangthai: "CHO_DUYET",
+      lydodexuat: dto.lydodexuat || null,
+      tonghaohut_cu: oldMetrics.totalKerfLoss,
+      tonghaohut_moi: totalKerfLoss,
+      tiletandung_cu: oldMetrics.productUtilizationRate,
+      tiletandung_moi: metricsMoi.productUtilizationRate,
+      phandutaisudung_cu: oldMetrics.totalReusableRemainder,
+      phandutaisudung_moi: totalReusableRemainder,
+      phanduphelieu_cu: oldMetrics.totalScrapLength,
+      phanduphelieu_moi: totalScrapLength,
+      score_cu: 0,
+      score_moi: scoreMoi,
+      metrics_cu: oldMetrics,
+      metrics_moi: metricsMoi,
+      snapshot_bom: snapshotBom,
+      snapshot_phoi: snapshotPhoi,
+      snapshot_rules: snapshotRules,
+      warnings,
+      selected_reasons: selectedReasons,
+    }).select("madxc").single();
+    if (dxErr) throw HttpError.internal(dxErr.message);
+
+    const mappedChitiet = chitietRows.map((row) => ({ ...row, madxc: dxData.madxc }));
+    const { error: ctErr } = await supabaseAdmin.from("chitietdexuatcat").insert(mappedChitiet);
+    if (ctErr) throw HttpError.internal(ctErr.message);
+
+    return {
+      proposalId: dxData.madxc,
+      status: "CHO_DUYET",
+      metrics: metricsMoi,
+      warnings,
+      selectedReasons,
+      message: "Gui de xuat cat thanh cong",
+    };
+  },
+
+  async listProposals(mapc?: number) {
+    let query = supabaseAdmin
+      .from("dexuatcat")
+      .select("*, nguoidung!matho(hoten), chitietdexuatcat(*)")
+      .order("ngaytao", { ascending: false });
+    if (mapc) query = query.eq("mapc", mapc);
+    const { data, error } = await query;
+    if (error) throw HttpError.internal(error.message);
+    return data;
+  },
+
+  async listWorkerProposals(matho: number) {
+    const { data, error } = await supabaseAdmin
+      .from("dexuatcat")
+      .select("*, chitietdexuatcat(*)")
+      .eq("matho", matho)
+      .order("ngaytao", { ascending: false });
+    if (error) throw HttpError.internal(error.message);
+    return data;
+  },
+
+  async getProposalDetail(madxc: number) {
+    const { data, error } = await supabaseAdmin
+      .from("dexuatcat")
+      .select("*, nguoidung!matho(hoten), chitietdexuatcat(*)")
+      .eq("madxc", madxc)
+      .maybeSingle();
+    if (error) throw HttpError.internal(error.message);
+    if (!data) throw HttpError.notFound("Khong tim thay de xuat cat");
+    return data;
+  },
+
+  async approveProposal(madxc: number, adminId: number, ghichu?: string) {
+    const { data, error } = await supabaseAdmin.rpc("approve_cutting_proposal", {
+      p_proposal_id: madxc,
+      p_admin_id: adminId,
+      p_admin_note: ghichu || null,
+    });
+    if (error) throwProposalRpcError(error);
+    return mapProposalRpcResult(data, ["APPROVED"]);
+  },
+
+  async rejectProposal(madxc: number, adminId: number, ghichu?: string) {
+    const { data, error } = await supabaseAdmin.rpc("reject_cutting_proposal", {
+      p_proposal_id: madxc,
+      p_admin_id: adminId,
+      p_admin_note: ghichu || null,
+    });
+    if (error) throwProposalRpcError(error);
+    return mapProposalRpcResult(data, ["REJECTED"]);
   },
 };

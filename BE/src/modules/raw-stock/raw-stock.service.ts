@@ -130,7 +130,7 @@ export const rawStockService = {
   },
 
   async listPaged(query: RawStockListQuery): Promise<RawStockPageResult> {
-    const { page, pageSize, mavt, trangthai, minLength, sortBy, order } = query;
+    const { page, pageSize, mavt, trangthai, minLength, lengthMode, sortBy, order } = query;
     const ascending = order === "asc";
 
     let filterByMaphoi: number | undefined;
@@ -189,7 +189,7 @@ export const rawStockService = {
     }
 
     if (minLength !== undefined) {
-      qb = qb.gte("chieudaihientai", minLength);
+      qb = lengthMode === "exact" ? qb.eq("chieudaihientai", minLength) : qb.gte("chieudaihientai", minLength);
       if (!trangthai) {
         qb = qb.neq("trangthai", "BO_DI");
       }

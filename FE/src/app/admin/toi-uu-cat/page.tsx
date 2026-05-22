@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronDown, Gauge, ListChecks, Loader2, PackagePlus, Play, RefreshCw, Ruler, Scissors, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Gauge, ListChecks, Loader2, PackagePlus, Play, RefreshCw, Ruler, Scissors, TrendingUp, X } from "lucide-react";
 import { ApiError, apiData } from "@/lib/api";
 
 type AssignmentRow = {
@@ -52,6 +52,33 @@ type ShortageDetails = {
 };
 
 type SupplementDraft = Record<number, { quantity: string; length: string }>;
+
+type CuttingPlanMetrics = {
+  totalRequiredLength: number;
+  totalKerfLoss: number;
+  totalStockLength: number;
+  totalReusableRemainder: number;
+  totalScrapLength: number;
+  productUtilizationRate: number;
+  materialUsageRate: number;
+  selectedReasons: Record<string, string[]>;
+};
+
+type CreatePlanResponse = {
+  plans: CuttingPlan[];
+  metrics: CuttingPlanMetrics;
+};
+
+const CUT_COLORS = [
+  "bg-cyan-500/70",
+  "bg-emerald-500/70",
+  "bg-amber-500/70",
+  "bg-violet-500/70",
+  "bg-rose-500/70",
+  "bg-sky-500/70",
+  "bg-lime-500/70",
+  "bg-pink-500/70",
+];
 
 function getShortageDetails(error: unknown): StockShortage[] | null {
   // Backend trả lỗi nghiệp vụ INSUFFICIENT_STOCK trong phần chi tiết của ApiError.
@@ -145,6 +172,7 @@ export default function CuttingOptimizationPage() {
   const [shortages, setShortages] = useState<StockShortage[]>([]);
   const [supplementDraft, setSupplementDraft] = useState<SupplementDraft>({});
   const [errorMsg, setErrorMsg] = useState("");
+  const [planMetrics, setPlanMetrics] = useState<CuttingPlanMetrics | null>(null);
 
   const applyShortages = useCallback((rows: StockShortage[]) => {
     // Đồng bộ bảng thiếu phôi với draft nhập bổ sung.
@@ -211,11 +239,12 @@ export default function CuttingOptimizationPage() {
     applyShortages([]);
     setErrorMsg("");
     try {
-      const created = await apiData<CuttingPlan[]>("/api/admin/cutting-plans", {
+      const result = await apiData<CreatePlanResponse>("/api/admin/cutting-plans", {
         method: "POST",
         body: JSON.stringify({ mapc: selectedMapc }),
       });
-      setPlans(created);
+      setPlans(result.plans);
+      setPlanMetrics(result.metrics);
     } catch (err: unknown) {
       const shortageRows = getShortageDetails(err);
       if (shortageRows) {
@@ -516,7 +545,7 @@ export default function CuttingOptimizationPage() {
                         <div
                           key={cut.mactc}
                           style={{ width: `${Math.max(6, (cut.chieudaicat / metrics.inputLength) * 100)}%` }}
-                          className="h-full bg-blue-500/75 border-r border-black/40 flex min-w-[54px] flex-col items-center justify-center text-[10px] font-bold text-white"
+                          className={`h-full ${CUT_COLORS[idx % CUT_COLORS.length]} border-r border-black/40 flex min-w-[54px] flex-col items-center justify-center text-[10px] font-bold text-white`}
                           title={`${cut.thutucat}. ${cut.chitietdh?.mota || cut.chitietdh?.vattu?.tenvt || "Chi tiết"} - ${cut.chieudaicat}mm`}
                         >
                           <span>#{idx + 1}</span>
@@ -573,6 +602,42 @@ export default function CuttingOptimizationPage() {
           {selectedPlans.length > 0 && (
             <div className="mt-6 text-sm text-emerald-300 flex items-center">
               <CheckCircle2 className="w-4 h-4 mr-2" /> Worker sẽ thấy các sơ đồ này ở màn hình Máy cắt.
+            </div>
+          )}
+
+          {planMetrics && selectedPlans.length > 0 && (
+            <div className="mt-6 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
+              <h3 className="text-sm font-bold text-blue-200 flex items-center mb-4">
+                <TrendingUp className="w-4 h-4 mr-2" /> Chỉ số phương án cắt
+              </h3>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                <Metric label="Tổng chiều dài cần cắt" value={formatMm(planMetrics.totalRequiredLength)} tone="emerald" />
+                <Metric label="Tổng phôi sử dụng" value={formatMm(planMetrics.totalStockLength)} />
+                <Metric label="Hao hụt lưỡi cưa" value={formatMm(planMetrics.totalKerfLoss)} tone="amber" />
+                <Metric label="Tỷ lệ thành phẩm" value={`${planMetrics.productUtilizationRate.toFixed(1)}%`} tone={planMetrics.productUtilizationRate >= 70 ? "emerald" : "amber"} />
+                <Metric label="Tỷ lệ tiêu hao NL" value={`${planMetrics.materialUsageRate.toFixed(1)}%`} />
+                <Metric label="Phần dư tái sử dụng" value={formatMm(planMetrics.totalReusableRemainder)} tone="emerald" />
+                <Metric label="Phế liệu" value={formatMm(planMetrics.totalScrapLength)} tone="amber" />
+                <Metric label="Số thanh dùng" value={`${selectedPlans.length} thanh`} />
+              </div>
+              {Object.keys(planMetrics.selectedReasons).length > 0 && (
+                <details className="group rounded-xl border border-blue-500/10 bg-black/20">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-bold text-blue-200">
+                    <span className="inline-flex items-center"><ListChecks className="w-4 h-4 mr-2" />Lý do chọn phôi</span>
+                    <ChevronDown className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="divide-y divide-blue-500/10 border-t border-blue-500/10 text-xs text-gray-300 max-h-60 overflow-y-auto">
+                    {Object.entries(planMetrics.selectedReasons).map(([stockId, reasons]) => (
+                      <div key={stockId} className="px-3 py-2">
+                        <div className="font-bold text-blue-200 mb-1">Phôi UID-{stockId}</div>
+                        {reasons.map((reason, idx) => (
+                          <div key={idx} className="text-gray-400 ml-2">• {reason}</div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           )}
         </section>

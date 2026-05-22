@@ -13,6 +13,15 @@ import {
   type CreateCuttingPlanDto,
   type ReportIssueDto,
   type TrimIssueDto,
+  simulateSchema,
+  submitProposalSchema,
+  proposalIdParamSchema,
+  approveProposalSchema,
+  rejectProposalSchema,
+  type SimulateDto,
+  type SubmitProposalDto,
+  type ApproveProposalDto,
+  type RejectProposalDto,
 } from "./cutting-plans.schema";
 import { cuttingPlansService } from "./cutting-plans.service";
 
@@ -79,6 +88,45 @@ adminCuttingPlansRouter.post(
   }),
 );
 
+adminCuttingPlansRouter.get(
+  "/proposals",
+  asyncHandler(async (req, res) => {
+    const mapc = req.query.mapc ? Number(req.query.mapc) : undefined;
+    sendOk(res, await cuttingPlansService.listProposals(mapc));
+  }),
+);
+
+adminCuttingPlansRouter.get(
+  "/proposals/:id",
+  validate(proposalIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    sendOk(res, await cuttingPlansService.getProposalDetail(id));
+  }),
+);
+
+adminCuttingPlansRouter.post(
+  "/proposals/:id/approve",
+  validate(proposalIdParamSchema, "params"),
+  validate(approveProposalSchema, "body"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    const body = req.body as ApproveProposalDto;
+    sendOk(res, await cuttingPlansService.approveProposal(id, req.user!.mand, body.ghichu));
+  }),
+);
+
+adminCuttingPlansRouter.post(
+  "/proposals/:id/reject",
+  validate(proposalIdParamSchema, "params"),
+  validate(rejectProposalSchema, "body"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    const body = req.body as RejectProposalDto;
+    sendOk(res, await cuttingPlansService.rejectProposal(id, req.user!.mand, body.ghichu));
+  }),
+);
+
 export const workerCuttingPlansRouter = Router();
 workerCuttingPlansRouter.use(authMiddleware, requireRole("WORKER", "ADMIN"));
 
@@ -106,5 +154,92 @@ workerCuttingPlansRouter.post(
     const id = (req.params as unknown as { id: number }).id;
     const body = req.body as ReportIssueDto;
     sendOk(res, await cuttingPlansService.reportIssue(id, req.user!.mand, body));
+  }),
+);
+
+workerCuttingPlansRouter.post(
+  "/simulate",
+  requireRole("WORKER"),
+  validate(simulateSchema, "body"),
+  asyncHandler(async (req, res) => {
+    const body = req.body as SimulateDto;
+    sendOk(res, await cuttingPlansService.simulateCuts(body.mapc, { workerId: req.user!.mand, returnShortages: true }));
+  }),
+);
+
+workerCuttingPlansRouter.get(
+  "/proposals",
+  asyncHandler(async (req, res) => {
+    sendOk(res, await cuttingPlansService.listWorkerProposals(req.user!.mand));
+  }),
+);
+
+workerCuttingPlansRouter.post(
+  "/proposals",
+  validate(submitProposalSchema, "body"),
+  asyncHandler(async (req, res) => {
+    const body = req.body as SubmitProposalDto;
+    sendCreated(res, await cuttingPlansService.submitProposal(body.mapc, req.user!.mand, body));
+  }),
+);
+
+export const adminCuttingProposalsRouter = Router();
+adminCuttingProposalsRouter.use(authMiddleware, requireRole("ADMIN"));
+
+adminCuttingProposalsRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    const mapc = req.query.mapc ? Number(req.query.mapc) : undefined;
+    sendOk(res, await cuttingPlansService.listProposals(mapc));
+  }),
+);
+
+adminCuttingProposalsRouter.get(
+  "/:id",
+  validate(proposalIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    sendOk(res, await cuttingPlansService.getProposalDetail(id));
+  }),
+);
+
+adminCuttingProposalsRouter.post(
+  "/:id/approve",
+  validate(proposalIdParamSchema, "params"),
+  validate(approveProposalSchema, "body"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    const body = req.body as ApproveProposalDto;
+    sendOk(res, await cuttingPlansService.approveProposal(id, req.user!.mand, body.ghichu));
+  }),
+);
+
+adminCuttingProposalsRouter.post(
+  "/:id/reject",
+  validate(proposalIdParamSchema, "params"),
+  validate(rejectProposalSchema, "body"),
+  asyncHandler(async (req, res) => {
+    const id = (req.params as unknown as { id: number }).id;
+    const body = req.body as RejectProposalDto;
+    sendOk(res, await cuttingPlansService.rejectProposal(id, req.user!.mand, body.ghichu));
+  }),
+);
+
+export const workerCuttingProposalsRouter = Router();
+workerCuttingProposalsRouter.use(authMiddleware, requireRole("WORKER"));
+
+workerCuttingProposalsRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    sendOk(res, await cuttingPlansService.listWorkerProposals(req.user!.mand));
+  }),
+);
+
+workerCuttingProposalsRouter.post(
+  "/",
+  validate(submitProposalSchema, "body"),
+  asyncHandler(async (req, res) => {
+    const body = req.body as SubmitProposalDto;
+    sendCreated(res, await cuttingPlansService.submitProposal(body.mapc, req.user!.mand, body));
   }),
 );

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
@@ -24,7 +25,10 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+const RAW_API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "";
+const API_BASE_URL = RAW_API_BASE_URL.replace(/\/$/, "");
+const API_BASE_INCLUDES_API_PREFIX = /\/api$/i.test(API_BASE_URL);
 
 let browserSupabase: ReturnType<typeof createClient> | null = null;
 
@@ -35,15 +39,30 @@ function getSupabaseClient() {
   return browserSupabase;
 }
 
-// Xây dựng URL cho API call:
-// Trên trình duyệt: luôn dùng cùng nguồn /api/* để Next.js rewrite tới BE (hỗ trợ cả mobile qua LAN)
-// Trên máy chủ: dùng API_BASE_URL từ .env
+// Xây dựng URL cho API call.
+// Nếu .env có NEXT_PUBLIC_API_URL/NEXT_PUBLIC_API_BASE_URL thì gọi thẳng backend LAN.
+// Nếu chưa cấu hình base URL thì fallback về cùng nguồn /api/* để Next.js proxy xử lý.
 function buildApiUrl(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  // Trên trình duyệt luôn ưu tiên cùng nguồn `/api/*` để chạy được cả khi test bằng điện thoại qua LAN.
-  // Nếu gọi thẳng API_BASE_URL=localhost từ điện thoại thì yêu cầu sẽ trỏ vào chính điện thoại và lỗi.
-  if (typeof window !== "undefined") return normalizedPath;
-  return `${API_BASE_URL}${normalizedPath}`;
+  if (!API_BASE_URL) return normalizedPath;
+
+  const pathForBase =
+    API_BASE_INCLUDES_API_PREFIX && normalizedPath.startsWith("/api/")
+      ? normalizedPath.slice(4)
+      : normalizedPath;
+  return `${API_BASE_URL}${pathForBase}`;
+}
+
+export function apiAssetUrl(path: string) {
+  if (!path) return path;
+  if (/^(https?:|data:|blob:)/i.test(path)) return path;
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const assetBaseUrl = API_BASE_INCLUDES_API_PREFIX
+    ? API_BASE_URL.replace(/\/api$/i, "")
+    : API_BASE_URL;
+
+  return assetBaseUrl ? `${assetBaseUrl}${normalizedPath}` : normalizedPath;
 }
 
 // Hàm fetch chính: tự động gắn JWT token từ Supabase session vào header Authorization
@@ -89,4 +108,47 @@ export async function apiJson<T>(path: string, init: RequestInit = {}) {
 export async function apiData<T>(path: string, init: RequestInit = {}) {
   const json = await apiJson<T>(path, init);
   return json.data as T;
+}
+
+// --- Cutting Proposals APIs ---
+export async function adminListCuttingProposals(params?: Record<string, any>) {
+  const query = params ? new URLSearchParams(params as any).toString() : "";
+  return apiData<any>(`/admin/cutting-proposals${query ? `?${query}` : ""}`);
+}
+
+export async function adminGetCuttingProposalDetail(id: number | string) {
+  return apiData<any>(`/admin/cutting-proposals/${id}`);
+}
+
+export async function adminApproveCuttingProposal(id: number | string, note?: string) {
+  return apiData<any>(`/admin/cutting-proposals/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ admin_ghichu: note || "" }),
+  });
+}
+
+export async function adminRejectCuttingProposal(id: number | string, note: string) {
+  return apiData<any>(`/admin/cutting-proposals/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ admin_ghichu: note }),
+  });
+}
+
+export async function workerSubmitCuttingProposal(payload: any) {
+  return apiData<any>(`/worker/cutting-proposals`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function workerListCuttingProposals(mapc?: number) {
+  const query = mapc ? `?mapc=${mapc}` : "";
+  return apiData<any>(`/worker/cutting-proposals${query}`);
+}
+
+export async function workerSimulateCuttingPlan(mapc: number) {
+  return apiData<any>(`/worker/cutting-plans/simulate`, {
+    method: "POST",
+    body: JSON.stringify({ mapc }),
+  });
 }

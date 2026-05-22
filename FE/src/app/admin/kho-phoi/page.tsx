@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import {
@@ -12,13 +13,18 @@ import {
   Save,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ArrowDownUp,
   CalendarDays,
   Layers,
   Minus,
+  Filter,
+  ImageIcon,
+  Eye,
+  X,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { apiData, apiJson } from "@/lib/api";
+import { apiAssetUrl, apiData, apiJson } from "@/lib/api";
 import { ConfirmDialog, InlineNotice, type NoticeState } from "@/components/admin/Feedback";
 
 interface KhoPhoiType {
@@ -58,6 +64,19 @@ interface RawStockPaged {
   summary: RawStockSummary;
 }
 
+interface StockImage {
+  maha: number;
+  madh: number;
+  duongdan: string;
+  mota?: string | null;
+  loaianh?: "CAT_PHOI" | "HOAN_THANH_CONG_TRINH" | "BAO_CAO_SU_CO" | "KHAC";
+  mapc?: number | null;
+  masdc?: number | null;
+  maphoi?: number | null;
+  thoigian?: string | null;
+  nguoidung?: { hoten: string } | null;
+}
+
 type RawSortKey =
   | "maphoi"
   | "chieudaihientai"
@@ -86,6 +105,17 @@ function makeQuickRow(materials: VatTuOption[]): QuickImportRow {
 const QUICK_MAX_QTY_PER_LINE = 500;
 const QUICK_MAX_LINES = 25;
 const QUICK_MAX_TOTAL_BARS = 4000;
+
+const IMAGE_TYPE_LABEL: Record<NonNullable<StockImage["loaianh"]>, string> = {
+  CAT_PHOI: "Xác nhận cắt phôi",
+  HOAN_THANH_CONG_TRINH: "Hoàn thành công trình",
+  BAO_CAO_SU_CO: "Báo cáo sự cố",
+  KHAC: "Ảnh khác",
+};
+
+function stockUid(maphoi: number) {
+  return `UID-${maphoi.toString().padStart(5, "0")}`;
+}
 
 interface RawStockGroupedByImportDayResult {
   days: Array<{
@@ -124,6 +154,9 @@ function formatNgayHeader(ymd: string): string {
 export default function RawMaterialInventoryPage() {
   const [searchInput, setSearchInput] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
+  const [minLengthInput, setMinLengthInput] = useState("");
+  const [lengthMode, setLengthMode] = useState<"exact" | "min">("exact");
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [mavtFilter, setMavtFilter] = useState<number | "">("");
   const [statusFilter, setStatusFilter] = useState<string | "">("");
   const [sortBy, setSortBy] = useState<RawSortKey>("maphoi");
@@ -187,6 +220,14 @@ export default function RawMaterialInventoryPage() {
   const [editForm, setEditForm] = useState({ chieudaihientai: 0, trangthai: "MOI" });
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<KhoPhoiType | null>(null);
+  const [detailStock, setDetailStock] = useState<KhoPhoiType | null>(null);
+  const [stockImages, setStockImages] = useState<StockImage[]>([]);
+  const [stockImagesLoading, setStockImagesLoading] = useState(false);
+  const [stockImageError, setStockImageError] = useState("");
+  const hasLengthFilter = useMemo(() => {
+    const minLength = Number(minLengthInput);
+    return Number.isFinite(minLength) && minLength > 0;
+  }, [minLengthInput]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(searchInput.trim()), 320);
@@ -195,7 +236,7 @@ export default function RawMaterialInventoryPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [searchDebounced]);
+  }, [searchDebounced, minLengthInput, lengthMode]);
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
@@ -218,6 +259,11 @@ export default function RawMaterialInventoryPage() {
       }
       if (malonhapFilter !== "") {
         p.set("malonhap", String(malonhapFilter));
+      }
+      const minLength = Number(minLengthInput);
+      if (Number.isFinite(minLength) && minLength > 0) {
+        p.set("minLength", String(Math.floor(minLength)));
+        p.set("lengthMode", lengthMode);
       }
       const body = await apiData<RawStockPaged | KhoPhoiType[]>(`/api/admin/raw-stock?${p.toString()}`);
       if (Array.isArray(body)) {
@@ -243,7 +289,7 @@ export default function RawMaterialInventoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, sortBy, sortOrder, mavtFilter, statusFilter, searchDebounced, malonhapFilter]);
+  }, [page, pageSize, sortBy, sortOrder, mavtFilter, statusFilter, searchDebounced, malonhapFilter, minLengthInput, lengthMode]);
 
   const fetchGroupedByDay = useCallback(async () => {
     setGroupLoading(true);
@@ -377,6 +423,21 @@ export default function RawMaterialInventoryPage() {
       setEditing(item);
       setEditForm({ chieudaihientai: item.chieudaihientai, trangthai: item.trangthai });
       setIsEditOpen(true);
+    };
+
+    const openStockDetail = async (item: KhoPhoiType) => {
+      setDetailStock(item);
+      setStockImages([]);
+      setStockImageError("");
+      setStockImagesLoading(true);
+      try {
+        const images = await apiData<StockImage[]>(`/api/admin/images/stock/${item.maphoi}`);
+        setStockImages(images);
+      } catch (err: unknown) {
+        setStockImageError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setStockImagesLoading(false);
+      }
     };
 
     const handleCreate = async (e: React.FormEvent) => {
@@ -564,10 +625,10 @@ export default function RawMaterialInventoryPage() {
 
         {/* Thanh công cụ */}
         {viewMode === "list" ? (
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="flex flex-1 flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center">
+          <div className="space-y-3 rounded-2xl border border-white/5 bg-[#0a0a0c]/70 p-4 shadow-sm">
+            <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(320px,1fr)_220px_260px_190px]">
               {malonhapFilter !== "" && (
-                <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-3 py-2 text-sm text-cyan-100 xl:w-auto">
+                <div className="lg:col-span-4 flex w-full flex-wrap items-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-3 py-2 text-sm text-cyan-100">
                   <span>
                     Đang lọc <strong className="font-mono">lô #{malonhapFilter}</strong>
                   </span>
@@ -583,7 +644,7 @@ export default function RawMaterialInventoryPage() {
                   </button>
                 </div>
               )}
-              <div className="relative flex-1 min-w-[200px] max-w-md">
+              <div className="relative min-w-0">
                 <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
                   type="text"
@@ -593,7 +654,25 @@ export default function RawMaterialInventoryPage() {
                   className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono"
                 />
               </div>
-              <label className="flex flex-col gap-1 text-xs text-gray-500 min-w-[200px]">
+              <button
+                type="button"
+                onClick={() => setAdvancedFiltersOpen((open) => !open)}
+                className={`inline-flex h-[42px] min-w-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition-colors ${
+                  advancedFiltersOpen || hasLengthFilter
+                    ? "border-amber-400/40 bg-amber-500/10 text-amber-100"
+                    : "border-white/10 bg-white/5 text-gray-200 hover:bg-white/10"
+                }`}
+              >
+                <Filter className="h-4 w-4 shrink-0" />
+                <span>Bộ lọc nâng cao</span>
+                {hasLengthFilter && (
+                  <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                    Đang lọc
+                  </span>
+                )}
+                  <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`} />
+              </button>
+              <label className="flex min-w-0 flex-col gap-1 text-xs text-gray-500">
                 <span className="uppercase tracking-wider font-bold text-[10px]">Loại nhôm</span>
                 <select
                   title="Lọc theo vật tư"
@@ -613,7 +692,7 @@ export default function RawMaterialInventoryPage() {
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col gap-1 text-xs text-gray-500 min-w-[170px]">
+              <label className="flex min-w-0 flex-col gap-1 text-xs text-gray-500">
                 <span className="uppercase tracking-wider font-bold text-[10px]">Trạng thái</span>
                 <select
                   title="Lọc trạng thái phôi"
@@ -631,61 +710,189 @@ export default function RawMaterialInventoryPage() {
                   <option value="BO_DI">Bỏ đi (BO_DI)</option>
                 </select>
               </label>
-              <label className="flex items-center gap-2 text-sm text-gray-400 whitespace-nowrap">
-                <ArrowDownUp className="w-4 h-4 text-cyan-400/90 shrink-0" aria-hidden />
-                <select
-                  title="Sắp xếp"
-                  aria-label="Sắp xếp danh sách phôi"
-                  value={sortBy}
-                  onChange={(e) => {
-                    setSortBy(e.target.value as RawSortKey);
-                    setPage(1);
-                  }}
-                  className="bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-cyan-500 min-w-[210px]"
-                >
-                  <option value="maphoi">Mã UID</option>
-                  <option value="chieudaihientai">Chiều dài hiện tại</option>
-                  <option value="chieudaibandau">Chiều dài ban đầu</option>
-                  <option value="mavt">Mã loại vật tư</option>
-                  <option value="trangthai">Trạng thái</option>
-                  <option value="malonhap">Lô nhập</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                title={sortOrder === "desc" ? "Đang giảm dần" : "Đang tăng dần"}
-                onClick={() => {
-                  setPage(1);
-                  setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
-                }}
-                className="px-3 py-2.5 rounded-lg text-sm border border-white/10 bg-white/5 text-gray-200 hover:bg-white/10 transition-colors whitespace-nowrap"
-              >
-                {sortOrder === "desc" ? "↓ Mới nhất / lớn trước" : "↑ Cũ nhất / nhỏ trước"}
-              </button>
-              <label className="flex items-center gap-2 text-sm text-gray-400 whitespace-nowrap">
-                <select
-                  title="Số dòng mỗi trang"
-                  aria-label="Số dòng mỗi trang"
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  className="bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-cyan-500"
-                >
-                  <option value={10}>10 / trang</option>
-                  <option value={15}>15 / trang</option>
-                  <option value={25}>25 / trang</option>
-                  <option value={50}>50 / trang</option>
-                </select>
-              </label>
             </div>
-            <div className="text-sm text-gray-400 whitespace-nowrap">
-              Lọc được:{" "}
-              <strong className="text-gray-200">
-                {listTotal} dòng · Trang {page}/{totalPages}
-              </strong>
+
+            <div className="flex flex-col gap-3 border-t border-white/5 pt-3 xl:flex-row xl:items-end xl:justify-between">
+              <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[240px_240px_150px]">
+                <label className="flex min-w-0 flex-col gap-1 text-xs text-gray-500">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Sắp xếp theo</span>
+                  <select
+                    title="Sắp xếp"
+                    aria-label="Sắp xếp danh sách phôi"
+                    value={sortBy}
+                    onChange={(e) => {
+                      setSortBy(e.target.value as RawSortKey);
+                      setPage(1);
+                    }}
+                    className="h-[42px] w-full rounded-lg border border-white/10 bg-[#0a0a0c] px-3 text-sm text-gray-200 focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="maphoi">Mã UID</option>
+                    <option value="chieudaihientai">Chiều dài hiện tại</option>
+                    <option value="chieudaibandau">Chiều dài ban đầu</option>
+                    <option value="mavt">Mã loại vật tư</option>
+                    <option value="trangthai">Trạng thái</option>
+                    <option value="malonhap">Lô nhập</option>
+                  </select>
+                </label>
+
+                <label className="flex min-w-0 flex-col gap-1 text-xs text-gray-500">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Thứ tự</span>
+                  <button
+                    type="button"
+                    title={sortOrder === "desc" ? "Đang giảm dần" : "Đang tăng dần"}
+                    onClick={() => {
+                      setPage(1);
+                      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+                    }}
+                    className="inline-flex h-[42px] w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-gray-200 transition-colors hover:bg-white/10"
+                  >
+                    <ArrowDownUp className="h-4 w-4 shrink-0 text-cyan-300" />
+                    <span className="truncate">{sortOrder === "desc" ? "Mới / lớn trước" : "Cũ / nhỏ trước"}</span>
+                  </button>
+                </label>
+
+                <label className="flex min-w-0 flex-col gap-1 text-xs text-gray-500 sm:max-lg:col-span-2 lg:col-span-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Hiển thị</span>
+                  <select
+                    title="Số dòng mỗi trang"
+                    aria-label="Số dòng mỗi trang"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="h-[42px] w-full rounded-lg border border-white/10 bg-[#0a0a0c] px-3 text-sm text-gray-200 focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value={10}>10 / trang</option>
+                    <option value={15}>15 / trang</option>
+                    <option value={25}>25 / trang</option>
+                    <option value={50}>50 / trang</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="flex items-center xl:min-h-[42px] xl:justify-end">
+                <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-gray-400">
+                  <span>Kết quả:</span>
+                  <strong className="text-gray-100">{listTotal} dòng</strong>
+                  <span className="text-gray-600">•</span>
+                  <span>
+                    Trang <strong className="text-gray-100">{page}/{totalPages}</strong>
+                  </span>
+                </div>
+              </div>
             </div>
+
+            {advancedFiltersOpen && (
+              <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/[0.07] p-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Filter className="h-4 w-4 text-amber-200" />
+                      <h3 className="text-sm font-bold text-amber-100">Tìm phôi theo chiều dài</h3>
+                      {hasLengthFilter && (
+                        <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                          Đang áp dụng
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs leading-5 text-slate-400">
+                      Dùng để tìm thanh đúng chiều dài cần kiểm hoặc thanh đủ dài để cắt. Bộ lọc vẫn được giữ khi đóng panel.
+                    </p>
+                  </div>
+
+                  <div className="grid w-full gap-3 lg:w-[680px] sm:grid-cols-[minmax(180px,1fr)_220px]">
+                    <label className="flex flex-col gap-1 text-xs text-slate-400">
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Chiều dài cần tìm (mm)</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={minLengthInput}
+                        onChange={(e) => {
+                          setMinLengthInput(e.target.value.replace(/[^\d]/g, ""));
+                          setPage(1);
+                        }}
+                        placeholder="Ví dụ 1000, 2000, 5000 mm"
+                        className="h-[42px] rounded-lg border border-white/10 bg-[#0a0a0c] px-3 text-sm font-mono text-gray-100 outline-none transition-colors focus:border-amber-300"
+                      />
+                    </label>
+
+                    <div className="flex flex-col gap-1 text-xs text-slate-400">
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Chế độ lọc</span>
+                      <div className="grid h-[42px] grid-cols-2 gap-1 rounded-lg border border-white/10 bg-black/25 p-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLengthMode("exact");
+                            setSortBy("chieudaihientai");
+                            setSortOrder("asc");
+                            setPage(1);
+                          }}
+                          className={`rounded-md px-2 text-[11px] font-bold transition-colors ${
+                            lengthMode === "exact" ? "bg-amber-500 text-white" : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                          }`}
+                        >
+                          Dùng bằng
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLengthMode("min");
+                            setSortBy("chieudaihientai");
+                            setSortOrder("asc");
+                            setPage(1);
+                          }}
+                          className={`rounded-md px-2 text-[11px] font-bold transition-colors ${
+                            lengthMode === "min" ? "bg-amber-500 text-white" : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                          }`}
+                        >
+                          Dùng được ≥
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-col gap-3 border-t border-white/10 pt-3 lg:flex-row lg:items-center lg:justify-between">
+                  <p className="text-xs leading-5 text-slate-400">
+                    {lengthMode === "exact"
+                      ? "Chỉ hiện phôi có chiều dài hiện tại đúng bằng số nhập."
+                      : "Hiện các phôi đủ dài để cắt, ví dụ nhập 3000mm sẽ có cả thanh 6000mm."}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {[1000, 2000, 3000, 5000, 6000].map((mm) => (
+                      <button
+                        key={mm}
+                        type="button"
+                        onClick={() => {
+                          setMinLengthInput(String(mm));
+                          setLengthMode("exact");
+                          setSortBy("chieudaihientai");
+                          setSortOrder("asc");
+                          setPage(1);
+                        }}
+                        className="min-h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-bold text-amber-50 hover:bg-amber-500/15"
+                      >
+                        {mm / 1000}m
+                      </button>
+                    ))}
+                    {hasLengthFilter && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMinLengthInput("");
+                          setPage(1);
+                        }}
+                        className="min-h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-bold text-gray-200 hover:bg-white/10"
+                      >
+                        Xóa lọc chiều dài
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         ) : (
           <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-[#0a0a0c]/80 p-4 sm:flex-row sm:flex-wrap sm:items-end">
@@ -860,7 +1067,7 @@ export default function RawMaterialInventoryPage() {
               <div key={item.maphoi} className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-mono text-sm font-bold text-cyan-300">UID-{item.maphoi.toString().padStart(5, "0")}</p>
+                    <p className="font-mono text-sm font-bold text-cyan-300">{stockUid(item.maphoi)}</p>
                     <p className="mt-1 text-base font-bold text-gray-100">{item.vattu?.tenvt}</p>
                     <p className="mt-1 text-xs text-gray-500">
                       Nhập: {item.lonhap?.ngaynhap ? new Date(item.lonhap.ngaynhap).toLocaleDateString("vi-VN") : "N/A"}
@@ -878,7 +1085,14 @@ export default function RawMaterialInventoryPage() {
                     <p className="font-mono font-bold text-cyan-200">{item.chieudaihientai} mm</p>
                   </div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void openStockDetail(item)}
+                    className="rounded-lg bg-cyan-500/10 px-3 py-2 text-sm font-bold text-cyan-200"
+                  >
+                    Chi tiết
+                  </button>
                   <button type="button" onClick={() => openEdit(item)} className="rounded-lg bg-blue-500/10 px-3 py-2 text-sm font-bold text-blue-200">
                     Sửa
                   </button>
@@ -909,9 +1123,16 @@ export default function RawMaterialInventoryPage() {
             <tbody className="divide-y divide-white/5">
               {inventory.map((item) => (
                 <tr key={item.maphoi} className="hover:bg-white/2 transition-colors group">
-                  <td className="p-4 text-sm font-bold text-cyan-400 font-mono flex items-center">
-                    <QrCode className="w-3.5 h-3.5 mr-2 text-gray-500" />
-                    UID-{item.maphoi.toString().padStart(5, '0')}
+                  <td className="p-4 text-sm font-bold text-cyan-400 font-mono">
+                    <button
+                      type="button"
+                      onClick={() => void openStockDetail(item)}
+                      className="inline-flex items-center rounded-md px-1 py-1 text-left transition-colors hover:bg-cyan-400/10 hover:text-cyan-200"
+                      title="Xem chi tiết phôi và ảnh"
+                    >
+                      <QrCode className="w-3.5 h-3.5 mr-2 text-gray-500" />
+                      {stockUid(item.maphoi)}
+                    </button>
                   </td>
                   <td className="p-4 text-sm font-medium text-gray-300">{item.vattu?.tenvt}</td>
                   <td className="p-4 text-center text-sm font-mono font-bold text-gray-200">
@@ -927,7 +1148,15 @@ export default function RawMaterialInventoryPage() {
                     {item.lonhap?.ngaynhap ? new Date(item.lonhap.ngaynhap).toLocaleDateString('vi-VN') : 'N/A'}
                   </td>
                   <td className="p-4 text-right">
-                    <div className="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-end space-x-2">
+                      <button
+                        onClick={() => void openStockDetail(item)}
+                        className="p-1.5 text-gray-400 hover:text-cyan-300 hover:bg-cyan-400/10 rounded-md transition-colors"
+                        title="Chi tiết phôi / ảnh"
+                        aria-label="Xem chi tiết phôi và ảnh"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => openEdit(item)}
                         className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
@@ -986,6 +1215,140 @@ export default function RawMaterialInventoryPage() {
           </div>
         </div>
       )}
+
+        {detailStock && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#121214] shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-[#0a0a0c] px-5 py-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-cyan-300">Chi tiết phôi</p>
+                  <h3 className="mt-1 text-xl font-bold text-white">{stockUid(detailStock.maphoi)}</h3>
+                  <p className="mt-1 text-sm text-gray-400">{detailStock.vattu?.tenvt || "Chưa có tên vật tư"}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailStock(null)}
+                  className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                  aria-label="Đóng chi tiết phôi"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 lg:grid-cols-[360px,1fr]">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-gray-500">Trạng thái</p>
+                        <div className="mt-2">{getStatusBadge(detailStock.trangthai)}</div>
+                      </div>
+                      <ImageIcon className="h-6 w-6 text-cyan-300" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-xs text-gray-500">Ban đầu</p>
+                        <p className="mt-1 font-mono text-lg font-bold text-gray-100">{detailStock.chieudaibandau} mm</p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-xs text-gray-500">Hiện tại</p>
+                        <p className="mt-1 font-mono text-lg font-bold text-cyan-200">{detailStock.chieudaihientai} mm</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 space-y-3 border-t border-white/10 pt-4 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-gray-500">Ngày nhập</span>
+                        <span className="text-right text-gray-200">
+                          {detailStock.lonhap?.ngaynhap
+                            ? new Date(detailStock.lonhap.ngaynhap).toLocaleDateString("vi-VN")
+                            : "Chưa có"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-gray-500">Nhà cung cấp</span>
+                        <span className="text-right text-gray-200">{detailStock.lonhap?.nhacungcap || "Chưa có"}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] p-4 text-sm leading-6 text-cyan-50">
+                    Ảnh xác nhận cắt phôi được gom theo UID ở đây để chủ xưởng kiểm nhanh thanh nào đã cắt,
+                    phôi nào còn dư. Ảnh toàn công trình vẫn xem thuận tiện hơn ở chi tiết đơn hàng.
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h4 className="text-base font-bold text-white">Ảnh liên quan UID này</h4>
+                      <p className="text-sm text-gray-500">Gồm ảnh cắt phôi, ảnh sự cố hoặc ảnh khác có gắn mã phôi.</p>
+                    </div>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-gray-300">
+                      {stockImages.length} ảnh
+                    </span>
+                  </div>
+
+                  {stockImagesLoading ? (
+                    <div className="flex min-h-56 items-center justify-center text-gray-400">
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Đang tải ảnh...
+                    </div>
+                  ) : stockImageError ? (
+                    <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200">
+                      {stockImageError}
+                    </div>
+                  ) : stockImages.length === 0 ? (
+                    <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/10 text-center text-gray-500">
+                      <ImageIcon className="mb-3 h-8 w-8 text-gray-600" />
+                      <p>Chưa có ảnh nào gắn với {stockUid(detailStock.maphoi)}.</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {stockImages.map((img) => {
+                        const imageUrl = apiAssetUrl(img.duongdan);
+                        return (
+                          <a
+                            key={img.maha}
+                            href={imageUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="group overflow-hidden rounded-xl border border-white/10 bg-[#0a0a0c] transition-colors hover:border-cyan-400/40"
+                          >
+                            <div className="aspect-[4/3] overflow-hidden bg-black">
+                              <img
+                                src={imageUrl}
+                                alt={img.mota || `${IMAGE_TYPE_LABEL[img.loaianh ?? "KHAC"]} ${stockUid(detailStock.maphoi)}`}
+                                className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                              />
+                            </div>
+                            <div className="space-y-2 p-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold text-cyan-200">
+                                  {IMAGE_TYPE_LABEL[img.loaianh ?? "KHAC"]}
+                                </span>
+                                {img.masdc ? (
+                                  <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-gray-300">SDC-{img.masdc}</span>
+                                ) : null}
+                                {img.mapc ? (
+                                  <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-gray-300">PC-{img.mapc}</span>
+                                ) : null}
+                              </div>
+                              {img.mota ? <p className="line-clamp-2 text-sm text-gray-200">{img.mota}</p> : null}
+                              <p className="text-xs text-gray-500">
+                                {img.nguoidung?.hoten || "Không rõ người chụp"}
+                                {img.thoigian ? ` · ${new Date(img.thoigian).toLocaleString("vi-VN")}` : ""}
+                              </p>
+                            </div>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Hộp thoại nhập nhanh nhiều loại/số lượng lớn trong một lô */}
         {quickOpen && (

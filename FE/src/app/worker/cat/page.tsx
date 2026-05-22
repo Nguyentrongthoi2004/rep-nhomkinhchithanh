@@ -1,12 +1,18 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, Gauge, Loader2, RefreshCw, Ruler, Scissors, X } from "lucide-react";
+import type { FormEvent } from "react";
+import { AlertTriangle, Camera, Check, Gauge, Loader2, RefreshCw, Ruler, Scissors, X, Zap } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { apiData, apiJson } from "@/lib/api";
+import { fileToCompressedImage } from "@/lib/image-upload";
+import WorkerProposalsList from "@/components/worker/WorkerProposalsList";
+import ProposalSubmitModal from "@/components/worker/ProposalSubmitModal";
 
 type CutDetail = {
   mactc: number;
+  mactdh: number;
   thutucat: number;
   chieudaicat: number;
   trangthai: string;
@@ -79,10 +85,16 @@ function WorkerCatPageInner() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [reportPlan, setReportPlan] = useState<CuttingPlan | null>(null);
+  const [photoPlan, setPhotoPlan] = useState<CuttingPlan | null>(null);
+  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [photoNote, setPhotoNote] = useState("");
   const [issueType, setIssueType] = useState<(typeof ISSUE_TYPES)[number]["value"]>("CAT_SAI_KICH_THUOC");
   const [note, setNote] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [autoReportOpened, setAutoReportOpened] = useState(false);
+  const [tab, setTab] = useState<"SO_DO" | "DE_XUAT">("SO_DO");
+  const [showProposalModal, setShowProposalModal] = useState(false);
 
   const visiblePlans = useMemo(
     () => plans.filter((plan) => (mapcFilter ? plan.mapc === mapcFilter : true)),
@@ -106,15 +118,69 @@ function WorkerCatPageInner() {
   }, [load]);
 
   // Thợ xác nhận hoàn thành cắt: gọi API → trừ chiều dài phôi + ghi nhật ký + tự động hoàn thành phân công.
-  const complete = async (id: number) => {
-    if (!confirm(`Xác nhận hoàn thành SDC-${id}? Kho phôi sẽ được trừ chiều dài thật.`)) return;
+  const openCutPhoto = (plan: CuttingPlan) => {
+    setPhotoPlan(plan);
+    setPhotoBlob(null);
+    setPhotoPreview("");
+    setPhotoNote("");
+  };
+
+  const handlePhotoFile = async (file?: File | null) => {
+    if (!file) return;
+    try {
+      const image = await fileToCompressedImage(file);
+      setPhotoBlob(image.blob);
+      setPhotoPreview(image.dataUrl);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  // Thợ chụp ảnh xác nhận cắt rồi mới hoàn thành sơ đồ để Admin có bằng chứng theo UID phôi.
+  const submitCutPhoto = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!photoPlan || !photoBlob) return;
+    const id = photoPlan.masdc;
+    const uploadController = new AbortController();
+    const uploadTimer = window.setTimeout(() => uploadController.abort(), 45000);
+    let submitStage: "upload" | "complete" = "upload";
     setBusyId(id);
     try {
+      const formData = new FormData();
+      formData.set("image", photoBlob, `sdc-${photoPlan.masdc}.jpg`);
+      formData.set("loaianh", "CAT_PHOI");
+      formData.set("mapc", String(photoPlan.mapc));
+      formData.set("masdc", String(photoPlan.masdc));
+      if (photoPlan.phancong?.donhang?.madh) formData.set("madh", String(photoPlan.phancong.donhang.madh));
+      if (photoPlan.khothanhphoi?.maphoi) formData.set("maphoi", String(photoPlan.khothanhphoi.maphoi));
+      formData.set("mota", photoNote.trim() || `Ảnh xác nhận cắt SDC-${photoPlan.masdc}`);
+
+      await apiJson("/api/worker/images/upload-file", {
+        method: "POST",
+        signal: uploadController.signal,
+        body: formData,
+      });
+      submitStage = "complete";
       await apiJson(`/api/worker/cutting-plans/${id}/complete`, { method: "POST" });
+      setPhotoPlan(null);
+      setPhotoBlob(null);
+      setPhotoPreview("");
+      setPhotoNote("");
       load();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      const friendlyMessage =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Upload ảnh quá lâu. Ảnh đã được nén nhẹ hơn, hãy thử gửi lại hoặc kiểm tra Wi-Fi."
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      setErrorMsg(
+        submitStage === "complete"
+          ? `Ảnh đã gửi được nhưng chưa hoàn thành sơ đồ cắt: ${friendlyMessage}`
+          : `Gửi ảnh thất bại: ${friendlyMessage}`,
+      );
     } finally {
+      window.clearTimeout(uploadTimer);
       setBusyId(null);
     }
   };
@@ -182,10 +248,46 @@ function WorkerCatPageInner() {
         </div>
       </section>
 
+      <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0a0a0c] border border-white/10 rounded-2xl">
+        <button
+          onClick={() => setTab("SO_DO")}
+          className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl text-[12px] font-bold border transition-colors ${
+            tab === "SO_DO" ? "bg-sky-500/15 text-sky-200 border-sky-500/40" : "border-transparent text-slate-400 hover:bg-white/5"
+          }`}
+        >
+          Sơ đồ cắt
+        </button>
+        <button
+          onClick={() => setTab("DE_XUAT")}
+          className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl text-[12px] font-bold border transition-colors ${
+            tab === "DE_XUAT" ? "bg-cyan-500/15 text-cyan-300 border-cyan-500/40" : "border-transparent text-slate-400 hover:bg-white/5"
+          }`}
+        >
+          Đề xuất phương án
+        </button>
+      </div>
+
       {errorMsg && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-300">{errorMsg}</div>}
 
       <div className="space-y-3">
-        {loading ? (
+        {tab === "DE_XUAT" ? (
+          <>
+            {mapcFilter ? (
+              <button
+                onClick={() => setShowProposalModal(true)}
+                className="w-full h-12 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-sm font-bold flex items-center justify-center mb-4 transition-colors"
+              >
+                <Zap className="w-4 h-4 mr-2" />
+                Tạo đề xuất tối ưu mới cho PC-{mapcFilter}
+              </button>
+            ) : (
+              <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-xs text-cyan-200 mb-4">
+                Vui lòng vào màn hình Nhiệm vụ, chọn một Phân công cụ thể để có thể tạo đề xuất cắt phôi mới.
+              </div>
+            )}
+            <WorkerProposalsList mapc={mapcFilter || undefined} />
+          </>
+        ) : loading ? (
           <div className="py-14 flex justify-center text-slate-400"><Loader2 className="w-8 h-8 animate-spin" /></div>
         ) : visiblePlans.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 bg-white/2 px-5 py-10 text-center text-sm text-slate-500">
@@ -273,8 +375,8 @@ function WorkerCatPageInner() {
 
                 {!isDone && !isBlocked && (
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    <button onClick={() => complete(plan.masdc)} disabled={busyId === plan.masdc} className="h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold flex items-center justify-center disabled:opacity-60">
-                      {busyId === plan.masdc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Hoàn thành
+                    <button onClick={() => openCutPhoto(plan)} disabled={busyId === plan.masdc} className="h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold flex items-center justify-center disabled:opacity-60">
+                      <Camera className="w-4 h-4 mr-2" /> Chụp & xong
                     </button>
                     <button onClick={() => openReport(plan)} className="h-12 bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 rounded-xl text-sm font-bold flex items-center justify-center">
                       <AlertTriangle className="w-4 h-4 mr-2" /> Báo sự cố
@@ -286,6 +388,19 @@ function WorkerCatPageInner() {
           })
         )}
       </div>
+
+      {showProposalModal && mapcFilter && (
+        <ProposalSubmitModal
+          mapc={mapcFilter}
+          currentPlans={visiblePlans}
+          onClose={() => setShowProposalModal(false)}
+          onSuccess={() => {
+            setShowProposalModal(false);
+            setTab("DE_XUAT");
+            // Tab will auto reload when unmounted and remounted inside its own effect.
+          }}
+        />
+      )}
 
       {reportPlan && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-3 pb-[84px] sm:items-center sm:pb-3">
@@ -347,6 +462,66 @@ function WorkerCatPageInner() {
               </button>
               <button disabled={busyId === reportPlan.masdc} className="h-12 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold flex items-center justify-center disabled:opacity-60">
                 {busyId === reportPlan.masdc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Gửi báo cáo
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {photoPlan && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-3 pb-[84px] sm:items-center sm:pb-3">
+          <form onSubmit={submitCutPhoto} className="w-full max-w-md max-h-[calc(100dvh-110px)] bg-[#12141a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-white/10 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-bold text-white">Chụp ảnh xác nhận cắt</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  SDC-{photoPlan.masdc} · PC-{photoPlan.mapc} · UID-{photoPlan.khothanhphoi?.maphoi ?? "chưa có"}
+                </p>
+              </div>
+              <button type="button" onClick={() => setPhotoPlan(null)} className="text-slate-400 hover:text-white" title="Đóng" aria-label="Đóng"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              <label className="block rounded-2xl border border-dashed border-emerald-400/40 bg-emerald-500/10 px-4 py-5 text-center">
+                <Camera className="mx-auto h-8 w-8 text-emerald-300" />
+                <div className="mt-2 text-sm font-bold text-white">Chụp hoặc chọn ảnh phôi đã cắt</div>
+                <div className="mt-1 text-xs text-slate-400">Ảnh sẽ được nén trước khi gửi để thao tác nhanh trên điện thoại.</div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(event) => handlePhotoFile(event.target.files?.[0])}
+                />
+              </label>
+
+              {photoPreview ? (
+                <img src={photoPreview} alt="Ảnh xác nhận cắt" className="h-56 w-full rounded-2xl border border-white/10 object-cover" />
+              ) : (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                  Cần có ảnh xác nhận trước khi hoàn thành sơ đồ cắt.
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 mb-2 block" htmlFor="cut-photo-note">Ghi chú ảnh</label>
+                <textarea
+                  id="cut-photo-note"
+                  value={photoNote}
+                  onChange={(event) => setPhotoNote(event.target.value)}
+                  rows={2}
+                  className="w-full bg-[#030508] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400 resize-none"
+                  placeholder="Ví dụ: đã cắt xong, phần dư còn đúng UID..."
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-white/10 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setPhotoPlan(null)} className="h-12 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 font-bold">
+                Hủy
+              </button>
+              <button disabled={busyId === photoPlan.masdc || !photoBlob} className="h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold flex items-center justify-center disabled:opacity-60">
+                {busyId === photoPlan.masdc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Gửi & hoàn thành
               </button>
             </div>
           </form>

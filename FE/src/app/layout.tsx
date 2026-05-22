@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,6 +29,15 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <Script id="ethereum-mobile-guard" strategy="beforeInteractive">
+          {`
+            if (typeof window !== "undefined" && typeof window.ethereum === "undefined") {
+              window.ethereum = { selectedAddress: undefined, isMiniErpFallback: true };
+            }
+          `}
+        </Script>
+      </head>
       <body suppressHydrationWarning className="min-h-full flex flex-col">{children}</body>
     </html>
   );

@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import path from "node:path";
 import { env } from "@/config/env";
 import { apiRouter } from "@/routes";
 import { errorHandler, notFound } from "@/middlewares/error";
@@ -28,8 +29,13 @@ export function createApp(): Express {
     }),
   );
 
-  app.use(express.json({ limit: "1mb" }));
+  // Worker có thể chụp ảnh bằng camera; frontend đã nén ảnh trước khi gửi,
+  // nhưng vẫn cần giới hạn JSON rộng hơn mức mặc định để nhận data URL an toàn.
+  app.use(express.json({ limit: "8mb" }));
   app.use(express.urlencoded({ extended: true }));
+
+  // Ảnh upload nội bộ được phục vụ tĩnh qua /uploads để frontend dùng trực tiếp trong thẻ img.
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
   app.use(requestContext);
   if (env.NODE_ENV !== "test") {

@@ -1,9 +1,12 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, ClipboardCheck, Loader2, Package, Play, RefreshCw, Ruler, X, XCircle } from "lucide-react";
+import type { FormEvent } from "react";
+import { AlertTriangle, Camera, Check, ClipboardCheck, Loader2, Package, Play, RefreshCw, Ruler, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import { apiData, apiJson } from "@/lib/api";
+import { fileToCompressedImage } from "@/lib/image-upload";
 
 type TaskStatus = "CHO_THUC_HIEN" | "DANG_THUC_HIEN" | "HOAN_THANH";
 
@@ -50,6 +53,10 @@ export default function WorkerTasksPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [rejectTask, setRejectTask] = useState<Task | null>(null);
+  const [completionTask, setCompletionTask] = useState<Task | null>(null);
+  const [completionBlob, setCompletionBlob] = useState<Blob | null>(null);
+  const [completionPreview, setCompletionPreview] = useState("");
+  const [completionNote, setCompletionNote] = useState("");
   const [rejectReason, setRejectReason] = useState<(typeof REJECT_REASONS)[number]["value"]>("DANG_BAN");
   const [rejectNote, setRejectNote] = useState("");
 
@@ -96,7 +103,73 @@ export default function WorkerTasksPage() {
     setRejectNote("");
   };
 
-  const submitReject = async (event: React.FormEvent) => {
+  const openCompletionPhoto = (task: Task) => {
+    setCompletionTask(task);
+    setCompletionBlob(null);
+    setCompletionPreview("");
+    setCompletionNote("");
+  };
+
+  const handleCompletionFile = async (file?: File | null) => {
+    if (!file) return;
+    try {
+      const image = await fileToCompressedImage(file);
+      setCompletionBlob(image.blob);
+      setCompletionPreview(image.dataUrl);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const submitCompletionPhoto = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!completionTask || !completionBlob) return;
+    const uploadController = new AbortController();
+    const uploadTimer = window.setTimeout(() => uploadController.abort(), 45000);
+    let submitStage: "upload" | "complete" = "upload";
+    setBusyId(completionTask.mapc);
+    try {
+      const formData = new FormData();
+      formData.set("image", completionBlob, `pc-${completionTask.mapc}.jpg`);
+      formData.set("loaianh", "HOAN_THANH_CONG_TRINH");
+      formData.set("madh", String(completionTask.donhang?.madh ?? completionTask.madh));
+      formData.set("mapc", String(completionTask.mapc));
+      formData.set("mota", completionNote.trim() || `Ảnh hoàn thành công trình DH-${completionTask.donhang?.madh ?? completionTask.madh}`);
+
+      await apiJson("/api/worker/images/upload-file", {
+        method: "POST",
+        signal: uploadController.signal,
+        body: formData,
+      });
+      submitStage = "complete";
+      await apiJson(`/api/worker/tasks/${completionTask.mapc}`, {
+        method: "PATCH",
+        body: JSON.stringify({ trangthai: "HOAN_THANH" }),
+      });
+      setCompletionTask(null);
+      setCompletionBlob(null);
+      setCompletionPreview("");
+      setCompletionNote("");
+      await load();
+    } catch (err: unknown) {
+      const friendlyMessage =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Upload ảnh quá lâu. Ảnh đã được nén nhẹ hơn, hãy thử gửi lại hoặc kiểm tra Wi-Fi."
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      setErrorMsg(
+        submitStage === "complete"
+          ? `Ảnh đã gửi được nhưng chưa cập nhật hoàn thành công việc: ${friendlyMessage}`
+          : `Gửi ảnh thất bại: ${friendlyMessage}`,
+      );
+    } finally {
+      window.clearTimeout(uploadTimer);
+      setBusyId(null);
+    }
+  };
+
+  const submitReject = async (event: FormEvent) => {
     event.preventDefault();
     if (!rejectTask) return;
     setBusyId(rejectTask.mapc);
@@ -218,8 +291,8 @@ export default function WorkerTasksPage() {
                   </button>
                 )}
                 {task.trangthai !== "HOAN_THANH" && (
-                  <button onClick={() => updateStatus(task.mapc, "HOAN_THANH")} disabled={busyId === task.mapc} className="h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center disabled:opacity-60">
-                    {busyId === task.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Hoàn thành
+                  <button onClick={() => openCompletionPhoto(task)} disabled={busyId === task.mapc} className="h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center disabled:opacity-60">
+                    <Camera className="w-4 h-4 mr-2" /> Hoàn thành
                   </button>
                 )}
               </div>
@@ -227,6 +300,69 @@ export default function WorkerTasksPage() {
           ))
         )}
       </div>
+
+      {completionTask && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-3 pb-[84px] sm:items-center sm:pb-3">
+          <form onSubmit={submitCompletionPhoto} className="w-full max-w-md max-h-[calc(100dvh-110px)] bg-[#12141a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-white/10 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-bold text-white">Chụp ảnh hoàn thành công trình</h3>
+                <p className="text-xs text-slate-400 mt-1 truncate">
+                  DH-{completionTask.donhang?.madh ?? completionTask.madh} · PC-{completionTask.mapc} · {completionTask.donhang?.khachhang?.hoten || "Khách hàng"}
+                </p>
+              </div>
+              <button type="button" onClick={() => setCompletionTask(null)} className="text-slate-400 hover:text-white" title="Đóng" aria-label="Đóng">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              <label className="block rounded-2xl border border-dashed border-emerald-400/40 bg-emerald-500/10 px-4 py-5 text-center">
+                <Camera className="mx-auto h-8 w-8 text-emerald-300" />
+                <div className="mt-2 text-sm font-bold text-white">Chụp ảnh tổng thể sau khi hoàn thành</div>
+                <div className="mt-1 text-xs text-slate-400">Ảnh này dùng làm bằng chứng nghiệm thu công trình cho Admin.</div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(event) => handleCompletionFile(event.target.files?.[0])}
+                />
+              </label>
+
+              {completionPreview ? (
+                <img src={completionPreview} alt="Ảnh hoàn thành công trình" className="h-56 w-full rounded-2xl border border-white/10 object-cover" />
+              ) : (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                  Cần có ảnh hoàn thành trước khi đóng nhiệm vụ.
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 mb-2 block" htmlFor="completion-photo-note">Ghi chú ảnh</label>
+                <textarea
+                  id="completion-photo-note"
+                  value={completionNote}
+                  onChange={(event) => setCompletionNote(event.target.value)}
+                  rows={2}
+                  className="w-full bg-[#030508] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400 resize-none"
+                  placeholder="Ví dụ: đã lắp xong cửa chính, khách kiểm tra..."
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-white/10 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setCompletionTask(null)} className="h-12 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 font-bold">
+                Hủy
+              </button>
+              <button disabled={busyId === completionTask.mapc || !completionBlob} className="h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center disabled:opacity-60">
+                {busyId === completionTask.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                Gửi & hoàn thành
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {rejectTask && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-3 pb-[84px] sm:items-center sm:pb-3">

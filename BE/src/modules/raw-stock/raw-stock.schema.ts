@@ -51,6 +51,7 @@ export const rawStockListQuerySchema = z.object({
   mavt: z.preprocess(optionalPositiveIntFromQuery, z.number().int().positive().optional()),
   malonhap: z.preprocess(optionalPositiveIntFromQuery, z.number().int().positive().optional()),
   minLength: z.preprocess(optionalPositiveIntFromQuery, z.number().int().positive().optional()),
+  lengthMode: z.enum(["min", "exact"]).default("min"),
   trangthai: z.preprocess((v) => {
     if (v === undefined || v === null || v === "") return undefined;
     return v;

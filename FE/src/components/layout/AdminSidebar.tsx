@@ -29,6 +29,7 @@ export const NAV_ITEMS = [
   { name: "Vật tư", href: "/admin/vat-tu", icon: Box },
   { name: "Kho phôi", href: "/admin/kho-phoi", icon: Archive },
   { name: "Tối ưu cắt", href: "/admin/toi-uu-cat", icon: Scissors },
+  { name: "Đề xuất cắt", href: "/admin/de-xuat-cat", icon: ClipboardList },
   { name: "Sự cố phôi", href: "/admin/su-co", icon: AlertTriangle },
   { name: "Nhân sự", href: "/admin/nhan-su", icon: Users },
   { name: "Yêu cầu cấp quyền", href: "/admin/yeu-cau-cap-quyen", icon: Shield },

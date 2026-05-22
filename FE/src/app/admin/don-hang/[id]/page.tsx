@@ -1,10 +1,12 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ClipboardList, Edit3, FileText, ListChecks, Loader2, ReceiptText } from "lucide-react";
-import { apiData } from "@/lib/api";
+import type { FormEvent } from "react";
+import { ArrowLeft, ClipboardList, Edit3, ExternalLink, FileText, ImagePlus, Images, ListChecks, Loader2, ReceiptText, Trash2 } from "lucide-react";
+import { apiAssetUrl, apiData, apiJson } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
 import { CustomerContactModal, type CustomerContact } from "@/components/admin/CustomerContactModal";
 
@@ -28,7 +30,26 @@ type OrderDetail = {
   }>;
 };
 
+type OrderImage = {
+  maha: number;
+  madh: number;
+  duongdan: string;
+  mota: string | null;
+  loaianh?: "CAT_PHOI" | "HOAN_THANH_CONG_TRINH" | "BAO_CAO_SU_CO" | "KHAC";
+  mapc?: number | null;
+  masdc?: number | null;
+  maphoi?: number | null;
+  thoigian: string;
+  nguoidung?: { hoten?: string | null } | null;
+};
+
 const money = (value: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
+const imageTypeLabel: Record<NonNullable<OrderImage["loaianh"]>, string> = {
+  CAT_PHOI: "Xác nhận cắt phôi",
+  HOAN_THANH_CONG_TRINH: "Hoàn thành công trình",
+  BAO_CAO_SU_CO: "Báo cáo sự cố",
+  KHAC: "Ảnh khác",
+};
 
 export default function AdminOrderDetailPage() {
   const router = useRouter();
@@ -39,12 +60,22 @@ export default function AdminOrderDetailPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<CustomerContact | null>(null);
+  const [images, setImages] = useState<OrderImage[]>([]);
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageNote, setImageNote] = useState("");
+  const [imageNotice, setImageNotice] = useState("");
+  const [savingImage, setSavingImage] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setErrorMsg("");
     try {
-      setOrder(await apiData<OrderDetail>(`/api/admin/orders/${id}`));
+      const [orderData, imageData] = await Promise.all([
+        apiData<OrderDetail>(`/api/admin/orders/${id}`),
+        apiData<OrderImage[]>(`/api/admin/images/order/${id}`).catch(() => []),
+      ]);
+      setOrder(orderData);
+      setImages(imageData);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
     } finally {
@@ -61,6 +92,47 @@ export default function AdminOrderDetailPage() {
   const quoteGap = order ? Math.round(Number(order.tonggiatri) - bomSumMaterial) : 0;
   const hasBom = (order?.chitietdh?.length ?? 0) > 0;
   const isApproved = order ? !["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai) : false;
+
+  const handleAddImage = async (e: FormEvent) => {
+    e.preventDefault();
+    setImageNotice("");
+    if (!imageUrl.trim()) {
+      setImageNotice("Vui lòng nhập URL ảnh.");
+      return;
+    }
+    setSavingImage(true);
+    try {
+      await apiJson("/api/admin/images", {
+        method: "POST",
+        body: JSON.stringify({
+          madh: id,
+          duongdan: imageUrl.trim(),
+          mota: imageNote.trim() || null,
+        }),
+      });
+      setImageUrl("");
+      setImageNote("");
+      const nextImages = await apiData<OrderImage[]>(`/api/admin/images/order/${id}`);
+      setImages(nextImages);
+    } catch (err: unknown) {
+      setImageNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingImage(false);
+    }
+  };
+
+  const handleDeleteImage = async (imageId: number) => {
+    setSavingImage(true);
+    setImageNotice("");
+    try {
+      await apiJson(`/api/admin/images/${imageId}`, { method: "DELETE" });
+      setImages((rows) => rows.filter((row) => row.maha !== imageId));
+    } catch (err: unknown) {
+      setImageNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingImage(false);
+    }
+  };
 
   return (
     <div className="space-y-6 pb-20">
@@ -218,6 +290,103 @@ export default function AdminOrderDetailPage() {
                     </tfoot>
                   )}
                 </table>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-6 xl:col-span-12">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="flex items-center text-sm font-bold text-gray-100">
+                  <Images className="mr-2 h-4 w-4 text-sky-300" />
+                  Hình ảnh đơn hàng
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  Lưu URL ảnh khảo sát, nghiệm thu hoặc sự cố để có bằng chứng khi đối chiếu với khách.
+                </p>
+              </div>
+              <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-gray-400">
+                {images.length} ảnh
+              </div>
+            </div>
+
+            <form onSubmit={handleAddImage} className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr_auto]">
+              <input
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder="Dán URL ảnh Supabase Storage hoặc ảnh nghiệm thu..."
+                className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-gray-100 outline-none focus:border-sky-400"
+              />
+              <input
+                value={imageNote}
+                onChange={(e) => setImageNote(e.target.value)}
+                placeholder="Ghi chú: khảo sát, nghiệm thu, lỗi phôi..."
+                className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-gray-100 outline-none focus:border-sky-400"
+              />
+              <button
+                type="submit"
+                disabled={savingImage}
+                className="inline-flex items-center justify-center rounded-xl bg-sky-600 px-5 py-3 text-sm font-bold text-white hover:bg-sky-500 disabled:opacity-60"
+              >
+                {savingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                Thêm ảnh
+              </button>
+            </form>
+            {imageNotice && <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{imageNotice}</div>}
+
+            {images.length === 0 ? (
+              <div className="mt-5 rounded-xl border border-dashed border-white/10 p-8 text-center text-sm text-gray-500">
+                Chưa có hình ảnh nào cho đơn hàng này.
+              </div>
+            ) : (
+              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {images.map((img) => {
+                  const imageUrl = apiAssetUrl(img.duongdan);
+                  return (
+                  <div key={img.maha} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+                    <a href={imageUrl} target="_blank" rel="noreferrer" className="block">
+                      {/* Dùng img thường vì URL có thể đến từ Supabase Storage hoặc nguồn nội bộ chưa khai báo domain Next/Image. */}
+                      <img src={imageUrl} alt={img.mota || `Ảnh đơn hàng DH-${id}`} className="h-44 w-full object-cover" />
+                    </a>
+                    <div className="space-y-3 p-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-200">
+                          {imageTypeLabel[img.loaianh ?? "KHAC"]}
+                        </span>
+                        {img.mapc ? <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-mono text-gray-300">PC-{img.mapc}</span> : null}
+                        {img.masdc ? <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-mono text-gray-300">SDC-{img.masdc}</span> : null}
+                        {img.maphoi ? <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-mono text-amber-200">UID-{img.maphoi}</span> : null}
+                      </div>
+                      <div>
+                        <div className="line-clamp-2 text-sm font-semibold text-gray-100">{img.mota || "Ảnh đơn hàng"}</div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          {new Date(img.thoigian).toLocaleString("vi-VN")}
+                          {img.nguoidung?.hoten ? ` · ${img.nguoidung.hoten}` : ""}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <a
+                          href={imageUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
+                        >
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Mở ảnh
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteImage(img.maha)}
+                          disabled={savingImage}
+                          className="inline-flex items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  );
+                })}
               </div>
             )}
           </section>

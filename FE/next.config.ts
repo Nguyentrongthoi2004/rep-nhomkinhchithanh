@@ -12,7 +12,9 @@ const nextConfig: NextConfig = {
     "localhost",
     "127.0.0.1",
     // LAN access (phone in same network)
+    "192.168.0.101",
     "192.168.0.102",
+    "192.168.1.164",
     // Radmin VPN adapter shown by `next dev`
     "26.87.165.3",
   ],
@@ -21,6 +23,10 @@ const nextConfig: NextConfig = {
       {
         source: "/api/:path*",
         destination: `${backendUrl}/api/:path*`,
+      },
+      {
+        source: "/uploads/:path*",
+        destination: `${backendUrl}/uploads/:path*`,
       },
     ];
   },
