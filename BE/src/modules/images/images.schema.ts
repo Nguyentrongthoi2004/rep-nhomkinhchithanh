@@ -15,6 +15,10 @@ export const stockImagesParamSchema = z.object({
   maphoi: z.coerce.number().int().positive(),
 });
 
+export const assignmentImagesParamSchema = z.object({
+  mapc: z.coerce.number().int().positive(),
+});
+
 export const imageIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
@@ -48,6 +52,11 @@ export const uploadOrderImageFileSchema = z.object({
   mota: z.string().trim().max(255).optional().nullable(),
 });
 
+export const replaceOrderImageFileSchema = z.object({
+  mota: z.string().trim().max(255).optional().nullable(),
+});
+
 export type CreateOrderImageDto = z.infer<typeof createOrderImageSchema>;
+export type ReplaceOrderImageFileDto = z.infer<typeof replaceOrderImageFileSchema>;
 export type UploadOrderImageDto = z.infer<typeof uploadOrderImageSchema>;
 export type UploadOrderImageFileDto = z.infer<typeof uploadOrderImageFileSchema>;

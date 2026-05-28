@@ -34,6 +34,51 @@ type IssueReport = {
   nguoidung: { mand: number; hoten: string } | null;
 };
 
+type ParsedIssueNote = {
+  issueType?: string;
+  severity?: string;
+  description?: string;
+  suggestion?: string;
+  raw: string;
+};
+
+function parseIssueNote(note: string | null): ParsedIssueNote {
+  const result: ParsedIssueNote = { raw: note || "" };
+  const lines = (note || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const separatorIndex = line.indexOf(":");
+    if (separatorIndex < 0) continue;
+    const key = line.slice(0, separatorIndex).trim().toLowerCase();
+    const value = line.slice(separatorIndex + 1).trim();
+
+    if (key.includes("loại") || key.includes("loai")) {
+      result.issueType = value;
+      continue;
+    }
+    if (key.includes("mức") || key.includes("muc")) {
+      result.severity = value;
+      continue;
+    }
+    if (key.includes("đề xuất") || key.includes("de xuat")) {
+      result.suggestion = value;
+      continue;
+    }
+    if (key.includes("mô tả") || key.includes("mo ta")) {
+      if (value.toLowerCase().startsWith("mức độ:") || value.toLowerCase().startsWith("muc do:")) {
+        result.severity = value.split(":").slice(1).join(":").trim();
+      } else {
+        result.description = value;
+      }
+    }
+  }
+
+  return result;
+}
+
 export default function AdminIssuesPage() {
   const [issues, setIssues] = useState<IssueReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,6 +183,7 @@ export default function AdminIssuesPage() {
           {issues.map((issue) => {
             const stock = issue.khothanhphoi;
             const isScrapped = stock?.trangthai === "BO_DI";
+            const parsedNote = parseIssueNote(issue.ghichu);
             return (
               <div key={issue.mank} className="rounded-2xl border border-red-500/15 bg-[#0a0a0c] p-5">
                 <div className="flex items-start justify-between gap-3">
@@ -171,9 +217,30 @@ export default function AdminIssuesPage() {
                   </span>
                 </div>
 
-                <div className="mt-4 rounded-xl bg-black/25 border border-white/5 px-3 py-2 text-xs text-gray-300 whitespace-pre-wrap">
-                  {issue.ghichu || "Không có mô tả."}
+                <div className="mt-4 rounded-xl bg-black/25 border border-white/5 p-3 text-xs text-gray-300">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <InfoBox label="Loại sự cố" value={parsedNote.issueType || "—"} />
+                    <InfoBox label="Mức độ" value={parsedNote.severity || "—"} />
+                  </div>
+                  <div className="mt-3 rounded-lg border border-white/5 bg-black/20 px-3 py-2">
+                    <div className="text-gray-500">Mô tả</div>
+                    <div className="mt-1 whitespace-pre-wrap text-gray-100">
+                      {parsedNote.description || issue.ghichu || "Không có mô tả."}
+                    </div>
+                  </div>
+                  {parsedNote.suggestion && (
+                    <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+                      <div className="text-amber-200/80">Đề xuất xử lý từ Worker</div>
+                      <div className="mt-1 whitespace-pre-wrap text-amber-100">{parsedNote.suggestion}</div>
+                    </div>
+                  )}
                 </div>
+                <details className="mt-3 rounded-xl bg-black/25 border border-white/5 px-3 py-2 text-xs text-gray-500">
+                  <summary className="cursor-pointer text-gray-400">Xem ghi chú gốc</summary>
+                  <div className="mt-2 whitespace-pre-wrap">
+                  {issue.ghichu || "Không có mô tả."}
+                  </div>
+                </details>
 
                 <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                   <InfoBox label="Ban đầu" value={`${stock?.chieudaibandau ?? 0} mm`} />

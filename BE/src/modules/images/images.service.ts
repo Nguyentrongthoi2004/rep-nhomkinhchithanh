@@ -1,15 +1,13 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { env } from "@/config/env";
 import { HttpError } from "@/lib/http";
 import { supabaseAdmin } from "@/lib/supabase";
-import type { CreateOrderImageDto, UploadOrderImageDto, UploadOrderImageFileDto } from "./images.schema";
+import type { CreateOrderImageDto, ReplaceOrderImageFileDto, UploadOrderImageDto, UploadOrderImageFileDto } from "./images.schema";
 
 const TABLE = "hinhanh";
-const UPLOAD_DIR = path.resolve(process.cwd(), "uploads", "order-images");
-const STORAGE_FOLDER = "order-images";
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+const SIGNED_URL_TTL_SECONDS = 600;
+const STORAGE_UPLOAD_ERROR = "Supabase image bucket chưa được cấu hình hoặc chưa tồn tại.";
 
 const SELECT = `
   maha,
@@ -30,11 +28,25 @@ type AssignmentRow = { mapc: number; madh: number; matho: number | null };
 type PlanRow = { masdc: number; mapc: number; maphoi: number | null };
 type UploadContextDto = Pick<UploadOrderImageDto, "madh" | "mapc" | "masdc" | "maphoi" | "loaianh">;
 type UploadedImageFile = { buffer: Buffer; mimeType: string };
+type ImageType = "CAT_PHOI" | "HOAN_THANH_CONG_TRINH" | "BAO_CAO_SU_CO" | "KHAC";
 type ImageContext = {
   madh: number;
   mapc: number | null;
   masdc: number | null;
   maphoi: number | null;
+};
+type ImageRow = {
+  maha: number;
+  madh: number;
+  duongdan: string | null;
+  mota: string | null;
+  loaianh: ImageType | null;
+  mapc: number | null;
+  masdc: number | null;
+  maphoi: number | null;
+  thoigian: string | null;
+  nguoichup: number | null;
+  nguoidung?: { hoten?: string | null } | null;
 };
 
 function imageExtensionFromMime(mimeType: string) {
@@ -128,31 +140,84 @@ async function resolveContext(dto: UploadContextDto, userId: number | undefined,
   return { madh, mapc, masdc, maphoi };
 }
 
-async function saveDataUrl(dataUrl: string) {
-  const { buffer, ext, mimeType } = parseImageDataUrl(dataUrl);
-  return saveImageBuffer(buffer, ext, mimeType);
+function isFullUrl(path: string) {
+  return /^https?:\/\//i.test(path);
 }
 
-async function saveImageBuffer(buffer: Buffer, ext: string, mimeType: string) {
+function isLegacyLocalPath(path: string) {
+  return /^\/?uploads\//i.test(path);
+}
+
+function normalizeLegacyLocalPath(path: string) {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+function isStoragePath(path: string | null | undefined): path is string {
+  if (!path) return false;
+  return !isFullUrl(path) && !isLegacyLocalPath(path);
+}
+
+function storageSegment(value: number | string | null | undefined, fallback = "unknown") {
+  const raw = value == null || value === "" ? fallback : String(value);
+  return raw.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function storageFolderFor(type: ImageType, context: ImageContext) {
+  if (type === "CAT_PHOI") {
+    return `cutting/${storageSegment(context.mapc)}/${storageSegment(context.masdc)}/${storageSegment(context.maphoi)}`;
+  }
+  if (type === "HOAN_THANH_CONG_TRINH") {
+    return `completion/${storageSegment(context.mapc)}`;
+  }
+  if (type === "BAO_CAO_SU_CO") {
+    return `incident/${storageSegment(context.mapc)}`;
+  }
+  return `other/${storageSegment(context.madh)}`;
+}
+
+async function withViewUrl<T extends ImageRow>(row: T): Promise<T & { url: string | null }> {
+  const path = row.duongdan?.trim();
+  if (!path) return { ...row, url: null };
+  if (isFullUrl(path)) return { ...row, url: path };
+  if (isLegacyLocalPath(path)) return { ...row, url: normalizeLegacyLocalPath(path) };
+
+  const { data, error } = await supabaseAdmin.storage
+    .from(env.SUPABASE_IMAGE_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  if (error) {
+    console.warn(`[images] Cannot create signed URL for ${path}: ${error.message}`);
+    return { ...row, url: null };
+  }
+  return { ...row, url: data?.signedUrl ?? null };
+}
+
+async function withViewUrls<T extends ImageRow>(rows: T[] | null | undefined) {
+  return Promise.all((rows ?? []).map((row) => withViewUrl(row)));
+}
+
+async function saveDataUrl(dataUrl: string, context: ImageContext, type: ImageType) {
+  const { buffer, ext, mimeType } = parseImageDataUrl(dataUrl);
+  return saveImageBuffer(buffer, ext, mimeType, context, type);
+}
+
+async function saveImageBuffer(buffer: Buffer, ext: string, mimeType: string, context: ImageContext, type: ImageType) {
   ensureImageSize(buffer);
   const fileName = `${Date.now()}-${randomUUID()}.${ext}`;
-  const storagePath = `${STORAGE_FOLDER}/${fileName}`;
+  const storagePath = `${storageFolderFor(type, context)}/${fileName}`;
   const { error: storageError } = await supabaseAdmin.storage
     .from(env.SUPABASE_IMAGE_BUCKET)
     .upload(storagePath, buffer, { contentType: mimeType, upsert: false });
 
-  if (!storageError) {
-    const { data } = supabaseAdmin.storage.from(env.SUPABASE_IMAGE_BUCKET).getPublicUrl(storagePath);
-    if (data.publicUrl) return data.publicUrl;
-  } else {
-    console.warn(
-      `[images] Supabase Storage upload failed, falling back to local file: ${storageError.message}`,
-    );
+  if (storageError) {
+    throw HttpError.internal(`${STORAGE_UPLOAD_ERROR} ${storageError.message}`);
   }
 
-  await fs.mkdir(UPLOAD_DIR, { recursive: true });
-  await fs.writeFile(path.join(UPLOAD_DIR, fileName), buffer);
-  return `/uploads/order-images/${fileName}`;
+  return storagePath;
+}
+
+async function removeStoragePath(path: string) {
+  const { error } = await supabaseAdmin.storage.from(env.SUPABASE_IMAGE_BUCKET).remove([path]);
+  if (error) throw HttpError.internal(`Khong xoa duoc file anh tren Supabase Storage: ${error.message}`);
 }
 
 export const imagesService = {
@@ -163,7 +228,7 @@ export const imagesService = {
       .eq("madh", madh)
       .order("thoigian", { ascending: false });
     if (error) throw HttpError.internal(error.message);
-    return data ?? [];
+    return withViewUrls(data as ImageRow[] | null);
   },
 
   async listByStock(maphoi: number) {
@@ -173,7 +238,22 @@ export const imagesService = {
       .eq("maphoi", maphoi)
       .order("thoigian", { ascending: false });
     if (error) throw HttpError.internal(error.message);
-    return data ?? [];
+    return withViewUrls(data as ImageRow[] | null);
+  },
+
+  async listByAssignment(mapc: number, userId: number | undefined, role: Role) {
+    const assignment = await getAssignment(mapc);
+    if (role === "WORKER" && assignment.matho !== userId) {
+      throw HttpError.forbidden("Khong duoc xem anh cua phan cong cua tho khac");
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from(TABLE)
+      .select(SELECT)
+      .eq("mapc", mapc)
+      .order("thoigian", { ascending: false });
+    if (error) throw HttpError.internal(error.message);
+    return withViewUrls(data as ImageRow[] | null);
   },
 
   async create(dto: CreateOrderImageDto, userId?: number) {
@@ -194,18 +274,18 @@ export const imagesService = {
       .select(SELECT)
       .single();
     if (error) throw HttpError.internal(error.message);
-    return data;
+    return withViewUrl(data as ImageRow);
   },
 
   async upload(dto: UploadOrderImageDto, userId: number | undefined, role: Role) {
     const context = await resolveContext(dto, userId, role);
-    const publicPath = await saveDataUrl(dto.dataUrl);
+    const storagePath = await saveDataUrl(dto.dataUrl, context, dto.loaianh);
 
     const { data, error } = await supabaseAdmin
       .from(TABLE)
       .insert({
         madh: context.madh,
-        duongdan: publicPath,
+        duongdan: storagePath,
         mota: dto.mota?.trim() || null,
         loaianh: dto.loaianh,
         mapc: context.mapc,
@@ -216,18 +296,18 @@ export const imagesService = {
       .select(SELECT)
       .single();
     if (error) throw HttpError.internal(error.message);
-    return data;
+    return withViewUrl(data as ImageRow);
   },
 
   async uploadFile(dto: UploadOrderImageFileDto, file: UploadedImageFile, userId: number | undefined, role: Role) {
     const context = await resolveContext(dto, userId, role);
-    const publicPath = await saveImageBuffer(file.buffer, imageExtensionFromMime(file.mimeType), file.mimeType);
+    const storagePath = await saveImageBuffer(file.buffer, imageExtensionFromMime(file.mimeType), file.mimeType, context, dto.loaianh);
 
     const { data, error } = await supabaseAdmin
       .from(TABLE)
       .insert({
         madh: context.madh,
-        duongdan: publicPath,
+        duongdan: storagePath,
         mota: dto.mota?.trim() || null,
         loaianh: dto.loaianh,
         mapc: context.mapc,
@@ -238,10 +318,70 @@ export const imagesService = {
       .select(SELECT)
       .single();
     if (error) throw HttpError.internal(error.message);
-    return data;
+    return withViewUrl(data as ImageRow);
+  },
+
+  async replaceFile(id: number, dto: ReplaceOrderImageFileDto, file: UploadedImageFile, userId?: number) {
+    const { data: existingData, error: readError } = await supabaseAdmin
+      .from(TABLE)
+      .select(SELECT)
+      .eq("maha", id)
+      .maybeSingle();
+    if (readError) throw HttpError.internal(readError.message);
+    if (!existingData) throw HttpError.notFound(`Anh ${id} khong ton tai`);
+
+    const existing = existingData as ImageRow;
+    const imageType = existing.loaianh ?? "KHAC";
+    const context: ImageContext = {
+      madh: existing.madh,
+      mapc: existing.mapc,
+      masdc: existing.masdc,
+      maphoi: existing.maphoi,
+    };
+    const newPath = await saveImageBuffer(file.buffer, imageExtensionFromMime(file.mimeType), file.mimeType, context, imageType);
+    const oldPath = existing.duongdan?.trim();
+
+    const { data, error } = await supabaseAdmin
+      .from(TABLE)
+      .update({
+        duongdan: newPath,
+        mota: dto.mota === undefined ? existing.mota : dto.mota?.trim() || null,
+        nguoichup: userId ?? existing.nguoichup,
+        thoigian: new Date().toISOString(),
+      })
+      .eq("maha", id)
+      .select(SELECT)
+      .single();
+
+    if (error) {
+      try {
+        await removeStoragePath(newPath);
+      } catch (cleanupError) {
+        console.warn(`[images] Cannot cleanup replacement upload ${newPath}:`, cleanupError);
+      }
+      throw HttpError.internal(error.message);
+    }
+
+    if (isStoragePath(oldPath)) {
+      try {
+        await removeStoragePath(oldPath);
+      } catch (cleanupError) {
+        console.warn(`[images] Cannot remove replaced storage image ${oldPath}:`, cleanupError);
+      }
+    }
+
+    return withViewUrl(data as ImageRow);
   },
 
   async remove(id: number) {
+    const { data, error: readError } = await supabaseAdmin.from(TABLE).select("duongdan").eq("maha", id).maybeSingle();
+    if (readError) throw HttpError.internal(readError.message);
+
+    const path = (data as { duongdan?: string | null } | null)?.duongdan?.trim();
+    if (isStoragePath(path)) {
+      await removeStoragePath(path);
+    }
+
     const { error } = await supabaseAdmin.from(TABLE).delete().eq("maha", id);
     if (error) throw HttpError.internal(error.message);
   },

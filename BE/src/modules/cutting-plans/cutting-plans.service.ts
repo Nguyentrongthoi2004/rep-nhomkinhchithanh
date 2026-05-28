@@ -984,6 +984,17 @@ export const cuttingPlansService = {
       throw HttpError.badRequest("Phôi này đang có sự cố chờ Admin xử lý, chưa thể xác nhận hoàn thành");
     }
 
+    const { count: cutPhotoCount, error: cutPhotoError } = await supabaseAdmin
+      .from("hinhanh")
+      .select("maha", { count: "exact", head: true })
+      .eq("mapc", typed.mapc)
+      .eq("masdc", masdc)
+      .eq("loaianh", "CAT_PHOI");
+    if (cutPhotoError) throw HttpError.internal(cutPhotoError.message);
+    if (!cutPhotoCount) {
+      throw HttpError.badRequest("Can upload anh CAT_PHOI cho so do cat truoc khi xac nhan cat xong");
+    }
+
     const before = typed.khothanhphoi?.chieudaihientai ?? 0;
     const kerf = await getRuleValue("BLADE_KERF", 5);
     const used = typed.chitietcat.reduce((sum, cut) => sum + Number(cut.chieudaicat || 0), 0);
@@ -1012,12 +1023,6 @@ export const cuttingPlansService = {
     if (planErr) throw HttpError.internal(planErr.message);
     if (stockErr) throw HttpError.internal(stockErr.message);
     if (logErr) throw HttpError.internal(logErr.message);
-
-    const siblingPlans = await listPlansForAssignment(typed.mapc);
-    const allDone = siblingPlans.every((row) => (row as { trangthai?: string }).trangthai === "HOAN_THANH");
-    if (allDone) {
-      await supabaseAdmin.from("phancong").update({ trangthai: "HOAN_THANH" }).eq("mapc", typed.mapc);
-    }
 
     return listPlansForAssignment(typed.mapc);
   },
@@ -1116,6 +1121,7 @@ export const cuttingPlansService = {
     const seenBars = new Set<number>();
     const submittedCountByItem = new Map<number, number>();
     const groupsByStock = new Map<number, ProposalStockGroup>();
+    let hasAdjustedLength = false;
 
     for (const bar of dto.simulatedBars) {
       if (seenBars.has(bar.maphoi)) throw HttpError.badRequest(`UID-${bar.maphoi} bi lap trong de xuat`);
@@ -1142,18 +1148,26 @@ export const cuttingPlansService = {
         if (!bomItem) throw HttpError.badRequest(`mactdh ${cut.mactdh} khong thuoc don hang cua phan cong`);
 
         const bomLength = Number(bomItem.chieudaicat);
-        if (Number(cut.chieudaicat) !== bomLength) {
-          throw HttpError.badRequest(`Chieu dai cat cua mactdh ${cut.mactdh} khong khop BOM`);
+        const proposedLength = Number(cut.chieudaicat);
+        if (!Number.isFinite(proposedLength) || proposedLength <= 0) {
+          throw HttpError.badRequest(`Chieu dai de xuat cua mactdh ${cut.mactdh} khong hop le`);
+        }
+        if (proposedLength !== bomLength) {
+          hasAdjustedLength = true;
         }
 
         submittedCountByItem.set(cut.mactdh, (submittedCountByItem.get(cut.mactdh) ?? 0) + 1);
         groupsByStock.get(bar.maphoi)?.cuts.push({
           maphoi: bar.maphoi,
           mactdh: cut.mactdh,
-          chieudaicat: bomLength,
+          chieudaicat: proposedLength,
           thutucat: cut.thutucat,
         });
       }
+    }
+
+    if (hasAdjustedLength && !dto.lydodexuat?.trim()) {
+      throw HttpError.badRequest("Can co ly do khi chieu dai de xuat khac BOM");
     }
 
     for (const [mactdh, expected] of expectedCountByItem.entries()) {
@@ -1221,8 +1235,8 @@ export const cuttingPlansService = {
       const totalUsed = requiredLength + kerfLoss;
       const availableLength = Math.max(stock.chieudaihientai - safeMargin * 2, 0);
       if (totalUsed > availableLength) {
-        throw HttpError.badRequest(
-          `Phoi UID-${stock.maphoi} khong du chieu dai kha dung: can ${totalUsed}mm, kha dung ${availableLength}mm`,
+        warnings.push(
+          `UID-${stock.maphoi}: tong chieu dai de xuat ${totalUsed}mm vuot chieu dai kha dung ${availableLength}mm. Admin/RPC se kiem tra lai khi duyet.`,
         );
       }
 
@@ -1358,12 +1372,20 @@ export const cuttingPlansService = {
     return data;
   },
 
-  async listWorkerProposals(matho: number) {
-    const { data, error } = await supabaseAdmin
+  async listWorkerProposals(matho: number, mapc?: number) {
+    let query = supabaseAdmin
       .from("dexuatcat")
       .select("*, chitietdexuatcat(*)")
       .eq("matho", matho)
       .order("ngaytao", { ascending: false });
+
+    if (mapc !== undefined) {
+      const assignment = await getAssignment(mapc);
+      if (assignment.matho !== matho) throw HttpError.forbidden("Khong duoc xem de xuat cua phan cong khac");
+      query = query.eq("mapc", mapc);
+    }
+
+    const { data, error } = await query;
     if (error) throw HttpError.internal(error.message);
     return data;
   },

@@ -7,7 +7,19 @@ const SELECT = `
   trangthai,
   lydotuchoi,
   tuchoiluc,
-  donhang:madh ( madh, ngaytao, trangthai, khachhang:makh ( hoten ) ),
+  donhang:madh (
+    madh,
+    ngaytao,
+    trangthai,
+    khachhang:makh ( hoten ),
+    chitietdh (
+      mactdh,
+      mota,
+      chieudaicat,
+      soluong,
+      vattu:mavt ( tenvt, donvitinh )
+    )
+  ),
   nguoidung:matho ( mand, hoten, tendangnhap, trangthai, vaitro )
 `;
 

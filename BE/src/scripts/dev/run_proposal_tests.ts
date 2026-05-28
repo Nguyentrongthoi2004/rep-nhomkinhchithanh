@@ -3,6 +3,12 @@ import { cuttingPlansService } from "../../modules/cutting-plans/cutting-plans.s
 import { HttpError } from "../../lib/http";
 import { supabaseAdmin } from "../../lib/supabase";
 
+if (process.env.ALLOW_DEV_DB_MUTATION !== "true") {
+  throw new Error(
+    "Script này có mutation DB. Set ALLOW_DEV_DB_MUTATION=true nếu chắc chắn đang chạy trên DB dev.",
+  );
+}
+
 async function runTest(name: string, fn: () => Promise<any>) {
   console.log(`\n--- TEST: ${name} ---`);
   try {

@@ -35,7 +35,16 @@ export function createApp(): Express {
   app.use(express.urlencoded({ extended: true }));
 
   // Ảnh upload nội bộ được phục vụ tĩnh qua /uploads để frontend dùng trực tiếp trong thẻ img.
-  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+  // Helmet mặc định chặn cross-origin resource; FE chạy ở :3000 còn BE ở :4000 nên cần mở riêng cho ảnh.
+  app.use(
+    "/uploads",
+    express.static(path.resolve(process.cwd(), "uploads"), {
+      setHeaders: (res) => {
+        res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+        res.setHeader("Access-Control-Allow-Origin", "*");
+      },
+    }),
+  );
 
   app.use(requestContext);
   if (env.NODE_ENV !== "test") {

@@ -10,10 +10,21 @@ import { fileToCompressedImage } from "@/lib/image-upload";
 
 type TaskStatus = "CHO_THUC_HIEN" | "DANG_THUC_HIEN" | "HOAN_THANH";
 
+type CuttingProgress = {
+  total: number;
+  completed: number;
+  withCutPhotos: number;
+  missingCount: number;
+  missingMasdcs: number[];
+  readyForCompletion: boolean;
+  hasCompletionPhoto: boolean;
+};
+
 type Task = {
   mapc: number;
   madh: number;
   trangthai: TaskStatus;
+  cuttingProgress?: CuttingProgress;
   donhang: {
     madh: number;
     ngaytao: string;
@@ -104,6 +115,11 @@ export default function WorkerTasksPage() {
   };
 
   const openCompletionPhoto = (task: Task) => {
+    if (!task.cuttingProgress?.readyForCompletion) {
+      const missingCount = task.cuttingProgress?.missingCount ?? 0;
+      setErrorMsg(`Còn ${missingCount} phôi/sơ đồ chưa có ảnh xác nhận cắt. Vui lòng hoàn tất trước khi xác nhận công trình.`);
+      return;
+    }
     setCompletionTask(task);
     setCompletionBlob(null);
     setCompletionPreview("");
@@ -141,11 +157,13 @@ export default function WorkerTasksPage() {
         signal: uploadController.signal,
         body: formData,
       });
-      submitStage = "complete";
-      await apiJson(`/api/worker/tasks/${completionTask.mapc}`, {
-        method: "PATCH",
-        body: JSON.stringify({ trangthai: "HOAN_THANH" }),
-      });
+      if (completionTask.trangthai !== "HOAN_THANH") {
+        submitStage = "complete";
+        await apiJson(`/api/worker/tasks/${completionTask.mapc}`, {
+          method: "PATCH",
+          body: JSON.stringify({ trangthai: "HOAN_THANH" }),
+        });
+      }
       setCompletionTask(null);
       setCompletionBlob(null);
       setCompletionPreview("");
@@ -229,8 +247,21 @@ export default function WorkerTasksPage() {
             Không có việc trong nhóm này.
           </div>
         ) : (
-          current.map((task) => (
-            <div key={task.mapc} className="rounded-2xl border border-white/10 bg-[#10131a]/90 p-4 shadow-[0_12px_30px_-22px_rgba(0,0,0,0.9)]">
+          current.map((task) => {
+            const isPending = task.trangthai === "CHO_THUC_HIEN";
+            const isDoing = task.trangthai === "DANG_THUC_HIEN";
+            const isDone = task.trangthai === "HOAN_THANH";
+            const progress = task.cuttingProgress;
+            const missingCount = progress?.missingCount ?? 0;
+            const confirmedCount = progress ? Math.max(0, progress.total - progress.missingCount) : 0;
+            const canComplete = Boolean(progress?.readyForCompletion);
+            const statusClass = isDone
+              ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+              : isDoing
+                ? "bg-amber-500/15 text-amber-200 border-amber-500/30"
+                : "bg-sky-500/15 text-sky-300 border-sky-500/30";
+            return (
+            <div key={task.mapc} className="flex min-h-[220px] flex-col rounded-2xl border border-white/10 bg-[#10131a]/90 p-4 shadow-[0_12px_30px_-22px_rgba(0,0,0,0.9)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -240,7 +271,7 @@ export default function WorkerTasksPage() {
                   <h3 className="text-slate-100 font-bold text-base mt-2 truncate">{task.donhang?.khachhang?.hoten || "Khách hàng"}</h3>
                   <p className="text-xs text-slate-400 mt-1">{task.donhang?.chitietdh?.length || 0} hạng mục BOM</p>
                 </div>
-                <span className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border bg-sky-500/15 text-sky-300 border-sky-500/30">{STATUS_LABEL[task.trangthai]}</span>
+                <span className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border ${statusClass}`}>{STATUS_LABEL[task.trangthai]}</span>
               </div>
 
               {expanded === task.mapc && (
@@ -258,10 +289,50 @@ export default function WorkerTasksPage() {
                 </div>
               )}
 
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button onClick={() => setExpanded(expanded === task.mapc ? null : task.mapc)} className="h-12 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-bold hover:bg-white/10 flex items-center justify-center">
-                  <Package className="w-4 h-4 mr-2" /> BOM
-                </button>
+              <div className="mt-auto pt-4">
+                {isDoing && !canComplete && (
+                  <div className="mb-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+                    Còn {missingCount} phôi/sơ đồ chưa có ảnh xác nhận cắt. Vui lòng hoàn tất trước khi xác nhận công trình.
+                  </div>
+                )}
+                {progress && progress.total > 0 && (
+                  <div className="mb-2 space-y-2">
+                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold text-slate-100">
+                      Đã xác nhận {confirmedCount}/{progress.total} phôi · Còn thiếu {missingCount} phôi/sơ đồ
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[11px]">
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5">
+                        <div className="text-slate-500">Sơ đồ</div>
+                        <div className="font-bold text-slate-100">{progress.total}</div>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5">
+                        <div className="text-slate-500">Đã cắt</div>
+                        <div className="font-bold text-emerald-300">{progress.completed}</div>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5">
+                        <div className="text-slate-500">Có ảnh</div>
+                        <div className="font-bold text-sky-300">{progress.withCutPhotos}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              <div className="grid grid-cols-2 gap-2">
+                {!isPending && (
+                  <button onClick={() => setExpanded(expanded === task.mapc ? null : task.mapc)} className="h-12 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-bold hover:bg-white/10 flex items-center justify-center">
+                    <Package className="w-4 h-4 mr-2" /> BOM
+                  </button>
+                )}
+                {isPending && (
+                  <button onClick={() => updateStatus(task.mapc, "DANG_THUC_HIEN")} disabled={busyId === task.mapc} className="col-span-2 h-12 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-sm flex items-center justify-center disabled:opacity-60">
+                    {busyId === task.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />} Bắt đầu
+                  </button>
+                )}
+                {isPending && (
+                  <button onClick={() => openReject(task)} disabled={busyId === task.mapc} className="col-span-2 h-12 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 font-bold text-sm flex items-center justify-center disabled:opacity-60">
+                    <XCircle className="w-4 h-4 mr-2" /> Từ chối
+                  </button>
+                )}
+                {(isDoing || isDone) && (
                 <Link
                   href={`/worker/cat?mapc=${task.mapc}`}
                   className="h-12 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-200 text-sm font-bold hover:bg-amber-400/20 inline-flex items-center justify-center"
@@ -270,34 +341,42 @@ export default function WorkerTasksPage() {
                 >
                   <Ruler className="w-4 h-4 mr-2" /> Sơ đồ cắt
                 </Link>
-                {task.trangthai !== "HOAN_THANH" && (
+                )}
+                {isDoing && (
+                  <Link
+                    href={`/worker/cat?mapc=${task.mapc}&tab=de-xuat`}
+                    className="h-12 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-200 border border-cyan-500/20 text-sm font-bold inline-flex items-center justify-center"
+                    title="Đề xuất phương án cắt"
+                    aria-label="Đề xuất phương án cắt"
+                  >
+                    <ClipboardCheck className="w-4 h-4 mr-2" /> Đề xuất
+                  </Link>
+                )}
+                {isDoing && (
                   <Link
                     href={`/worker/cat?mapc=${task.mapc}&report=1`}
-                    className="col-span-2 h-12 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 text-sm font-bold inline-flex items-center justify-center"
+                    className="h-12 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 text-sm font-bold inline-flex items-center justify-center"
                     title="Báo sự cố từ sơ đồ cắt của nhiệm vụ"
                     aria-label="Báo sự cố từ sơ đồ cắt của nhiệm vụ"
                   >
                     <AlertTriangle className="w-4 h-4 mr-2" /> Báo sự cố
                   </Link>
                 )}
-                {task.trangthai === "CHO_THUC_HIEN" && (
-                  <button onClick={() => updateStatus(task.mapc, "DANG_THUC_HIEN")} disabled={busyId === task.mapc} className="col-span-2 h-12 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-sm flex items-center justify-center disabled:opacity-60">
-                    {busyId === task.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />} Bắt đầu
+                {isDoing && (
+                  <button onClick={() => openCompletionPhoto(task)} disabled={busyId === task.mapc || !canComplete} className="h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center disabled:opacity-50 disabled:hover:bg-emerald-600">
+                    <Camera className="w-4 h-4 mr-2" /> Chụp hoàn thành
                   </button>
                 )}
-                {task.trangthai !== "HOAN_THANH" && (
-                  <button onClick={() => openReject(task)} disabled={busyId === task.mapc} className="h-12 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 font-bold text-sm flex items-center justify-center disabled:opacity-60">
-                    <XCircle className="w-4 h-4 mr-2" /> Từ chối
-                  </button>
-                )}
-                {task.trangthai !== "HOAN_THANH" && (
-                  <button onClick={() => openCompletionPhoto(task)} disabled={busyId === task.mapc} className="h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center disabled:opacity-60">
-                    <Camera className="w-4 h-4 mr-2" /> Hoàn thành
+                {isDone && (
+                  <button onClick={() => openCompletionPhoto(task)} disabled={busyId === task.mapc || !canComplete} className="col-span-2 h-12 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-200 border border-emerald-500/25 font-bold text-sm flex items-center justify-center disabled:opacity-50 disabled:hover:bg-emerald-500/10">
+                    <Camera className="w-4 h-4 mr-2" /> {progress?.hasCompletionPhoto ? "Chụp bổ sung" : "Chụp hoàn thành"}
                   </button>
                 )}
               </div>
+              </div>
             </div>
-          ))
+          );
+        })
         )}
       </div>
 
@@ -306,7 +385,7 @@ export default function WorkerTasksPage() {
           <form onSubmit={submitCompletionPhoto} className="w-full max-w-md max-h-[calc(100dvh-110px)] bg-[#12141a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
             <div className="px-5 py-4 border-b border-white/10 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h3 className="font-bold text-white">Chụp ảnh hoàn thành công trình</h3>
+                <h3 className="font-bold text-white">Xác nhận hoàn thành công trình</h3>
                 <p className="text-xs text-slate-400 mt-1 truncate">
                   DH-{completionTask.donhang?.madh ?? completionTask.madh} · PC-{completionTask.mapc} · {completionTask.donhang?.khachhang?.hoten || "Khách hàng"}
                 </p>
@@ -317,6 +396,10 @@ export default function WorkerTasksPage() {
             </div>
 
             <div className="p-5 space-y-4 overflow-y-auto">
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                <div>Tất cả phôi/sơ đồ đã được xác nhận cắt.</div>
+                <div className="mt-1">Vui lòng chụp hoặc tải ảnh hoàn thiện công trình để hoàn tất.</div>
+              </div>
               <label className="block rounded-2xl border border-dashed border-emerald-400/40 bg-emerald-500/10 px-4 py-5 text-center">
                 <Camera className="mx-auto h-8 w-8 text-emerald-300" />
                 <div className="mt-2 text-sm font-bold text-white">Chụp ảnh tổng thể sau khi hoàn thành</div>
@@ -357,7 +440,7 @@ export default function WorkerTasksPage() {
               </button>
               <button disabled={busyId === completionTask.mapc || !completionBlob} className="h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center disabled:opacity-60">
                 {busyId === completionTask.mapc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                Gửi & hoàn thành
+                {completionTask.trangthai === "HOAN_THANH" ? "Gửi ảnh" : "Gửi & hoàn thành"}
               </button>
             </div>
           </form>

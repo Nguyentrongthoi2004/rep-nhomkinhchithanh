@@ -36,3 +36,5 @@ process.on("uncaughtException", (err) => {
   logger.error("Uncaught exception", { message: err.message, stack: err.stack });
   shutdown("uncaughtException");
 });
+// Dummy comment to trigger tsx watch reload
+

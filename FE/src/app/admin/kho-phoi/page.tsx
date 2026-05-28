@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { apiAssetUrl, apiData, apiJson } from "@/lib/api";
+import { apiData, apiJson, imageDisplayUrl } from "@/lib/api";
 import { ConfirmDialog, InlineNotice, type NoticeState } from "@/components/admin/Feedback";
 
 interface KhoPhoiType {
@@ -68,6 +68,7 @@ interface StockImage {
   maha: number;
   madh: number;
   duongdan: string;
+  url?: string | null;
   mota?: string | null;
   loaianh?: "CAT_PHOI" | "HOAN_THANH_CONG_TRINH" | "BAO_CAO_SU_CO" | "KHAC";
   mapc?: number | null;
@@ -1305,21 +1306,23 @@ export default function RawMaterialInventoryPage() {
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {stockImages.map((img) => {
-                        const imageUrl = apiAssetUrl(img.duongdan);
-                        return (
-                          <a
-                            key={img.maha}
-                            href={imageUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="group overflow-hidden rounded-xl border border-white/10 bg-[#0a0a0c] transition-colors hover:border-cyan-400/40"
-                          >
+                        const imageUrl = imageDisplayUrl(img);
+                        const imageAlt = img.mota || `${IMAGE_TYPE_LABEL[img.loaianh ?? "KHAC"]} ${stockUid(detailStock.maphoi)}`;
+                        const imageCard = (
+                          <>
                             <div className="aspect-[4/3] overflow-hidden bg-black">
-                              <img
-                                src={imageUrl}
-                                alt={img.mota || `${IMAGE_TYPE_LABEL[img.loaianh ?? "KHAC"]} ${stockUid(detailStock.maphoi)}`}
-                                className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
-                              />
+                              {imageUrl ? (
+                                <img
+                                  src={imageUrl}
+                                  alt={imageAlt}
+                                  className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center text-xs text-gray-500">
+                                  <ImageIcon className="h-7 w-7 text-gray-600" />
+                                  <span>Anh khong tai duoc</span>
+                                </div>
+                              )}
                             </div>
                             <div className="space-y-2 p-3">
                               <div className="flex flex-wrap items-center gap-2">
@@ -1339,6 +1342,29 @@ export default function RawMaterialInventoryPage() {
                                 {img.thoigian ? ` · ${new Date(img.thoigian).toLocaleString("vi-VN")}` : ""}
                               </p>
                             </div>
+                          </>
+                        );
+
+                        if (!imageUrl) {
+                          return (
+                            <div
+                              key={img.maha}
+                              className="group overflow-hidden rounded-xl border border-white/10 bg-[#0a0a0c]"
+                            >
+                              {imageCard}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <a
+                            key={img.maha}
+                            href={imageUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="group overflow-hidden rounded-xl border border-white/10 bg-[#0a0a0c] transition-colors hover:border-cyan-400/40"
+                          >
+                            {imageCard}
                           </a>
                         );
                       })}

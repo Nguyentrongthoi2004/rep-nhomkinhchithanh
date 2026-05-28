@@ -25,6 +25,12 @@ import {
 } from "./cutting-plans.schema";
 import { cuttingPlansService } from "./cutting-plans.service";
 
+function parseOptionalNumber(value: unknown) {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export const adminCuttingPlansRouter = Router();
 adminCuttingPlansRouter.use(authMiddleware, requireRole("ADMIN"));
 
@@ -128,7 +134,7 @@ adminCuttingPlansRouter.post(
 );
 
 export const workerCuttingPlansRouter = Router();
-workerCuttingPlansRouter.use(authMiddleware, requireRole("WORKER", "ADMIN"));
+workerCuttingPlansRouter.use(authMiddleware, requireRole("WORKER"));
 
 workerCuttingPlansRouter.get(
   "/",
@@ -170,7 +176,7 @@ workerCuttingPlansRouter.post(
 workerCuttingPlansRouter.get(
   "/proposals",
   asyncHandler(async (req, res) => {
-    sendOk(res, await cuttingPlansService.listWorkerProposals(req.user!.mand));
+    sendOk(res, await cuttingPlansService.listWorkerProposals(req.user!.mand, parseOptionalNumber(req.query.mapc)));
   }),
 );
 
@@ -231,7 +237,7 @@ workerCuttingProposalsRouter.use(authMiddleware, requireRole("WORKER"));
 workerCuttingProposalsRouter.get(
   "/",
   asyncHandler(async (req, res) => {
-    sendOk(res, await cuttingPlansService.listWorkerProposals(req.user!.mand));
+    sendOk(res, await cuttingPlansService.listWorkerProposals(req.user!.mand, parseOptionalNumber(req.query.mapc)));
   }),
 );
 

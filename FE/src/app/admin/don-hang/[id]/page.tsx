@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowLeft, ClipboardList, Edit3, ExternalLink, FileText, ImagePlus, Images, ListChecks, Loader2, ReceiptText, Trash2 } from "lucide-react";
-import { apiAssetUrl, apiData, apiJson } from "@/lib/api";
+import { apiData, apiJson, imageDisplayUrl } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
 import { CustomerContactModal, type CustomerContact } from "@/components/admin/CustomerContactModal";
 
@@ -34,6 +34,7 @@ type OrderImage = {
   maha: number;
   madh: number;
   duongdan: string;
+  url?: string | null;
   mota: string | null;
   loaianh?: "CAT_PHOI" | "HOAN_THANH_CONG_TRINH" | "BAO_CAO_SU_CO" | "KHAC";
   mapc?: number | null;
@@ -341,13 +342,16 @@ export default function AdminOrderDetailPage() {
             ) : (
               <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {images.map((img) => {
-                  const imageUrl = apiAssetUrl(img.duongdan);
+                  const imageUrl = imageDisplayUrl(img);
                   return (
                   <div key={img.maha} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
-                    <a href={imageUrl} target="_blank" rel="noreferrer" className="block">
-                      {/* Dùng img thường vì URL có thể đến từ Supabase Storage hoặc nguồn nội bộ chưa khai báo domain Next/Image. */}
-                      <img src={imageUrl} alt={img.mota || `Ảnh đơn hàng DH-${id}`} className="h-44 w-full object-cover" />
-                    </a>
+                    {imageUrl ? (
+                      <a href={imageUrl} target="_blank" rel="noreferrer" className="block">
+                        <img src={imageUrl} alt={img.mota || `Ảnh đơn hàng DH-${id}`} className="h-44 w-full object-cover" />
+                      </a>
+                    ) : (
+                      <div className="flex h-44 items-center justify-center bg-black/30 px-4 text-center text-sm font-semibold text-gray-500">Ảnh không tải được</div>
+                    )}
                     <div className="space-y-3 p-4">
                       <div className="flex flex-wrap gap-1.5">
                         <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-200">
@@ -365,15 +369,21 @@ export default function AdminOrderDetailPage() {
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <a
-                          href={imageUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
-                        >
-                          <ExternalLink className="mr-2 h-4 w-4" />
-                          Mở ảnh
-                        </a>
+                        {imageUrl ? (
+                          <a
+                            href={imageUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
+                          >
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Mở ảnh
+                          </a>
+                        ) : (
+                          <span className="inline-flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-gray-500">
+                            Ảnh không tải được
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDeleteImage(img.maha)}

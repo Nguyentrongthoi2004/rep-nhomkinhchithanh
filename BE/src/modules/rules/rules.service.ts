@@ -6,6 +6,8 @@ const DEFAULT_RULES = [
   { maqt: "BLADE_KERF", tenqt: "Do ho luoi cua", giatri: 4 },
   { maqt: "SAFE_MARGIN", tenqt: "Le an toan bien", giatri: 20 },
   { maqt: "MIN_OFFCUT", tenqt: "Do dai de-xe toi thieu", giatri: 200 },
+  { maqt: "MIN_SCRAP", tenqt: "Nguong phe lieu toi da", giatri: 100 },
+  { maqt: "MIN_REUSABLE_LENGTH", tenqt: "Chieu dai toi thieu tai su dung phoi du", giatri: 1500 },
 ];
 
 export const rulesService = {

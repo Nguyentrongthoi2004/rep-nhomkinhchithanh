@@ -65,6 +65,17 @@ export function apiAssetUrl(path: string) {
   return assetBaseUrl ? `${assetBaseUrl}${normalizedPath}` : normalizedPath;
 }
 
+export function imageDisplayUrl(image: { url?: string | null; duongdan?: string | null }) {
+  const signedOrAbsoluteUrl = image.url?.trim();
+  if (signedOrAbsoluteUrl) return signedOrAbsoluteUrl;
+
+  const rawPath = image.duongdan?.trim();
+  if (!rawPath) return null;
+  if (/^(https?:|data:|blob:)/i.test(rawPath)) return rawPath;
+  if (/^\/?uploads\//i.test(rawPath)) return apiAssetUrl(rawPath.startsWith("/") ? rawPath : `/${rawPath}`);
+  return null;
+}
+
 // Hàm fetch chính: tự động gắn JWT token từ Supabase session vào header Authorization
 export async function apiFetch(path: string, init: RequestInit = {}) {
   const { data } = await getSupabaseClient().auth.getSession();
@@ -123,14 +134,14 @@ export async function adminGetCuttingProposalDetail(id: number | string) {
 export async function adminApproveCuttingProposal(id: number | string, note?: string) {
   return apiData<any>(`/admin/cutting-proposals/${id}/approve`, {
     method: "POST",
-    body: JSON.stringify({ admin_ghichu: note || "" }),
+    body: JSON.stringify({ ghichu: note || "" }),
   });
 }
 
 export async function adminRejectCuttingProposal(id: number | string, note: string) {
   return apiData<any>(`/admin/cutting-proposals/${id}/reject`, {
     method: "POST",
-    body: JSON.stringify({ admin_ghichu: note }),
+    body: JSON.stringify({ ghichu: note }),
   });
 }
 

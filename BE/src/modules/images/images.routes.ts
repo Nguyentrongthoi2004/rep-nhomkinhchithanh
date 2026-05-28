@@ -5,13 +5,16 @@ import { authMiddleware } from "@/middlewares/auth";
 import { requireRole } from "@/middlewares/rbac";
 import { validate } from "@/middlewares/validate";
 import {
+  assignmentImagesParamSchema,
   createOrderImageSchema,
   imageIdParamSchema,
   orderImagesParamSchema,
+  replaceOrderImageFileSchema,
   stockImagesParamSchema,
   uploadOrderImageFileSchema,
   uploadOrderImageSchema,
   type CreateOrderImageDto,
+  type ReplaceOrderImageFileDto,
   type UploadOrderImageFileDto,
   type UploadOrderImageDto,
 } from "./images.schema";
@@ -88,6 +91,12 @@ function parseUploadFileDto(fields: Record<string, string>): UploadOrderImageFil
   return parsed.data;
 }
 
+function parseReplaceFileDto(fields: Record<string, string>): ReplaceOrderImageFileDto {
+  const parsed = replaceOrderImageFileSchema.safeParse(fields);
+  if (!parsed.success) throw HttpError.badRequest("Thong tin anh thay the khong hop le", parsed.error.flatten());
+  return parsed.data;
+}
+
 export const imagesRouter = Router();
 imagesRouter.use(authMiddleware, requireRole("ADMIN"));
 
@@ -106,6 +115,15 @@ imagesRouter.get(
   asyncHandler(async (req, res) => {
     const { maphoi } = req.params as unknown as { maphoi: number };
     sendOk(res, await imagesService.listByStock(maphoi));
+  }),
+);
+
+imagesRouter.get(
+  "/assignment/:mapc",
+  validate(assignmentImagesParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { mapc } = req.params as unknown as { mapc: number };
+    sendOk(res, await imagesService.listByAssignment(mapc, req.user?.mand, "ADMIN"));
   }),
 );
 
@@ -134,6 +152,17 @@ imagesRouter.post(
   }),
 );
 
+imagesRouter.patch(
+  "/:id/file",
+  validate(imageIdParamSchema, "params"),
+  imageFileBody,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as unknown as { id: number };
+    const upload = parseMultipartUpload(req);
+    sendOk(res, await imagesService.replaceFile(id, parseReplaceFileDto(upload.fields), upload.file, req.user?.mand));
+  }),
+);
+
 imagesRouter.delete(
   "/:id",
   validate(imageIdParamSchema, "params"),
@@ -146,6 +175,15 @@ imagesRouter.delete(
 
 export const workerImagesRouter = Router();
 workerImagesRouter.use(authMiddleware, requireRole("WORKER", "ADMIN"));
+
+workerImagesRouter.get(
+  "/assignment/:mapc",
+  validate(assignmentImagesParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { mapc } = req.params as unknown as { mapc: number };
+    sendOk(res, await imagesService.listByAssignment(mapc, req.user?.mand, "WORKER"));
+  }),
+);
 
 workerImagesRouter.post(
   "/upload",

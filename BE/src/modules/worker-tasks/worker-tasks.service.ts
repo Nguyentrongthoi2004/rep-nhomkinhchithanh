@@ -21,6 +21,118 @@ const SELECT = `
   )
 `;
 
+type CuttingCompletionProgress = {
+  total: number;
+  completed: number;
+  withCutPhotos: number;
+  missingCount: number;
+  missingMasdcs: number[];
+  readyForCompletion: boolean;
+  hasCompletionPhoto: boolean;
+};
+
+type PlanProgressRow = {
+  mapc: number;
+  masdc: number;
+  maphoi: number | null;
+  trangthai: string | null;
+};
+
+type ImageProgressRow = {
+  mapc: number | null;
+  masdc: number | null;
+  maphoi: number | null;
+  loaianh: string | null;
+};
+
+function emptyCuttingProgress(): CuttingCompletionProgress {
+  return {
+    total: 0,
+    completed: 0,
+    withCutPhotos: 0,
+    missingCount: 0,
+    missingMasdcs: [],
+    readyForCompletion: false,
+    hasCompletionPhoto: false,
+  };
+}
+
+async function loadCuttingProgress(mapcs: number[]) {
+  const uniqueMapcs = [...new Set(mapcs.filter((mapc) => Number.isFinite(mapc)))];
+  const progressByMapc = new Map<number, CuttingCompletionProgress>();
+  uniqueMapcs.forEach((mapc) => progressByMapc.set(mapc, emptyCuttingProgress()));
+  if (uniqueMapcs.length === 0) return progressByMapc;
+
+  const [{ data: plans, error: planError }, { data: images, error: imageError }] = await Promise.all([
+    supabaseAdmin
+      .from("sodocat")
+      .select("mapc, masdc, maphoi, trangthai")
+      .in("mapc", uniqueMapcs)
+      .order("masdc", { ascending: true }),
+    supabaseAdmin
+      .from("hinhanh")
+      .select("mapc, masdc, maphoi, loaianh")
+      .in("mapc", uniqueMapcs)
+      .in("loaianh", ["CAT_PHOI", "HOAN_THANH_CONG_TRINH"]),
+  ]);
+  if (planError) throw HttpError.internal(planError.message);
+  if (imageError) throw HttpError.internal(imageError.message);
+
+  const plansByMapc = new Map<number, PlanProgressRow[]>();
+  for (const plan of (plans ?? []) as PlanProgressRow[]) {
+    const rows = plansByMapc.get(plan.mapc) ?? [];
+    rows.push(plan);
+    plansByMapc.set(plan.mapc, rows);
+  }
+
+  const imagesByMapc = new Map<number, ImageProgressRow[]>();
+  for (const image of (images ?? []) as ImageProgressRow[]) {
+    if (!image.mapc) continue;
+    const rows = imagesByMapc.get(image.mapc) ?? [];
+    rows.push(image);
+    imagesByMapc.set(image.mapc, rows);
+  }
+
+  for (const mapc of uniqueMapcs) {
+    const planRows = plansByMapc.get(mapc) ?? [];
+    const imageRows = imagesByMapc.get(mapc) ?? [];
+    const cutPhotoMasdcs = new Set(
+      imageRows
+        .filter((image) => image.loaianh === "CAT_PHOI" && image.masdc)
+        .map((image) => image.masdc as number),
+    );
+    const missingMasdcs = planRows
+      .filter((plan) => plan.trangthai !== "HOAN_THANH" || !cutPhotoMasdcs.has(plan.masdc))
+      .map((plan) => plan.masdc);
+
+    progressByMapc.set(mapc, {
+      total: planRows.length,
+      completed: planRows.filter((plan) => plan.trangthai === "HOAN_THANH").length,
+      withCutPhotos: planRows.filter((plan) => cutPhotoMasdcs.has(plan.masdc)).length,
+      missingCount: missingMasdcs.length,
+      missingMasdcs,
+      readyForCompletion: planRows.length > 0 && missingMasdcs.length === 0,
+      hasCompletionPhoto: imageRows.some((image) => image.loaianh === "HOAN_THANH_CONG_TRINH"),
+    });
+  }
+
+  return progressByMapc;
+}
+
+async function getCuttingProgress(mapc: number) {
+  return (await loadCuttingProgress([mapc])).get(mapc) ?? emptyCuttingProgress();
+}
+
+function attachCuttingProgress<T extends { mapc: number }>(
+  rows: T[],
+  progressByMapc: Map<number, CuttingCompletionProgress>,
+) {
+  return rows.map((row) => ({
+    ...row,
+    cuttingProgress: progressByMapc.get(row.mapc) ?? emptyCuttingProgress(),
+  }));
+}
+
 const REJECT_REASON_LABEL: Record<string, string> = {
   DANG_BAN: "Đang bận việc khác",
   KHONG_PHU_HOP_TAY_NGHE: "Không phù hợp tay nghề",
@@ -86,7 +198,9 @@ export const workerTasksService = {
       .in("trangthai", ["CHO_THUC_HIEN", "DANG_THUC_HIEN", "HOAN_THANH"])
       .order("mapc", { ascending: false });
     if (error) throw HttpError.internal(error.message);
-    return data ?? [];
+    const rows = (data ?? []) as Array<{ mapc: number }>;
+    const progressByMapc = await loadCuttingProgress(rows.map((row) => row.mapc));
+    return attachCuttingProgress(rows, progressByMapc);
   },
 
   async getForWorker(mapc: number, matho: number) {
@@ -106,6 +220,22 @@ export const workerTasksService = {
     // Đảm bảo nhiệm vụ thuộc về worker này
     const current = await this.getForWorker(mapc, matho) as { trangthai?: string };
     if (current.trangthai === "TU_CHOI") throw HttpError.badRequest("Nhiệm vụ đã bị từ chối");
+    if (dto.trangthai === "HOAN_THANH") {
+      if (current.trangthai !== "DANG_THUC_HIEN") {
+        throw HttpError.badRequest("Chi duoc hoan thanh phan cong dang lam");
+      }
+      const progress = await getCuttingProgress(mapc);
+      if (!progress.readyForCompletion) {
+        const message =
+          progress.total === 0
+            ? "Chua co so do cat nao cho phan cong nay"
+            : `Con ${progress.missingCount} phoi/so do chua co anh xac nhan cat hoac chua hoan thanh`;
+        throw HttpError.badRequest(message);
+      }
+      if (!progress.hasCompletionPhoto) {
+        throw HttpError.badRequest("Can upload anh HOAN_THANH_CONG_TRINH truoc khi hoan thanh phan cong");
+      }
+    }
 
     const { data, error } = await supabaseAdmin
       .from(TABLE)
