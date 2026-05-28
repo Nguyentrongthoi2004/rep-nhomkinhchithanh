@@ -39,18 +39,14 @@ Action:
 Verify:
 - UI không crash đột ngột.
 
-### Bước 3: Ghi nhận Network Payload
-Action:
-- Inspect payload request/response của API quan trọng.
-- Xác nhận dữ liệu đến từ API thật qua Network, server log hoặc DB snapshot.
+### Bước 3: Kiểm chứng Luồng (Decision Tree)
+Action: Thực hiện rà soát theo Decision Tree ngắn:
+- UI hiển thị đúng?
+  -> Kiểm tra Network/API payload.
+  -> Kiểm tra DB/log nếu flow có mutate (VD: chụp snapshot).
+  -> Nếu dữ liệu là mock/hardcode/stale cache thì KHÔNG được pass.
 Verify:
-- Không gửi thừa data, không có HTTP 500 bất thường.
-- Cấm kết luận pass nếu UI chỉ render dữ liệu hardcode, mock data hoặc stale cache.
-
-### Bước 4: Chụp DB Snapshot (Nếu Mutate)
-Action:
-- Lấy state của record liên quan trước và sau khi thực hiện.
-Verify:
+- Không gửi thừa data. Không có lỗi 500 bất thường.
 - Dữ liệu rác không bị sinh ra (vd: mồ côi record).
 
 ### Bước 5: Kiểm tra RBAC

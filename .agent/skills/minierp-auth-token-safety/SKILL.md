@@ -33,102 +33,37 @@ Skill này dùng để ngăn agent tự ý reset password, lấy token, lưu tok
 
 ## Quy trình
 
-### 1. Nhận diện phạm vi Auth
-
-Action: Kiểm tra task có đụng Supabase Auth, password, token, refresh token, session, cookie, service role key, hoặc Auth Admin API không.
-
-Verify: Nếu có bất kỳ mục nào ở trên, chuyển sang skill này trước khi làm tiếp.
-
-### 2. Xác định nhu cầu token
-
-Action: Xác định cần token để test API, test RBAC, hay debug session.
-
-Verify: Ghi rõ cần token của role nào: `ADMIN`, `WORKER`, hoặc user khác.
-
-### 3. Ưu tiên cách lấy token an toàn
-
-Action: Ưu tiên user tự đăng nhập trên UI/dev tool rồi cung cấp token tạm, hoặc dùng session/token đã có sẵn trong dev flow.
-
-Verify: Không reset password và không dùng Auth Admin API nếu chưa có duyệt riêng.
-
-### 4. Xin duyệt nếu cần Auth mutation
-
-Action: Nếu cần reset password, đổi email, đổi metadata, revoke session, hoặc dùng Supabase Auth Admin API, dừng và hỏi user duyệt riêng.
-
-Verify: Chỉ tiếp tục khi user xác nhận rõ hành động, tài khoản, môi trường, và phạm vi.
-
-### 5. Bảo vệ secret/token
-
-Action: Không in token, password, service role key, anon key đầy đủ, refresh token, cookie, hoặc header Authorization ra log.
-
-Verify: Nếu cần báo cáo, chỉ dùng dạng masked như `eyJ...abc`.
-
-### 6. Kiểm soát file tạm
-
-Action: Nếu bắt buộc tạo file chứa token, xin user duyệt riêng và đặt ngoài repo hoặc xóa ngay sau test.
-
-Verify: Báo rõ path file tạm và trạng thái đã xóa/chưa xóa.
-
-### 7. Handoff an toàn
-
-Action: Báo cáo Auth có bị mutate không, token có được tạo/lưu không, file tạm nào còn lại, và rủi ro còn tồn tại.
-
-Verify: Không tự tuyên bố pass cuối; tester/reviewer xác nhận.
+1. **Nhận diện**: Dừng và chuyển sang skill này nếu task đụng Supabase Auth, password, token, session, service role key.
+2. **Ưu tiên an toàn**: Ưu tiên user tự đăng nhập UI để lấy token. KHÔNG tự reset password hay dùng Auth Admin API nếu chưa có duyệt riêng.
+3. **Xin duyệt Mutation**: Nếu bắt buộc reset password/đổi email/dùng Admin API, phải xin user duyệt riêng.
+4. **Bảo vệ Secret**: Che (mask) token/password trong log (`eyJ...abc`). Không lưu file token trong repo.
+5. **Handoff**: Báo cáo Auth có bị mutate không, token có được tạo/lưu không, rủi ro còn lại.
 
 ## Quy tắc
 
 ### MUST
-
-- MUST dùng skill này khi task đụng Supabase Auth, password, token, session, cookie, service role key, hoặc Auth Admin API.
-- MUST hỏi user duyệt riêng trước khi reset password hoặc dùng Auth Admin API để mutate Auth.
-- MUST ưu tiên user tự đăng nhập để lấy token tạm.
-- MUST che token/secret/password/key trong log.
-- MUST báo rõ tài khoản nào bị tác động nếu có Auth mutation.
-- MUST báo rõ file token tạm nào được tạo và còn tồn tại hay không.
-- MUST dừng ngay nếu phát hiện token/secret/password bị in ra log.
+- LUÔN hỏi user duyệt riêng trước khi mutate Auth (reset password, dùng Admin API, service role).
+- LUÔN che token/secret/password trong log và báo cáo. Dừng ngay nếu lọt log.
+- Backend lấy identity từ token/session, không tin client body.
+- Ưu tiên user tự đăng nhập để lấy token tạm.
 
 ### MUST NOT
-
-- MUST NOT tự đổi password Auth user.
-- MUST NOT tự reset password qua Supabase Admin API.
-- MUST NOT tự dùng service role key để mutate Auth.
-- MUST NOT lưu access token hoặc refresh token trong repo workspace nếu chưa được duyệt riêng.
-- MUST NOT commit token, password, cookie, hoặc key.
-- MUST NOT in đầy đủ token, password, service role key, anon key, hoặc Authorization header.
-- MUST NOT coi reset password là an toàn chỉ vì đang ở dev/staging.
-- MUST NOT mở rộng phạm vi từ DB runtime test sang Auth mutation nếu user chưa duyệt riêng.
+- KHÔNG tự reset password Auth user (kể cả trên dev/staging) nếu chưa duyệt.
+- KHÔNG dùng service role key để mutate Auth trái phép.
+- KHÔNG lưu token/refresh token vào repo. KHÔNG commit `.env`, `tmp_test`, file token.
+- KHÔNG in token/JWT/service role key ra terminal hay report.
 
 ## Ví dụ
 
 ### Input
-
-Cần runtime test API Admin/Worker nhưng chưa có token.
+Cần test API Admin/Worker nhưng chưa có token.
 
 ### Output
-
-Dừng lại và hỏi user:
-
-```text
-Task này cần token Admin/Worker để test API.
-
-Bạn muốn:
-1. Tự đăng nhập UI rồi gửi token tạm đã mask/hoặc nhập vào terminal cục bộ, hay
-2. Duyệt riêng việc reset password Auth user dev để lấy token?
-
-Tôi sẽ không tự reset password, không dùng Auth Admin API, và không lưu token vào repo nếu chưa được duyệt riêng.
-```
+Dừng lại hỏi user: 1. Tự đăng nhập lấy token tạm, hay 2. Duyệt việc reset password dev để lấy token? Không tự reset nếu chưa duyệt.
 
 ## Xử lý lỗi
-
-- Nếu đã lỡ đổi password Auth user: dừng ngay, báo tài khoản bị đổi, thời điểm, phương pháp đổi, và không đổi tiếp nếu chưa được user duyệt.
-- Nếu đã lỡ lưu token vào file: dừng ngay, báo path file, yêu cầu xóa file, không in token.
-- Nếu token/secret/password đã bị lộ log: dừng ngay, khuyến nghị revoke token, reset password, hoặc rotate key theo mức độ rủi ro.
-- Nếu không lấy được token: không bypass bằng service role key; hỏi user cung cấp token hoặc duyệt phương án khác.
+- Nếu lỡ đổi password/lưu token/lộ log: DỪNG NGAY. Báo cáo rõ tài khoản, path file, yêu cầu xóa.
+- Không bypass bằng service role key nếu thiếu token.
 
 ## Ghi chú
-
-Skill này không thay thế `minierp-safety-check`.
-
-Dùng `minierp-safety-check` cho DB/RPC/migration/stock/RBAC rủi ro cao.
-
-Dùng skill này cho Auth/password/token/session/service role key.
+Skill này không thay thế `minierp-safety-check`. Dùng `safety-check` cho DB/RPC/Stock.

@@ -44,6 +44,9 @@ Verify: Chỉ bao gồm: File sửa, Thay đổi chính, Test đã chạy, Rủi
 
 ## Quy tắc
 
+### Emergency Brake (Phanh khẩn cấp)
+- Nếu task bắt đầu chạm quá 3 file ngoài phạm vi ban đầu, hoặc cần đọc toàn repo/tham-khao/docs lớn, phải STOP, báo lý do, xin duyệt mở rộng scope.
+
 ### MUST
 - Phải xác định phạm vi file tối thiểu cần đọc trước khi thực thi lệnh.
 - Phải dùng văn phong đi thẳng vào vấn đề, loại bỏ các từ đệm như "Dạ vâng", "Tôi sẽ làm ngay", "Theo như yêu cầu".
