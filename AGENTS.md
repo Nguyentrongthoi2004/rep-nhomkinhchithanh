@@ -1,0 +1,47 @@
+# MiniERP Agent Instructions
+
+Project: Mini-ERP Nhôm Kính.
+Stack: Next.js (FE), Express.js (BE), Supabase PostgreSQL (DB).
+Roles: ADMIN, WORKER.
+
+## Core Safety Rules (MUST FOLLOW)
+
+- DO NOT mutate production DB.
+- DO NOT run migrations unless explicitly approved.
+- DO NOT edit migration 15.
+- DO NOT edit `completePlan` flow unless approved.
+- DO NOT edit RPC `approve_cutting_proposal` / `reject_cutting_proposal` unless approved.
+- DO NOT deduct stock on plan creation. Stock is deducted only during completion flow.
+- Worker MUST NOT edit official cutting plans.
+- FE MUST NOT send `adminId`, `workerId`, `role`, `score`, `metrics`, `kerf`, `utilization`, `waste`.
+- Backend MUST get user from auth token/session, DO NOT trust client body.
+- AI Agent MUST NOT self-declare final pass. Tester/Reviewer confirms final pass.
+
+## Common Commands
+
+```bash
+# Frontend
+cd FE && npm run lint && npm run build
+
+# Backend
+cd BE && npm run lint && npm run build
+```
+
+## Default Workflow & Skill Map
+
+- Mọi task bắt đầu bằng `minierp-plan-task`.
+- Nếu được duyệt code thì dùng `minierp-code-change`.
+- Nếu test flow thật thì dùng `minierp-runtime-test`.
+- Nếu đụng DB/RPC/migration/completePlan/stock/Auth/RBAC thì dùng `minierp-safety-check`.
+- Cuối task dùng `minierp-handoff`.
+- Chỉ dùng `minierp-graduation-docs` khi chức năng lớn đã pass cuối.
+- Nếu đụng Supabase Auth/password/token/session/service role key thì dùng `minierp-auth-token-safety`.
+
+## Resource Optimization Rules
+
+- DO NOT read the entire repository. Read only directly related files.
+- DO NOT read `node_modules`, `.next`, `dist`, `build`, `.git`.
+- DO NOT load every skill by default. Use only the relevant skill for the current task.
+- DO NOT repeat lint/build if there are no changes.
+- DO NOT paste overly long file outputs in responses. Keep responses short and technical.
+- If more files are needed, explain why before reading them.
