@@ -77,6 +77,120 @@ function getStatusReasonText(status: string | null | undefined): string {
   }
 }
 
+function evaluateProposal(detail: any) {
+  if (!detail) return null;
+
+  const reasons: string[] = [];
+  let status: "NEN_DUYET" | "CAN_XEM_XET" | "KHONG_NEN_DUYET" = "CAN_XEM_XET";
+
+  // 1. Kiểm tra dữ liệu đầu vào có hợp lệ không
+  const hasCu = detail.tonghaohut_cu != null && detail.tiletandung_cu != null && Number(detail.tiletandung_cu) > 0;
+
+  // 2. Phân tích các warnings
+  const hasSevereWarning = detail.warnings?.some((w: string) => 
+    w.toLowerCase().includes("vuot chieu dai") || 
+    w.toLowerCase().includes("vượt chiều dài") || 
+    w.toLowerCase().includes("khong hop le") ||
+    w.toLowerCase().includes("không hợp lệ")
+  );
+
+  // 3. Phân tích phôi lỡ cỡ hoặc phế liệu từ chitietdexuatcat
+  const hasLoCo = detail.chitietdexuatcat?.some((ct: any) => ct.loai_phandu === "LO_CO");
+  const hasTaiSuDung = detail.chitietdexuatcat?.some((ct: any) => ct.loai_phandu === "TAI_SU_DUNG");
+
+  // 4. Các lý do cụ thể
+  if (!hasCu) {
+    reasons.push("Không có đủ dữ liệu phương án hiện tại để so sánh. Cần xem xét thủ công.");
+  } else {
+    // So sánh hao hụt
+    const diffHaoHut = Number(detail.tonghaohut_cu) - Number(detail.tonghaohut_moi);
+    if (diffHaoHut > 0) {
+      reasons.push(`Hao hụt giảm ${Math.round(diffHaoHut).toLocaleString("vi-VN")} mm so với phương án cũ.`);
+    } else if (diffHaoHut < 0) {
+      reasons.push(`Hao hụt tăng ${Math.round(Math.abs(diffHaoHut)).toLocaleString("vi-VN")} mm so với phương án cũ.`);
+    }
+
+    // So sánh tỷ lệ tận dụng
+    const diffTanDung = Number(detail.tiletandung_moi) - Number(detail.tiletandung_cu);
+    if (diffTanDung > 0) {
+      reasons.push(`Tỷ lệ tận dụng phôi tăng ${diffTanDung.toFixed(1)}% so với phương án cũ.`);
+    } else if (diffTanDung < 0) {
+      reasons.push(`Tỷ lệ tận dụng phôi giảm ${Math.abs(diffTanDung).toFixed(1)}% so với phương án cũ.`);
+    }
+
+    // So sánh phần dư tái sử dụng
+    const diffTaisudung = Number(detail.phandutaisudung_moi) - Number(detail.phandutaisudung_cu);
+    if (diffTaisudung > 0) {
+      reasons.push(`Tăng chiều dài phôi dư tái sử dụng thêm ${Math.round(diffTaisudung).toLocaleString("vi-VN")} mm.`);
+    } else if (diffTaisudung < 0) {
+      reasons.push(`Giảm chiều dài phôi dư tái sử dụng ${Math.round(Math.abs(diffTaisudung)).toLocaleString("vi-VN")} mm.`);
+    }
+  }
+
+  // Phân tích phôi dư
+  if (hasTaiSuDung) {
+    reasons.push("Đề xuất tạo ra phần dư có khả năng tái sử dụng (>= 1.5m).");
+  }
+  if (hasLoCo) {
+    reasons.push("Đề xuất tạo ra phôi dư lỡ cỡ khó tái sử dụng.");
+  }
+
+  // So sánh score
+  if (detail.score_moi != null) {
+    const scoreVal = Number(detail.score_moi);
+    if (scoreVal >= 500) {
+      reasons.push(`Điểm tối ưu (Score) mới đạt mức tốt: ${Math.round(scoreVal).toLocaleString("vi-VN")}.`);
+    } else if (scoreVal < 0) {
+      reasons.push(`Điểm tối ưu âm: ${Math.round(scoreVal).toLocaleString("vi-VN")} do tạo phôi dư lỡ cỡ.`);
+    } else {
+      reasons.push(`Điểm tối ưu của đề xuất: ${Math.round(scoreVal).toLocaleString("vi-VN")}.`);
+    }
+  }
+
+  // 5. Xác định trạng thái khuyến nghị chung
+  if (hasSevereWarning) {
+    status = "KHONG_NEN_DUYET";
+    reasons.unshift("Cảnh báo: Chiều dài đề xuất vượt quá chiều dài khả dụng của phôi.");
+  } else if (hasLoCo) {
+    status = "CAN_XEM_XET";
+  } else if (!hasCu) {
+    status = "CAN_XEM_XET";
+  } else {
+    const diffHaoHut = Number(detail.tonghaohut_cu) - Number(detail.tonghaohut_moi);
+    const diffTanDung = Number(detail.tiletandung_moi) - Number(detail.tiletandung_cu);
+    const scoreVal = detail.score_moi != null ? Number(detail.score_moi) : 0;
+
+    if (diffHaoHut >= 0 && diffTanDung >= 0 && scoreVal >= 0) {
+      status = "NEN_DUYET";
+    } else if (diffHaoHut < 0 || diffTanDung < 0 || scoreVal < 0) {
+      status = "CAN_XEM_XET";
+    } else {
+      status = "NEN_DUYET";
+    }
+  }
+
+  const displayedReasons = reasons.slice(0, 5);
+  if (displayedReasons.length === 0) {
+    displayedReasons.push("Đề xuất bình thường, cần xem xét sơ đồ trực quan.");
+  }
+
+  let colorClass = "";
+  let title = "";
+
+  if (status === "NEN_DUYET") {
+    colorClass = "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+    title = "Nên duyệt (Tối ưu hơn phương án cũ)";
+  } else if (status === "KHONG_NEN_DUYET") {
+    colorClass = "border-rose-500/30 bg-rose-500/10 text-rose-300";
+    title = "Không nên duyệt (Dữ liệu bất thường)";
+  } else {
+    colorClass = "border-amber-500/30 bg-amber-500/10 text-amber-300";
+    title = "Cần xem xét thủ công";
+  }
+
+  return { status, colorClass, title, reasons: displayedReasons };
+}
+
 export default function AdminProposalsPage() {
   const [proposals, setProposals] = useState<ProposalSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -321,6 +435,34 @@ export default function AdminProposalsPage() {
                       </p>
                     </div>
                   )}
+
+                  {/* Decision Support Card */}
+                  {(() => {
+                    const evalResult = evaluateProposal(detail);
+                    if (!evalResult) return null;
+                    return (
+                      <div className={`p-4 border rounded-xl space-y-2.5 ${evalResult.colorClass}`}>
+                        <div className="flex items-center gap-2 font-bold text-sm">
+                          {evalResult.status === "NEN_DUYET" ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          ) : evalResult.status === "KHONG_NEN_DUYET" ? (
+                            <XCircle className="w-4 h-4 text-rose-400" />
+                          ) : (
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                          )}
+                          <span>Khuyến nghị hệ thống: {evalResult.title}</span>
+                        </div>
+                        <ul className="list-disc pl-5 space-y-1 text-xs opacity-90">
+                          {evalResult.reasons.map((r: string, i: number) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                        <div className="text-[10px] opacity-60 italic pt-1 border-t border-white/5">
+                          * Đánh giá tham khảo dựa trên dữ liệu so sánh hiện có. Quyết định phê duyệt cuối cùng hoàn toàn thuộc về Admin.
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Score + Metrics */}
                   <div className="grid grid-cols-2 gap-4">

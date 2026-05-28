@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Gauge,
+  Info,
   ListChecks,
   Loader2,
   PackagePlus,
@@ -263,6 +264,42 @@ function Metric({
       <p className={`mt-1 text-base font-bold ${valueClass}`}>{value}</p>
     </div>
   );
+}
+
+// Ngưỡng mặc định dùng khi FE không nhận được config từ API.
+// Giá trị thật do Admin cấu hình trong bảng quytac (BLADE_KERF, SAFE_MARGIN, MIN_SCRAP, MIN_REUSABLE_LENGTH).
+const DEFAULT_MIN_SCRAP = 100;
+const DEFAULT_MIN_REUSABLE_LENGTH = 1500;
+
+function evaluateBarRemainder(remainder: number, sourceStatus?: string | null) {
+  const scrapThreshold = DEFAULT_MIN_SCRAP;
+  const minReusableLength = DEFAULT_MIN_REUSABLE_LENGTH;
+
+  let scoreEstimate = 0;
+  const reasons: string[] = [];
+
+  if (remainder < scrapThreshold) {
+    scoreEstimate = 1200 - remainder * 0.02;
+    reasons.push("Phần dư rất ngắn, tối ưu hóa triệt để thanh phôi.");
+  } else if (remainder >= minReusableLength) {
+    scoreEstimate = 700 + Math.min(remainder / 25, 350);
+    reasons.push("Phần dư đủ dài để đưa vào kho tái sử dụng (>= 1.5m).");
+  } else {
+    const middle = Math.max(1, minReusableLength - scrapThreshold);
+    const awkwardRatio = (remainder - scrapThreshold) / middle;
+    scoreEstimate = -850 - awkwardRatio * 450;
+    reasons.push("Cảnh báo: Tạo ra phần dư lỡ cỡ khó tái sử dụng, gây lãng phí.");
+  }
+
+  if (sourceStatus === "CON_DU") {
+    scoreEstimate += 120;
+    reasons.push("Ưu tiên sử dụng phôi dư để dọn kho.");
+  }
+
+  return {
+    score: Math.round(scoreEstimate),
+    reasons
+  };
 }
 
 export default function CuttingOptimizationDetailPage() {
@@ -912,6 +949,36 @@ export default function CuttingOptimizationDetailPage() {
                               </div>
                             </div>
                           </div>
+
+                          {/* Bar Optimization Score Explainer */}
+                          {(() => {
+                            const remainderVal = metrics.remainder ?? 0;
+                            const barEval = evaluateBarRemainder(remainderVal, plan.khothanhphoi?.trangthai);
+                            const isAwkward = remainderVal >= DEFAULT_MIN_SCRAP && remainderVal < DEFAULT_MIN_REUSABLE_LENGTH;
+                            return (
+                              <div className={`mt-4 p-4 border rounded-xl bg-zinc-950/40 text-xs space-y-2 ${
+                                isAwkward 
+                                  ? "border-amber-500/20 text-amber-200" 
+                                  : "border-emerald-500/20 text-emerald-200"
+                              }`}>
+                                <div className="flex items-center justify-between font-bold">
+                                  <span className="flex items-center gap-1.5">
+                                    <Info className="w-3.5 h-3.5" />
+                                    Đánh giá tham khảo: {isAwkward ? "Cần lưu ý phần dư lỡ cỡ" : "Tối ưu tốt"}
+                                  </span>
+                                  <span>Điểm tham khảo: {barEval.score}</span>
+                                </div>
+                                <ul className="list-disc pl-4 space-y-1 opacity-90">
+                                  {barEval.reasons.map((r, i) => (
+                                    <li key={i}>{r}</li>
+                                  ))}
+                                </ul>
+                                <div className="text-[10px] opacity-50 italic pt-1 border-t border-white/5">
+                                  * Đánh giá tham khảo dựa trên ngưỡng mặc định. Ngưỡng thực tế do Admin cấu hình.
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           <details className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/70">
                             <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-bold text-white">
