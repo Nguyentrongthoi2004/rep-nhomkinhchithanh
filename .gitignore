@@ -66,3 +66,6 @@ Thumbs.db
 !.agent/skills/
 !.agent/skills/**/
 !.agent/skills/**/SKILL.md
+
+# External reference repositories
+tham-khao/
