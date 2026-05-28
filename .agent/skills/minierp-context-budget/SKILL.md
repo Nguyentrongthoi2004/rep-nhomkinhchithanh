@@ -23,12 +23,12 @@ Agent Context Manager: Đảm bảo AI hoạt động với lượng context/tok
 ## Quy trình
 
 ### Bước 1: Giới hạn phạm vi (Scope Definition)
-Action: Chỉ định danh sách file bắt buộc phải đọc từ yêu cầu của user.
+Action: Xác định danh sách file tối thiểu cần đọc từ yêu cầu của user; ưu tiên file user nêu rõ nếu có.
 Verify: Đảm bảo không quét toàn bộ dự án (`Get-ChildItem -Recurse` hoặc đọc mọi file trong folder) nếu không có lý do chính đáng.
 
 ### Bước 2: Đọc phân cấp (Hierarchical Reading)
 Action: Đọc theo thứ tự ưu tiên: file user nêu rõ -> file import trực tiếp -> API/type liên quan -> file test liên quan.
-Verify: Dừng việc tìm kiếm và đọc file ngay lập tức khi đã có đủ logic để giải quyết task.
+Verify: Dừng việc tìm kiếm khi đã đủ logic để giải quyết task và không còn file liên quan trực tiếp cần xác minh.
 
 ### Bước 3: Áp dụng Moyu (Anti-Scope Creep)
 Action: Nếu task chỉ yêu cầu trả lời câu hỏi hoặc lên plan, tuyệt đối không tự chạy lệnh sửa file hoặc cài package.
@@ -49,6 +49,7 @@ Verify: Chỉ bao gồm: File sửa, Thay đổi chính, Test đã chạy, Rủi
 
 ### MUST
 - Phải xác định phạm vi file tối thiểu cần đọc trước khi thực thi lệnh.
+- Phải báo rõ lý do nếu cần mở rộng phạm vi đọc/sửa ngoài file ban đầu.
 - Phải dùng văn phong đi thẳng vào vấn đề, loại bỏ các từ đệm như "Dạ vâng", "Tôi sẽ làm ngay", "Theo như yêu cầu".
 
 ### MUST NOT

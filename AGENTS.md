@@ -29,19 +29,23 @@ cd BE && npm run lint && npm run build
 
 ## Default Workflow & Skill Map
 
-- Mọi task bắt đầu bằng `minierp-plan-task`.
+- Mọi task phải tuân thủ `minierp-context-budget`: đọc ít file nhất có thể, không quét toàn repo, không report dài.
+- Mọi task bắt đầu bằng `minierp-plan-task`, trừ câu hỏi nhỏ không cần đọc/sửa file.
+- Nếu cần hiểu tổng quan dự án, tìm flow/module liên quan, hoặc onboarding agent thì dùng `minierp-codebase-map`; không dùng cho task nhỏ đã biết file.
 - Nếu được duyệt code thì dùng `minierp-code-change`.
 - Nếu test flow thật thì dùng `minierp-runtime-test`.
-- Nếu đụng DB/RPC/migration/completePlan/stock/Auth/RBAC thì dùng `minierp-safety-check`.
+- Nếu review SQL/schema/RLS/index/RPC/migration thì dùng `minierp-db-review`.
+- Nếu đụng DB/RPC/migration/completePlan/stock/Auth/RBAC hoặc có rủi ro mutate dữ liệu thì dùng `minierp-safety-check`.
+- Nếu đụng Supabase Auth/password/token/session/service role key thì dùng `minierp-auth-token-safety`.
 - Cuối task dùng `minierp-handoff`.
 - Chỉ dùng `minierp-graduation-docs` khi chức năng lớn đã pass cuối.
-- Nếu đụng Supabase Auth/password/token/session/service role key thì dùng `minierp-auth-token-safety`.
 
 ## Resource Optimization Rules
 
 - DO NOT read the entire repository. Read only directly related files.
-- DO NOT read `node_modules`, `.next`, `dist`, `build`, `.git`.
+- DO NOT read `node_modules`, `.next`, `dist`, `build`, `.git`, `tham-khao`, `.agent/backup`, `BE/uploads`.
 - DO NOT load every skill by default. Use only the relevant skill for the current task.
 - DO NOT repeat lint/build if there are no changes.
 - DO NOT paste overly long file outputs in responses. Keep responses short and technical.
 - If more files are needed, explain why before reading them.
+- If scope expands beyond the original task, stop and ask for approval before continuing.

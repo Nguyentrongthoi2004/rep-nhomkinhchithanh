@@ -33,11 +33,25 @@ Skill này dùng để ngăn agent tự ý reset password, lấy token, lưu tok
 
 ## Quy trình
 
-1. **Nhận diện**: Dừng và chuyển sang skill này nếu task đụng Supabase Auth, password, token, session, service role key.
-2. **Ưu tiên an toàn**: Ưu tiên user tự đăng nhập UI để lấy token. KHÔNG tự reset password hay dùng Auth Admin API nếu chưa có duyệt riêng.
-3. **Xin duyệt Mutation**: Nếu bắt buộc reset password/đổi email/dùng Admin API, phải xin user duyệt riêng.
-4. **Bảo vệ Secret**: Che (mask) token/password trong log (`eyJ...abc`). Không lưu file token trong repo.
-5. **Handoff**: Báo cáo Auth có bị mutate không, token có được tạo/lưu không, rủi ro còn lại.
+1. **Nhận diện**
+   - Action: Dừng và chuyển sang skill này nếu task đụng Supabase Auth, password, token, session, service role key.
+   - Verify: Xác định rõ task chỉ đọc/test hay có mutate Auth.
+
+2. **Ưu tiên an toàn**
+   - Action: Ưu tiên user tự đăng nhập UI để lấy token tạm.
+   - Verify: Không reset password, không dùng Auth Admin API nếu chưa có duyệt riêng.
+
+3. **Xin duyệt mutation**
+   - Action: Nếu bắt buộc reset password, đổi email, tạo user, revoke session hoặc dùng Admin API, hỏi user duyệt riêng.
+   - Verify: Có xác nhận rõ ràng của user trước khi thực hiện.
+
+4. **Bảo vệ secret**
+   - Action: Mask token/password/service role key trong log và báo cáo, ví dụ `eyJ...abc`.
+   - Verify: Không tạo file token trong repo, không in secret đầy đủ ra terminal/report.
+
+5. **Handoff**
+   - Action: Báo cáo Auth có bị mutate không, token có được tạo/lưu không, rủi ro còn lại.
+   - Verify: Nếu có lộ token hoặc file nhạy cảm, báo path và yêu cầu xóa/rotate.
 
 ## Quy tắc
 
@@ -49,6 +63,7 @@ Skill này dùng để ngăn agent tự ý reset password, lấy token, lưu tok
 
 ### MUST NOT
 - KHÔNG tự reset password Auth user (kể cả trên dev/staging) nếu chưa duyệt.
+- KHÔNG tự tạo, sửa, xóa Auth user hoặc revoke session nếu chưa được user duyệt riêng.
 - KHÔNG dùng service role key để mutate Auth trái phép.
 - KHÔNG lưu token/refresh token vào repo. KHÔNG commit `.env`, `tmp_test`, file token.
 - KHÔNG in token/JWT/service role key ra terminal hay report.
