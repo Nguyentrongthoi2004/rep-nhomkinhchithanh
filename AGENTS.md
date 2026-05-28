@@ -32,6 +32,9 @@ cd BE && npm run lint && npm run build
 - Mọi task phải tuân thủ `minierp-context-budget`: đọc ít file nhất có thể, không quét toàn repo, không report dài.
 - Mọi task bắt đầu bằng `minierp-plan-task`, trừ câu hỏi nhỏ không cần đọc/sửa file.
 - Nếu cần hiểu tổng quan dự án, tìm flow/module liên quan, hoặc onboarding agent thì dùng `minierp-codebase-map`; không dùng cho task nhỏ đã biết file.
+- Nếu cần thông tin ngữ cảnh dự án (domain context), đọc `.agent/rules/project-context.md`.
+- Nếu task cần áp dụng workflow chu trình phát triển chung, tham khảo `.agent/workflows/dev-cycle.md`.
+- Nếu cần sửa/review dữ liệu request FE và API BE contract, sử dụng `minierp-payload-contract-check`.
 - Nếu được duyệt code thì dùng `minierp-code-change`.
 - Nếu test flow thật thì dùng `minierp-runtime-test`.
 - Nếu review SQL/schema/RLS/index/RPC/migration thì dùng `minierp-db-review`.
