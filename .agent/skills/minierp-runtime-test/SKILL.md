@@ -42,8 +42,10 @@ Verify:
 ### Bước 3: Ghi nhận Network Payload
 Action:
 - Inspect payload request/response của API quan trọng.
+- Xác nhận dữ liệu đến từ API thật qua Network, server log hoặc DB snapshot.
 Verify:
 - Không gửi thừa data, không có HTTP 500 bất thường.
+- Cấm kết luận pass nếu UI chỉ render dữ liệu hardcode, mock data hoặc stale cache.
 
 ### Bước 4: Chụp DB Snapshot (Nếu Mutate)
 Action:

@@ -57,12 +57,14 @@ Verify:
 ### MUST
 - Phải yêu cầu người dùng xác nhận rõ ràng trước khi đổi logic DB/RPC/Trừ kho.
 - Phải dùng Service Role cẩn thận, không để lọt key ra Frontend.
+- Phải báo cáo thành rủi ro hoặc đề xuất task riêng nếu phát hiện vấn đề ngoài phạm vi task hiện tại, không tự ý sửa.
 
 ### MUST NOT
 - KHÔNG chạy migration 14 (đã deprecated).
 - KHÔNG sửa migration 15 nếu chưa được duyệt.
 - KHÔNG sửa RPC/completePlan/flow trừ kho nếu chưa được duyệt.
 - KHÔNG tự pass cuối.
+- KHÔNG được tự ý refactor, đổi kiến trúc, đổi API contract, hoặc sửa file ngoài phạm vi yêu cầu (No Scope Creep) chỉ vì thấy code cũ xấu.
 
 ## Ví dụ
 
