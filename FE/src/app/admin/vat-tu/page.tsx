@@ -13,9 +13,10 @@ import {
   ChevronRight,
   ArrowDownUp,
 } from "lucide-react";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { apiData, apiJson } from "@/lib/api";
 import { ConfirmDialog, InlineNotice, type NoticeState } from "@/components/admin/Feedback";
+import { useSearchParams } from "next/navigation";
 
 interface VatTu {
   mavt: number;
@@ -45,13 +46,25 @@ interface MaterialsPaged {
 
 type MaterialsSortKey = "mavt" | "tenvt" | "dongianhap" | "madm" | "chieudaimacdinh";
 
-export default function MaterialPage() {
+function MaterialPageInner() {
   const [searchInput, setSearchInput] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<number | "">("");
   const [sortBy, setSortBy] = useState<MaterialsSortKey>("mavt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
+
+  const searchParams = useSearchParams();
+  const urlMadm = searchParams.get("madm");
+
+  useEffect(() => {
+    if (urlMadm) {
+      const parsed = parseInt(urlMadm, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        setCategoryFilter(parsed);
+      }
+    }
+  }, [urlMadm]);
   const [pageSize, setPageSize] = useState(15);
   const [total, setTotal] = useState(0);
 
@@ -245,13 +258,10 @@ export default function MaterialPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-100 flex items-center">
             <Box className="w-6 h-6 mr-3 text-emerald-500" />
-            Lưu Trữ Mã Vật Tư
+            Vật tư & Hạng mục chi phí
           </h1>
           <p className="text-gray-400 text-sm mt-1 ml-9">
-            Quản lý kho Nhôm, Kính, Phụ kiện phục vụ cho quá trình sản xuất.
-            <span className="text-gray-500"> Cột “Tồn” lấy từ </span>
-            <span className="text-gray-300">Kho phôi</span>
-            <span className="text-gray-500"> (số thanh MOI/CON_DU); vật tư chỉ có danh mục mà không nhập phôi sẽ hiện 0.</span>
+            Quản lý mã vật tư, phụ kiện và các hạng mục chi phí dùng trong BOM/báo giá. Chỉ nhóm Nhôm liên kết trực tiếp với kho phôi.
           </p>
         </div>
         
@@ -374,13 +384,30 @@ export default function MaterialPage() {
           {materials.map((item, idx) => {
             const tonThanh = Math.max(0, Math.round(Number(item.tonKhoThanh ?? 0)));
             const tonMm = Math.max(0, Math.round(Number(item.tonKhoTongMm ?? 0)));
+            const tendm = item.danhmuc?.tendm || "";
+            const normalizedDm = tendm.toLowerCase().trim();
+            const isNhanCong = normalizedDm.includes("nhân công") || normalizedDm.includes("nhan cong");
+            const isNhom = normalizedDm.includes("nhôm") || normalizedDm.includes("nhom");
+
             return (
               <div key={item.mavt} className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-mono text-sm font-bold text-emerald-300">VT-{item.mavt}</p>
                     <p className="mt-1 text-base font-bold text-gray-100">{item.tenvt}</p>
-                    <p className="mt-1 text-xs text-gray-500">{item.danhmuc?.tendm || "Chưa phân loại"}</p>
+                    <div className="flex flex-wrap gap-1.5 items-center mt-1">
+                      <span className="text-xs text-gray-500">{tendm || "Chưa phân loại"}</span>
+                      {isNhanCong && (
+                        <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          Chi phí nhân công
+                        </span>
+                      )}
+                      {isNhom && (
+                        <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                          Liên kết kho phôi / tối ưu cắt
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-300">
                     #{(page - 1) * pageSize + idx + 1}
@@ -393,9 +420,21 @@ export default function MaterialPage() {
                     <p className="text-xs text-gray-500">/{item.donvitinh}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-gray-500">Tồn kho phôi</p>
-                    <p className="font-mono font-bold text-emerald-300">{tonThanh} thanh</p>
-                    {tonMm > 0 && <p className="text-xs text-gray-500">{tonMm.toLocaleString("vi-VN")} mm</p>}
+                    <p className="text-xs text-gray-500">Tồn kho</p>
+                    {isNhanCong ? (
+                      <p className="text-xs text-gray-500 font-medium italic">Không quản lý tồn</p>
+                    ) : isNhom ? (
+                      tonThanh > 0 ? (
+                        <>
+                          <p className="font-mono font-bold text-emerald-300">{tonThanh} thanh phôi</p>
+                          {tonMm > 0 && <p className="text-xs text-gray-500">{tonMm.toLocaleString("vi-VN")} mm</p>}
+                        </>
+                      ) : (
+                        <p className="font-mono font-bold text-gray-500">0 thanh phôi</p>
+                      )
+                    ) : (
+                      <p className="text-xs text-gray-500 font-medium italic">Chưa có kho riêng</p>
+                    )}
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-2">
@@ -430,9 +469,9 @@ export default function MaterialPage() {
                 <th className="p-4 font-semibold text-right w-36">Đơn Giá Nhập</th>
                 <th
                   className="p-4 font-semibold text-right w-36"
-                  title="Tồn từ Kho phôi: số thanh/tấm còn dùng (MOI, CON_DU). Phụ kiện/vật tư không nhập theo thanh sẽ là 0."
+                  title="Tồn kho phôi đối với Nhôm, hoặc trạng thái kho riêng đối với Kính, Phụ kiện, Vật tư phụ."
                 >
-                  Tồn (kho phôi)
+                  Tồn kho
                 </th>
                 <th className="p-4 font-semibold w-24 text-right">Thao Tác</th>
               </tr>
@@ -448,14 +487,33 @@ export default function MaterialPage() {
                 materials.map((item, idx) => {
                   const tonThanh = Math.max(0, Math.round(Number(item.tonKhoThanh ?? 0)));
                   const tonMm = Math.max(0, Math.round(Number(item.tonKhoTongMm ?? 0)));
+                  const tendm = item.danhmuc?.tendm || "";
+                  const normalizedDm = tendm.toLowerCase().trim();
+                  const isNhanCong = normalizedDm.includes("nhân công") || normalizedDm.includes("nhan cong");
+                  const isNhom = normalizedDm.includes("nhôm") || normalizedDm.includes("nhom");
+
                   return (
                   <tr key={item.mavt} className="hover:bg-white/5 transition-colors group">
                     <td className="p-4 text-center text-sm text-gray-500 font-mono">
                       {(page - 1) * pageSize + idx + 1}
                     </td>
                     <td className="p-4 text-sm font-bold text-gray-200 tracking-tight">VT-{item.mavt}</td>
-                    <td className="p-4 text-sm font-medium text-gray-300">{item.tenvt}</td>
-                    <td className="p-4 text-sm text-gray-500">{item.danhmuc?.tendm || "Chưa phân loại"}</td>
+                    <td className="p-4 text-sm font-medium text-gray-300">
+                      <div className="flex flex-col">
+                        <span>{item.tenvt}</span>
+                        {isNhanCong && (
+                          <span className="inline-flex self-start mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            Chi phí nhân công
+                          </span>
+                        )}
+                        {isNhom && (
+                          <span className="inline-flex self-start mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            Liên kết kho phôi / tối ưu cắt
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-4 text-sm text-gray-500">{tendm || "Chưa phân loại"}</td>
                     <td className="p-4 text-center text-sm text-emerald-400 font-mono">
                       {item.chieudaimacdinh ? `${item.chieudaimacdinh}mm` : '-'}
                     </td>
@@ -463,23 +521,29 @@ export default function MaterialPage() {
                       {formatCurrency(item.dongianhap)}<span className="text-gray-500 ml-1 text-xs">/{item.donvitinh}</span>
                     </td>
                     <td className="p-4 text-right text-sm align-top">
-                      {tonThanh > 0 ? (
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span>
-                            <span className="font-mono font-bold text-emerald-300">{tonThanh}</span>
-                            <span className="text-gray-500 ml-1 text-xs">thanh</span>
-                          </span>
-                          {item.chieudaimacdinh != null && tonMm > 0 ? (
-                            <span
-                              className="text-[10px] text-gray-500 font-mono max-w-[10rem] leading-tight"
-                              title="Tổng mm còn lại trên các thanh (nhôm / thanh có chiều dài)"
-                            >
-                              Σ {tonMm.toLocaleString("vi-VN")} mm
+                      {isNhanCong ? (
+                        <span className="text-gray-500 italic text-xs">Không quản lý tồn</span>
+                      ) : isNhom ? (
+                        tonThanh > 0 ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span>
+                              <span className="font-mono font-bold text-emerald-300">{tonThanh}</span>
+                              <span className="text-gray-500 ml-1 text-xs">thanh phôi</span>
                             </span>
-                          ) : null}
-                        </div>
+                            {item.chieudaimacdinh != null && tonMm > 0 ? (
+                              <span
+                                className="text-[10px] text-gray-500 font-mono max-w-[10rem] leading-tight"
+                                title="Tổng mm còn lại trên các thanh (nhôm / thanh có chiều dài)"
+                              >
+                                Σ {tonMm.toLocaleString("vi-VN")} mm
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-gray-500 font-mono">0 thanh phôi</span>
+                        )
                       ) : (
-                        <span className="text-gray-500 font-mono">0</span>
+                        <span className="text-gray-500 italic text-xs">Chưa có kho riêng</span>
                       )}
                     </td>
                     <td className="p-4 text-right">
@@ -647,5 +711,18 @@ export default function MaterialPage() {
       />
 
     </div>
+  );
+}
+
+export default function MaterialPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center py-20 bg-[#0a0a0c] border border-white/5 rounded-2xl">
+        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-4" />
+        <p className="text-gray-400">Đang tải bộ lọc vật tư...</p>
+      </div>
+    }>
+      <MaterialPageInner />
+    </Suspense>
   );
 }

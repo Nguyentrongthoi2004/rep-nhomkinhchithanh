@@ -122,6 +122,24 @@ body {
     linear-gradient(180deg, #050507 0%, #07070a 60%, #050507 100%);
 }
 
+.login-metal-sheet-bg {
+  background:
+    linear-gradient(135deg, 
+      #050608 0%, 
+      #0b0e14 20%, 
+      #161c26 40%, 
+      #222a3a 50%, 
+      #131821 60%, 
+      #0a0d13 75%, 
+      #040507 100%
+    );
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 20px 60px -40px rgba(0, 0, 0, 0.9);
+}
+
 /* Thương hiệu */
 .brand-mark {
   position: relative;
@@ -214,5 +232,252 @@ body {
 
   .admin-metal-bg {
     background: #fff !important;
+  }
+}
+
+/* ===== Custom Login Page Polish Animations & Utilities ===== */
+
+@keyframes login-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes login-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes login-glow-shift {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(40px, -60px) scale(1.15);
+  }
+  66% {
+    transform: translate(-30px, 30px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+@keyframes login-scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(200%);
+  }
+}
+
+.login-animate-fade-up {
+  animation: login-fade-up 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+.login-animate-float {
+  animation: login-float 6s ease-in-out infinite;
+}
+
+/* Fix: khi cả 2 class cùng gán lên 1 element, gộp thành animation-list để fade-up chạy trước → float chạy sau */
+.login-animate-fade-up.login-animate-float {
+  animation:
+    login-fade-up 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    login-float 6s ease-in-out 1s infinite;
+  opacity: 0;
+}
+
+
+.login-animate-glow-shift {
+  animation: login-glow-shift 18s ease-in-out infinite;
+}
+
+.login-animate-scan {
+  animation: login-scan 10s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.login-delay-100 {
+  animation-delay: 100ms;
+}
+
+.login-delay-200 {
+  animation-delay: 200ms;
+}
+
+.login-delay-300 {
+  animation-delay: 300ms;
+}
+
+.login-delay-400 {
+  animation-delay: 400ms;
+}
+
+.login-delay-500 {
+  animation-delay: 500ms;
+}
+
+.login-grid-bg {
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 50px 50px;
+  background-position: center;
+  mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+}
+
+/* ===== Enhanced Silver Metallic Visual Effects ===== */
+
+@keyframes login-particle-rise {
+  0% { opacity: 0; transform: translateY(0) scale(0.3); }
+  10% { opacity: 0.8; }
+  50% { opacity: 0.5; }
+  90% { opacity: 0.15; }
+  100% { opacity: 0; transform: translateY(-85vh) scale(0); }
+}
+
+@keyframes login-border-flow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes login-orb-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+  33% { transform: translate(40px, -50px) scale(1.15); opacity: 0.65; }
+  66% { transform: translate(-25px, 35px) scale(0.9); opacity: 0.35; }
+}
+
+@keyframes login-orb-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+  33% { transform: translate(-35px, 45px) scale(0.9); opacity: 0.55; }
+  66% { transform: translate(40px, -30px) scale(1.15); opacity: 0.3; }
+}
+
+@keyframes login-silver-sweep {
+  0% { transform: translateX(-100%) rotate(25deg); }
+  100% { transform: translateX(300%) rotate(25deg); }
+}
+
+@keyframes login-corner-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.6; }
+}
+
+.login-card-border-glow {
+  position: relative;
+  isolation: isolate;
+}
+
+.login-card-border-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 16px;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(148, 163, 184, 0.55) 0%,
+    rgba(255, 255, 255, 0.15) 25%,
+    rgba(148, 163, 184, 0.4) 50%,
+    rgba(255, 255, 255, 0.1) 75%,
+    rgba(148, 163, 184, 0.55) 100%
+  );
+  background-size: 300% 300%;
+  animation: login-border-flow 5s ease-in-out infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.login-scan-effect {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.login-scan-effect::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent 0%, rgba(148, 163, 184, 0.4) 15%, rgba(255, 255, 255, 0.18) 50%, rgba(148, 163, 184, 0.4) 85%, transparent 100%);
+  box-shadow: 0 0 30px 8px rgba(148, 163, 184, 0.08);
+  animation: login-scan 7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.login-particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.login-sweep-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+  border-radius: inherit;
+}
+
+.login-sweep-container::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -100%;
+  width: 80px;
+  height: 250%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.04),
+    transparent
+  );
+  animation: login-silver-sweep 8s ease-in-out 2s infinite;
+  filter: blur(2px);
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .login-animate-fade-up {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  
+  .login-animate-float,
+  .login-animate-glow-shift,
+  .login-animate-scan {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .login-card-border-glow::before,
+  .login-scan-effect::after,
+  .login-sweep-container::after {
+    animation: none !important;
+  }
+
+  .login-particle {
+    display: none !important;
   }
 }

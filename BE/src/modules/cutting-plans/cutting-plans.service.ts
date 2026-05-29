@@ -677,6 +677,16 @@ function closeOpenIssuesByStock(maphoi: number, payload: Record<string, unknown>
     .eq("maphoi", maphoi);
 }
 
+async function getBusyStockIdsForOtherActivePlans(mapc: number): Promise<Set<number>> {
+  const { data, error } = await supabaseAdmin
+    .from("sodocat")
+    .select("maphoi")
+    .in("trangthai", ["CHO_DUYET", "DANG_CAT"])
+    .neq("mapc", mapc);
+  if (error) throw HttpError.internal(error.message);
+  return new Set((data ?? []).map((row) => row.maphoi as number));
+}
+
 export const cuttingPlansService = {
   // Quản trị viên xem danh sách tất cả sơ đồ cắt.
   async listAdmin() {
@@ -836,7 +846,10 @@ export const cuttingPlansService = {
       issueStockIds = new Set((issueData ?? []).map((row) => row.maphoi as number));
     }
 
-    const validStocks = (stockRows ?? []).filter((stock) => !issueStockIds.has(stock.maphoi as number)) as unknown as RawStock[];
+    const busyStockIds = await getBusyStockIdsForOtherActivePlans(mapc);
+    const validStocks = (stockRows ?? []).filter(
+      (stock) => !issueStockIds.has(stock.maphoi as number) && !busyStockIds.has(stock.maphoi as number)
+    ) as unknown as RawStock[];
 
     try {
       const { plannedBars, metrics } = planCuts(pieces, validStocks, kerf, safeMargin, scrapThreshold, minReusableLength);
@@ -915,7 +928,11 @@ export const cuttingPlansService = {
       if (issueErr) throw HttpError.internal(issueErr.message);
       issueStockIds = new Set((issueData ?? []).map(r => r.maphoi as number));
     }
-    const validStocks = (stockRows ?? []).filter(s => !issueStockIds.has(s.maphoi as number)) as unknown as RawStock[];
+
+    const busyStockIds = await getBusyStockIdsForOtherActivePlans(mapc);
+    const validStocks = (stockRows ?? []).filter(
+      s => !issueStockIds.has(s.maphoi as number) && !busyStockIds.has(s.maphoi as number)
+    ) as unknown as RawStock[];
 
     const { plannedBars, metrics } = planCuts(pieces, validStocks, kerf, safeMargin, scrapThreshold, minReusableLength);
 
@@ -982,6 +999,21 @@ export const cuttingPlansService = {
     // Chặn hoàn thành khi phôi đang chờ quản trị viên xử lý sự cố để tránh dùng lại phôi lỗi.
     if (await hasOpenIssue({ maphoi: typed.maphoi })) {
       throw HttpError.badRequest("Phôi này đang có sự cố chờ Admin xử lý, chưa thể xác nhận hoàn thành");
+    }
+
+    // Kiểm tra trùng phôi giữa các sơ đồ active khác phân công
+    const { data: activePlans, error: activeErr } = await supabaseAdmin
+      .from("sodocat")
+      .select("masdc, mapc")
+      .eq("maphoi", typed.maphoi)
+      .in("trangthai", ["CHO_DUYET", "DANG_CAT"])
+      .neq("mapc", typed.mapc)
+      .limit(1);
+    if (activeErr) throw HttpError.internal(activeErr.message);
+    if ((activePlans ?? []).length > 0) {
+      throw HttpError.badRequest(
+        `Thanh phôi này đang được sử dụng bởi sơ đồ cắt hoạt động khác của phân công PC-${activePlans[0].mapc}. Vui lòng kiểm tra lại sơ đồ trước khi hoàn thành.`
+      );
     }
 
     const { count: cutPhotoCount, error: cutPhotoError } = await supabaseAdmin

@@ -302,6 +302,106 @@ function evaluateBarRemainder(remainder: number, sourceStatus?: string | null) {
   };
 }
 
+function evaluateInitialPlan(plans: CuttingPlan[], warnings: string[]) {
+  if (!plans || plans.length === 0) {
+    return {
+      status: "CHUA_CO_SO_DO",
+      colorClass: "border-zinc-800 bg-zinc-950/40 text-zinc-400",
+      title: "Chưa có dữ liệu phương án",
+      reasons: ["Chưa có dữ liệu phương án để đánh giá. Hãy tạo hoặc tải sơ đồ cắt trước."],
+      utilizationRate: 0,
+    };
+  }
+
+  const reasons: string[] = [];
+  let status: "NEN_GIAO" | "CAN_XEM_XET" | "CO_RUI_RO" = "NEN_GIAO";
+
+  let totalInput = 0;
+  let totalUsed = 0;
+  let awkwardCount = 0;
+  let reusableCount = 0;
+  let scrapCount = 0;
+  let reusedCount = 0;
+
+  plans.forEach((plan) => {
+    const metrics = getPlanMetrics(plan);
+    if (metrics.inputLength) {
+      totalInput += metrics.inputLength;
+    }
+    totalUsed += metrics.used;
+
+    const remainder = metrics.remainder ?? 0;
+    if (remainder >= DEFAULT_MIN_REUSABLE_LENGTH) {
+      reusableCount++;
+    } else if (remainder < DEFAULT_MIN_SCRAP) {
+      scrapCount++;
+    } else {
+      awkwardCount++;
+    }
+
+    if (plan.khothanhphoi?.trangthai === "CON_DU") {
+      reusedCount++;
+    }
+  });
+
+  const utilizationRate = totalInput > 0 ? (totalUsed / totalInput) * 100 : 0;
+
+  reasons.push(`Tỷ lệ tận dụng vật tư trung bình đạt ${utilizationRate.toFixed(1)}%.`);
+
+  if (reusedCount > 0) {
+    reasons.push(`Đã dọn kho, tận dụng ${reusedCount} thanh phôi dư.`);
+  }
+
+  if (scrapCount > 0) {
+    reasons.push(`Tối ưu hóa triệt để ở ${scrapCount} thanh phôi (phần thừa dưới 10cm).`);
+  }
+
+  if (reusableCount > 0) {
+    reasons.push(`Tạo ra ${reusableCount} phần dư dài (>= 1.5m) có khả năng tái sử dụng.`);
+  }
+
+  if (awkwardCount > 0) {
+    reasons.push(`Cảnh báo: Có ${awkwardCount} thanh phôi tạo phần dư lỡ cỡ (10cm - 1.5m) khó tái sử dụng.`);
+  }
+
+  // Phân tích warnings
+  const hasSevereWarnings = warnings.some(w => 
+    w.toLowerCase().includes("lệch dữ liệu") || 
+    w.toLowerCase().includes("không nên tạo lại") || 
+    w.toLowerCase().includes("chờ duyệt")
+  );
+
+  if (hasSevereWarnings || utilizationRate < 70) {
+    status = "CO_RUI_RO";
+  } else if (awkwardCount > 0 || utilizationRate < 82 || warnings.length > 0) {
+    status = "CAN_XEM_XET";
+  } else {
+    status = "NEN_GIAO";
+  }
+
+  let colorClass = "";
+  let title = "";
+
+  if (status === "NEN_GIAO") {
+    colorClass = "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+    title = "Phương án tốt";
+  } else if (status === "CO_RUI_RO") {
+    colorClass = "border-rose-500/30 bg-rose-500/10 text-rose-300";
+    title = "Có rủi ro";
+  } else {
+    colorClass = "border-amber-500/30 bg-amber-500/10 text-amber-300";
+    title = "Cần xem xét";
+  }
+
+  return {
+    status,
+    colorClass,
+    title,
+    reasons: reasons.slice(0, 5),
+    utilizationRate,
+  };
+}
+
 export default function CuttingOptimizationDetailPage() {
   const params = useParams<{ mapc: string }>();
   const mapc = useMemo(() => Number(params.mapc), [params.mapc]);
@@ -740,6 +840,123 @@ export default function CuttingOptimizationDetailPage() {
         </div>
 
         <div className="space-y-6">
+          {/* Decision Support Card */}
+          {(() => {
+            const evalResult = evaluateInitialPlan(plans, warnings);
+            return (
+              <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5 space-y-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                    <TrendingUp className="h-5 w-5 text-purple-400" />
+                    Đánh giá phương án tối ưu
+                  </h2>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    Hệ thống phân tích các chỉ số cắt để hỗ trợ Admin xem xét trước khi giao cho Worker.
+                  </p>
+                </div>
+
+                {plans.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-zinc-800 bg-black/25 p-6 text-center text-xs text-zinc-500">
+                    Chưa có dữ liệu phương án để đánh giá. Hãy tạo hoặc tải sơ đồ cắt trước.
+                  </div>
+                ) : (
+                  <>
+                    <div className={`p-4 border rounded-xl space-y-3 ${evalResult.colorClass}`}>
+                      <div className="flex items-center gap-2 font-bold text-sm">
+                        {evalResult.status === "NEN_GIAO" ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : evalResult.status === "CO_RUI_RO" ? (
+                          <AlertTriangle className="w-4 h-4 text-rose-400" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        )}
+                        <span>Khuyến nghị hệ thống: {evalResult.title}</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-zinc-300 block">Phân tích chỉ số:</span>
+                        <ul className="list-disc pl-5 space-y-1 text-xs opacity-90">
+                          {evalResult.reasons.map((r, i) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* Gợi ý hành động */}
+                      <div className="space-y-1 pt-2.5 border-t border-white/5">
+                        <span className="text-xs font-bold text-zinc-300 block">Gợi ý hành động:</span>
+                        <ul className="list-disc pl-5 space-y-1 text-xs opacity-90">
+                          {evalResult.status === "NEN_GIAO" ? (
+                            <>
+                              <li>Có thể giữ phương án hiện tại để Worker thực hiện theo sơ đồ đã lưu.</li>
+                              <li>Kiểm tra nhanh BOM và sơ đồ đã lưu trước khi thi công.</li>
+                            </>
+                          ) : evalResult.status === "CO_RUI_RO" ? (
+                            <>
+                              <li className="text-rose-300 font-medium">Không nên giao ngay phương án này nếu chưa kiểm tra kỹ.</li>
+                              <li>Xem lại cấu hình quy tắc tối ưu.</li>
+                              <li>Kiểm tra các thanh có hao hụt lớn hoặc phôi dư lỡ cỡ.</li>
+                              <li>Cân nhắc tạo lại sơ đồ cắt.</li>
+                            </>
+                          ) : (
+                            <>
+                              <li>Kiểm tra kỹ các phần phôi dư lỡ cỡ.</li>
+                              <li>Xem lại cấu hình tối ưu để tối thiểu hóa hao hụt.</li>
+                              <li>Cân nhắc tạo lại sơ đồ cắt nếu thông tin kho đã thay đổi.</li>
+                            </>
+                          )}
+                        </ul>
+                      </div>
+
+                      {/* Nút hành động UI-only */}
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <Link 
+                          href="/admin/cau-hinh"
+                          className="px-2.5 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] font-bold text-zinc-200 transition-colors"
+                        >
+                          Cấu hình quy tắc
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = document.getElementById("saved-plans-section");
+                            if (el) el.scrollIntoView({ behavior: "smooth" });
+                          }}
+                          className="px-2.5 py-1.5 rounded bg-cyan-950/40 hover:bg-cyan-900/40 border border-cyan-800/40 text-[10px] font-bold text-cyan-400 transition-colors"
+                        >
+                          Xem sơ đồ đã lưu
+                        </button>
+                        {(evalResult.status === "CO_RUI_RO" || evalResult.status === "CAN_XEM_XET") && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const el = document.getElementById("saved-plans-section");
+                              if (el) el.scrollIntoView({ behavior: "smooth" });
+                            }}
+                            className="px-2.5 py-1.5 rounded bg-amber-950/40 hover:bg-amber-900/40 border border-amber-800/40 text-[10px] font-bold text-amber-400 transition-colors"
+                          >
+                            Xem chi tiết rủi ro
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="text-[10px] opacity-60 italic pt-1 border-t border-white/5 flex items-center justify-between gap-2">
+                        <span>* Đánh giá tham khảo dựa trên thuật toán tối ưu phôi hiện tại.</span>
+                        <Link href="/admin/cau-hinh" className="text-cyan-400 hover:underline">
+                          Xem cấu hình quy tắc &rarr;
+                        </Link>
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-zinc-500 italic">
+                      * Đây là đánh giá hỗ trợ ra quyết định. Admin vẫn là người quyết định cuối cùng.
+                    </div>
+                  </>
+                )}
+              </section>
+            );
+          })()}
+
           <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-lg font-bold text-white">
@@ -814,7 +1031,7 @@ export default function CuttingOptimizationDetailPage() {
             )}
           </section>
 
-          <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
+          <section id="saved-plans-section" className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="flex items-center gap-2 text-lg font-bold text-white">

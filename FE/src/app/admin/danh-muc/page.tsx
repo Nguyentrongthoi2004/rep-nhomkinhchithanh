@@ -1,14 +1,71 @@
 "use client";
 
-import { Plus, Search, Edit2, Trash2, Layers, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { Plus, Search, Edit2, Trash2, Layers, Loader2, ChevronLeft, ChevronRight, Info, BookOpen, Eye } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiData, apiJson } from "@/lib/api";
+import Link from "next/link";
 
 interface DanhMuc {
   madm: number;
   tendm: string;
   mota: string;
   trangthai: string;
+}
+
+// Hàm giải nghĩa nghiệp vụ động cho danh mục vật tư
+function getCategoryRole(name: string) {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("nhôm") || normalized.includes("nhom")) {
+    return {
+      role: "Tối ưu hóa cắt nhôm (1D-CSP)",
+      desc: "thanh nhôm chịu lực, liên kết kho phôi thanh và thuật toán tối ưu cắt 1D-CSP.",
+      example: "Nhôm Xingfa hệ 55, nhôm PMA, thanh nhôm 6m."
+    };
+  }
+  if (normalized.includes("kính") || normalized.includes("kinh")) {
+    return {
+      role: "Quản lý diện tích & Tấm khổ",
+      desc: "thường quản lý theo tấm/diện tích, dùng cho BOM và báo giá, không tham gia tối ưu cắt thanh nhôm 1D-CSP.",
+      example: "Kính cường lực 8mm, kính hộp, kính dán an toàn."
+    };
+  }
+  if (
+    normalized.includes("phụ kiện") || 
+    normalized.includes("phu kien") || 
+    normalized.includes("ốc") || 
+    normalized.includes("oc") || 
+    normalized.includes("vit") || 
+    normalized.includes("vít") || 
+    normalized.includes("bản lề") || 
+    normalized.includes("ban le") || 
+    normalized.includes("khóa") ||
+    normalized.includes("khoa")
+  ) {
+    return {
+      role: "Quản lý số lượng đơn chiếc",
+      desc: "khóa, ray, tay nắm, bản lề dùng hoàn thiện sản phẩm.",
+      example: "Bản lề 3D, tay nắm cửa Xingfa, khóa đa điểm."
+    };
+  }
+  if (
+    normalized.includes("nhân công") || 
+    normalized.includes("nhan cong") || 
+    normalized.includes("lắp đặt") || 
+    normalized.includes("lap dat") || 
+    normalized.includes("gia công") ||
+    normalized.includes("gia cong")
+  ) {
+    return {
+      role: "Nhân công & Dịch vụ",
+      desc: "Nhân công là nhóm hạng mục chi phí dùng trong báo giá/BOM, không phải vật tư tồn kho.",
+      example: "Công cắt góc, công lắp đặt hoàn thiện."
+    };
+  }
+  return {
+    role: "Vật tư phụ / Khác",
+    desc: "keo silicone, vít tự khoan, gioăng cao su dùng trong thi công/lắp đặt.",
+    example: "Keo Silicone A500, gioăng cao su, vít tự khoan."
+  };
 }
 
 export default function CategoryPage() {
@@ -20,11 +77,43 @@ export default function CategoryPage() {
   const [total, setTotal] = useState(0);
   const [items, setItems] = useState<DanhMuc[]>([]);
 
+  // Đếm số lượng SKU thực tế
+  const [materialCounts, setMaterialCounts] = useState<Record<string, number>>({});
+  const [countsLoading, setCountsLoading] = useState(true);
+
   // Hộp thoại thêm/sửa
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<DanhMuc | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({ tendm: "", mota: "", trangthai: "HOAT_DONG" });
+
+  // Tính toán tóm tắt thông tin các danh mục
+  const stats = useMemo(() => {
+    const totalCats = items.length;
+    const activeCats = items.filter(i => i.trangthai === 'HOAT_DONG').length;
+    const hasCounts = Object.keys(materialCounts).length > 0;
+    const totalSKUs = hasCounts ? Object.values(materialCounts).reduce((a, b) => a + b, 0) : 0;
+    
+    let maxSkuCat = "";
+    let maxSkuVal = 0;
+    if (hasCounts) {
+      for (const cat of items) {
+        const cnt = materialCounts[cat.tendm] || 0;
+        if (cnt > maxSkuVal) {
+          maxSkuVal = cnt;
+          maxSkuCat = cat.tendm;
+        }
+      }
+    }
+    
+    return {
+      totalCats,
+      activeCats,
+      totalSKUs,
+      maxSkuCat: maxSkuCat ? `${maxSkuCat} (${maxSkuVal} SKU)` : "Chưa có",
+      hasCounts
+    };
+  }, [items, materialCounts]);
 
   const fetchCategories = useCallback(async () => {
     setLoading(true);
@@ -45,9 +134,37 @@ export default function CategoryPage() {
     }
   }, [page, pageSize, searchTerm]);
 
+  // Tải thống kê vật tư thực tế để đếm SKU
+  const fetchMaterialStats = async () => {
+    setCountsLoading(true);
+    try {
+      type MaterialOptionShort = {
+        mavt: number;
+        danhmuc?: { tendm?: string } | null;
+      };
+      const mats = await apiData<MaterialOptionShort[]>("/api/admin/materials-options");
+      const counts: Record<string, number> = {};
+      for (const m of mats) {
+        const catName = m.danhmuc?.tendm;
+        if (catName) {
+          counts[catName] = (counts[catName] || 0) + 1;
+        }
+      }
+      setMaterialCounts(counts);
+    } catch (err) {
+      console.error("Lỗi khi tải thống kê vật tư:", err);
+    } finally {
+      setCountsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
+
+  useEffect(() => {
+    fetchMaterialStats();
+  }, []);
 
   useEffect(() => {
     setPage(1);
@@ -68,7 +185,7 @@ export default function CategoryPage() {
   };
 
   const handleDelete = async (cat: DanhMuc) => {
-    if (!confirm(`Xóa danh mục "${cat.tendm}"?`)) return;
+    if (!confirm(`Chỉ xóa nhóm khi không còn vật tư liên kết để tránh ảnh hưởng BOM/báo giá. Bạn có chắc chắn muốn xóa danh mục "${cat.tendm}"?`)) return;
     try {
       await apiJson(`/api/admin/categories/${cat.madm}`, { method: "DELETE" });
       fetchCategories();
@@ -110,9 +227,11 @@ export default function CategoryPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-100 flex items-center">
             <Layers className="w-6 h-6 mr-3 text-purple-500" />
-            Cây Danh Mục Vật Tư
+            Danh mục nhóm vật tư
           </h1>
-          <p className="text-gray-400 text-sm mt-1 ml-9">Quản lý cách phân nhóm vật tư trong hệ thống.</p>
+          <p className="text-gray-400 text-sm mt-1 ml-9">
+            Dùng để phân nhóm vật tư trong BOM, báo giá, kho phôi, thống kê và dashboard.
+          </p>
         </div>
         
         <button
@@ -122,6 +241,93 @@ export default function CategoryPage() {
           <Plus className="w-5 h-5 mr-2" />
           Tạo Danh Mục Mới
         </button>
+      </div>
+
+      {/* Thẻ tóm tắt số liệu */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-4 flex flex-col justify-between shadow-inner">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Tổng số danh mục</span>
+          <span className="text-2xl font-bold text-gray-200 mt-2">{stats.totalCats} nhóm</span>
+        </div>
+        <div className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-4 flex flex-col justify-between shadow-inner">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Đang hoạt động</span>
+          <span className="text-2xl font-bold text-emerald-400 mt-2">{stats.activeCats} nhóm</span>
+        </div>
+        <div className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-4 flex flex-col justify-between shadow-inner">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Tổng vật tư đã phân nhóm</span>
+          <span className="text-2xl font-bold text-purple-400 mt-2">
+            {stats.hasCounts ? `${stats.totalSKUs} SKU` : "Đang tải..."}
+          </span>
+        </div>
+        <div className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-4 flex flex-col justify-between shadow-inner">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Nhóm nhiều vật tư nhất</span>
+          <span className="text-sm font-bold text-blue-400 mt-2 truncate" title={stats.maxSkuCat}>
+            {stats.hasCounts ? stats.maxSkuCat : "Đang tải..."}
+          </span>
+        </div>
+      </div>
+
+      {/* Help card: Danh mục dùng để làm gì? */}
+      <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-6">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-2">
+          <BookOpen className="h-4 w-4 text-purple-400" />
+          Danh mục dùng để làm gì?
+        </h2>
+        <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+          Danh mục là các nhóm phân loại cấp cao quản lý vật tư trong hệ thống. Việc thiết lập đúng danh mục hỗ trợ tự động hóa các nghiệp vụ:
+        </p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="p-3.5 rounded-xl border border-blue-500/10 bg-blue-500/[0.02]">
+            <h3 className="text-xs font-bold text-blue-300 mb-1 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+              1. Lập BOM
+            </h3>
+            <p className="text-[11px] text-gray-400 leading-normal">
+              Phân loại rõ ràng vật tư để bóc tách định mức kỹ thuật chi tiết theo thiết kế cửa.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-xl border border-amber-500/10 bg-amber-500/[0.02]">
+            <h3 className="text-xs font-bold text-amber-300 mb-1 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              2. Báo giá nhanh
+            </h3>
+            <p className="text-[11px] text-gray-400 leading-normal">
+              Gom nhóm chi phí vật liệu (Nhôm, Kính, Phụ kiện) để tự động tính toán giá vốn và giá bán.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-xl border border-purple-500/10 bg-purple-500/[0.02]">
+            <h3 className="text-xs font-bold text-purple-300 mb-1 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+              3. Phân loại kho
+            </h3>
+            <p className="text-[11px] text-gray-400 leading-normal">
+              Xử lý tồn kho đặc thù: Nhôm theo thanh/phôi dư, Kính theo diện tích m², Phụ kiện theo bộ/chiếc.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-xl border border-cyan-500/10 bg-cyan-500/[0.02]">
+            <h3 className="text-xs font-bold text-cyan-300 mb-1 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+              4. Tối ưu cắt
+            </h3>
+            <p className="text-[11px] text-gray-400 leading-normal">
+              Xác định nhóm **Nhôm** để đưa vào thuật toán tối ưu hóa cắt phôi 1D-CSP giảm thiểu hao hụt.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-xl border border-indigo-500/10 bg-indigo-500/[0.02]">
+            <h3 className="text-xs font-bold text-indigo-300 mb-1 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+              5. Dashboard
+            </h3>
+            <p className="text-[11px] text-gray-400 leading-normal">
+              Tạo biểu đồ phân bổ mã vật tư và tóm tắt hiện trạng nguồn vốn trên bảng quản trị.
+            </p>
+          </div>
+        </div>
       </div>
 
       {errorMsg && (
@@ -142,15 +348,10 @@ export default function CategoryPage() {
             className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
           />
         </div>
-        <select
-          aria-label="Lọc danh mục"
-          className="bg-[#0a0a0c] border border-white/10 text-gray-300 text-sm rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
-        >
-          <option value="ALL">Tất cả phân loại</option>
-          <option value="NHOM">Nhôm</option>
-          <option value="KINH">Kính</option>
-          <option value="PHU_KIEN">Phụ Kiện</option>
-        </select>
+        <div className="text-xs text-gray-500 bg-white/5 px-3 py-2 rounded-lg border border-white/5 flex items-center gap-2">
+          <Info className="h-4 w-4 text-purple-400" />
+          Đọc dữ liệu vật tư thật để đếm số lượng SKU liên kết
+        </div>
       </div>
 
       {/* Bảng dữ liệu */}
@@ -162,19 +363,47 @@ export default function CategoryPage() {
           <thead>
             <tr className="bg-white/5 border-b border-white/10 text-xs uppercase tracking-wider text-gray-400">
               <th className="p-4 font-semibold w-16 text-center">STT</th>
-              <th className="p-4 font-semibold w-32">Mã Nội Bộ</th>
-              <th className="p-4 font-semibold">Tên Gọi</th>
-              <th className="p-4 font-semibold w-40">Trạng Thái</th>
-              <th className="p-4 font-semibold">Ghi Chủ</th>
-              <th className="p-4 font-semibold w-24 text-right">Thao Tác</th>
+              <th className="p-4 font-semibold w-28">Mã Nội Bộ</th>
+              <th className="p-4 font-semibold w-52">Tên Gọi & SKU</th>
+              <th className="p-4 font-semibold">Vai Trò Nghiệp Vụ & Ví dụ</th>
+              <th className="p-4 font-semibold w-32">Trạng Thái</th>
+              <th className="p-4 font-semibold">Mô Tả</th>
+              <th className="p-4 font-semibold w-44 text-right">Thao Tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {items.map((cat, idx) => (
+            {items.map((cat, idx) => {
+              const roleInfo = getCategoryRole(cat.tendm);
+              const skuCount = materialCounts[cat.tendm];
+              
+              return (
               <tr key={cat.madm} className="hover:bg-white/2 transition-colors group">
                 <td className="p-4 text-center text-sm text-gray-500 font-mono">{(page - 1) * pageSize + idx + 1}</td>
                 <td className="p-4 text-sm font-mono text-gray-300">DM-{cat.madm.toString().padStart(3, '0')}</td>
-                <td className="p-4 text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">{cat.tendm}</td>
+                <td className="p-4 text-sm">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-semibold text-gray-200 group-hover:text-white transition-colors">{cat.tendm}</span>
+                    {countsLoading ? (
+                      <span className="text-[10px] text-gray-500">Đang quét SKU...</span>
+                    ) : skuCount !== undefined ? (
+                      <span className="inline-flex self-start px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20 shadow-sm">
+                        {skuCount} vật tư (SKU)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-gray-500">Chưa có liên kết vật tư</span>
+                    )}
+                  </div>
+                </td>
+                <td className="p-4 text-xs">
+                  <div className="space-y-1 max-w-sm">
+                    <div className="font-semibold text-gray-300 flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" />
+                      {roleInfo.role}
+                    </div>
+                    <div className="text-gray-500 leading-normal">{roleInfo.desc}</div>
+                    <div className="text-[10px] text-gray-400 italic">Ví dụ: {roleInfo.example}</div>
+                  </div>
+                </td>
                 <td className="p-4">
                   <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${
                     cat.trangthai === 'HOAT_DONG' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
@@ -183,31 +412,42 @@ export default function CategoryPage() {
                     {cat.trangthai}
                   </span>
                 </td>
-                <td className="p-4 text-sm text-gray-500 truncate max-w-[200px]">{cat.mota || "Chưa có mô tả"}</td>
+                <td className="p-4 text-sm text-gray-500 truncate max-w-[150px]">{cat.mota || "Chưa có mô tả"}</td>
                 <td className="p-4 text-right">
-                  <div className="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => openEditModal(cat)}
-                      className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
-                      title="Sửa danh mục"
-                      aria-label="Sửa danh mục"
+                  <div className="flex items-center justify-end space-x-2">
+                    <Link
+                      href={`/admin/vat-tu?madm=${cat.madm}`}
+                      className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/30 rounded-md transition-all inline-flex items-center gap-1 whitespace-nowrap"
+                      title={`Xem danh sách vật tư thuộc nhóm ${cat.tendm}`}
                     >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(cat)}
-                      className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
-                      title="Xóa danh mục"
-                      aria-label="Xóa danh mục"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Xem vật tư</span>
+                    </Link>
+                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => openEditModal(cat)}
+                        className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
+                        title="Sửa danh mục"
+                        aria-label="Sửa danh mục"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(cat)}
+                        className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
+                        title="Xóa danh mục"
+                        aria-label="Xóa danh mục"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </td>
               </tr>
-            ))}
+            );
+            })}
             {items.length === 0 && (
-              <tr><td colSpan={6} className="p-6 text-center text-gray-500">Chưa có danh mục nào</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-gray-500">Chưa có danh mục nào</td></tr>
             )}
           </tbody>
         </table>
