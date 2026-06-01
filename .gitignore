@@ -88,3 +88,14 @@ TaiLieuDacTa/
 .env
 .env.*
 !.env.example
+
+# Local AI agent files
+.agent/
+.codegraph/
+
+# Private documents
+TaiLieuDacTa/
+*.docx
+auth_jwt_phan_quyen_explained.md
+tai_lieu_phan_bien.md
+
