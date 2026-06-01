@@ -1,18 +1,35 @@
-.vs/
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Logs & Temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+tmp/
+temp/
 **/dev-server.out.log
 **/dev-server.err.log
 
-# Env / secrets
+# Environment files / secrets
 .env
 .env.local
 .env.*.local
 .env.production
 .env.development
+.env.*
+!.env.example
 *.pem
 *.key
 *.crt
-
-# Tokens / runtime secrets
 *_token.txt
 *.token
 *.secret
@@ -20,8 +37,6 @@
 secrets.*
 *.env.secret
 BE/tmp_test/
-
-# Uploads / local storage
 BE/uploads/
 uploads/
 
@@ -34,31 +49,18 @@ uploads/
 *.mp4
 *.mov
 
-# Build outputs
-node_modules/
-.next/
-dist/
-build/
-coverage/
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.vs/
 
-# Logs / temp
-*.log
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
-tmp/
-temp/
-
-# Agent temporary/backup files
+# Local AI/tooling data
 .agent/backup/
 .agent/tmp/
 .agent/logs/
-
-# IDE / OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+.codegraph/
 
 # Keep project agent/skills
 !AGENTS.md
@@ -69,3 +71,20 @@ Thumbs.db
 
 # External reference repositories
 tham-khao/
+
+# Private documents
+TaiLieuDacTa/
+*.docx
+
+# Private/local agent files
+.agent/
+.codegraph/
+
+# Private documents
+TaiLieuDacTa/
+*.docx
+
+# Environment secrets
+.env
+.env.*
+!.env.example
