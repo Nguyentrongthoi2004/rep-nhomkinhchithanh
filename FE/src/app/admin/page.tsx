@@ -16,10 +16,13 @@ import {
   Activity,
   Play,
   Layers,
+  Trophy,
+  BarChart3,
+  Target,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ElementType } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell, LabelList, PieChart, Pie, Legend } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell, LabelList, PieChart, Pie, Legend } from "recharts";
 import { apiData } from "@/lib/api";
 import Link from "next/link";
 
@@ -100,6 +103,17 @@ type DashboardState = {
   rawScrapped: number;
   materialBars: Array<{ name: string; value: number }>;
   statusBars: Array<{ name: string; value: number }>;
+};
+
+type RevenueMonth = { month: string; revenue: number; paid: number };
+type ProductionWorker = { workerName: string; done: number; active: number; pending: number; rejected: number };
+type CuttingEfficiency = { totalStockUsed: number; totalWaste: number; totalReusable: number; wastePercent: number; reusablePercent: number };
+type TopCustomer = { name: string; totalOrders: number; totalValue: number };
+type DashboardExtended = {
+  revenueByMonth: RevenueMonth[];
+  productionByWorker: ProductionWorker[];
+  cuttingEfficiency: CuttingEfficiency;
+  topCustomers: TopCustomer[];
 };
 
 const emptyDashboard: DashboardState = {
@@ -187,6 +201,7 @@ async function safeApi<T>(path: string, fallback: T): Promise<T> {
 export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardState>(emptyDashboard);
+  const [extData, setExtData] = useState<DashboardExtended | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,6 +266,17 @@ export default function AdminDashboard() {
     }
 
     void load();
+
+    // Load extended dashboard stats
+    safeApi<DashboardExtended>("/api/admin/dashboard-stats", {
+      revenueByMonth: [],
+      productionByWorker: [],
+      cuttingEfficiency: { totalStockUsed: 0, totalWaste: 0, totalReusable: 0, wastePercent: 0, reusablePercent: 0 },
+      topCustomers: [],
+    }).then((ext) => {
+      if (!cancelled) setExtData(ext);
+    });
+
     return () => {
       cancelled = true;
     };
@@ -602,6 +628,200 @@ export default function AdminDashboard() {
           )}
         </div>
       </section>
+
+      {/* ===== PHẦN MỞ RỘNG: Dashboard Hiệu Năng ===== */}
+
+      {/* Biểu đồ Doanh thu theo tháng */}
+      <section className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-emerald-400" />
+              Doanh thu theo tháng
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">Giá trị đơn hàng và số tiền đã thu trong 6 tháng gần nhất.</p>
+          </div>
+          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-gray-400">
+            {extData?.revenueByMonth.length ?? 0} tháng
+          </div>
+        </div>
+        <div className="mt-6 h-[280px]">
+          {extData && extData.revenueByMonth.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={extData.revenueByMonth} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorPaid" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff12" />
+                <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} />
+                <YAxis stroke="#94a3b8" fontSize={11} tickFormatter={(v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(0)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}K` : String(v)} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#111827", borderColor: "#374151", borderRadius: 12 }}
+                  itemStyle={{ color: "#f3f4f6" }}
+                  labelStyle={{ color: "#9ca3af", fontWeight: "bold" }}
+                  formatter={(value: string | number | readonly (string | number)[] | undefined) => {
+                    const rawValue = Array.isArray(value) ? value[0] : value;
+                    const numericValue = typeof rawValue === "number" ? rawValue : Number(rawValue ?? 0);
+                    return money(Number.isFinite(numericValue) ? numericValue : 0);
+                  }}
+                />
+                <Area type="monotone" dataKey="revenue" name="Giá trị đơn" stroke="#10b981" fill="url(#colorRevenue)" strokeWidth={2} />
+                <Area type="monotone" dataKey="paid" name="Đã thu" stroke="#3b82f6" fill="url(#colorPaid)" strokeWidth={2} />
+                <Legend iconType="circle" iconSize={8} formatter={(value: string) => <span className="text-xs text-gray-400">{value}</span>} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-white/10 text-sm text-gray-500">Chưa có dữ liệu doanh thu.</div>
+          )}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {/* Tiến độ sản xuất theo thợ */}
+        <section className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-6">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-violet-400" />
+                Tiến độ theo thợ
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">Phân bổ trạng thái phân công của từng thợ.</p>
+            </div>
+          </div>
+          <div className="h-[280px]">
+            {extData && extData.productionByWorker.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={extData.productionByWorker} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff12" horizontal={false} />
+                  <XAxis type="number" stroke="#94a3b8" fontSize={12} allowDecimals={false} />
+                  <YAxis dataKey="workerName" type="category" stroke="#94a3b8" fontSize={12} width={120} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#111827", borderColor: "#374151", borderRadius: 12 }}
+                    itemStyle={{ color: "#f3f4f6" }}
+                    labelStyle={{ color: "#9ca3af", fontWeight: "bold" }}
+                  />
+                  <Bar dataKey="done" name="Hoàn thành" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} barSize={16} />
+                  <Bar dataKey="active" name="Đang làm" stackId="a" fill="#3b82f6" />
+                  <Bar dataKey="pending" name="Chờ" stackId="a" fill="#f59e0b" />
+                  <Bar dataKey="rejected" name="Từ chối" stackId="a" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                  <Legend iconType="circle" iconSize={8} formatter={(value: string) => <span className="text-xs text-gray-400">{value}</span>} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-white/10 text-sm text-gray-500">Chưa có dữ liệu phân công.</div>
+            )}
+          </div>
+        </section>
+
+        {/* Tỷ lệ hao phí cắt */}
+        <section className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-6">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+                <Target className="h-5 w-5 text-cyan-400" />
+                Hiệu suất cắt nhôm
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">Tỷ lệ hao phí và phôi dư tái sử dụng từ kho phôi.</p>
+            </div>
+          </div>
+          {extData ? (
+            <div className="flex flex-col items-center gap-6">
+              {/* Radial progress rings */}
+              <div className="flex gap-8 items-center justify-center">
+                <RadialRing label="Hao phí" value={extData.cuttingEfficiency.wastePercent} color="#ef4444" />
+                <RadialRing label="Tái sử dụng" value={extData.cuttingEfficiency.reusablePercent} color="#22c55e" />
+              </div>
+              <div className="grid grid-cols-3 gap-4 w-full">
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3 text-center">
+                  <div className="text-xs text-gray-500">Tổng phôi</div>
+                  <div className="text-lg font-bold text-gray-100 mt-1">{extData.cuttingEfficiency.totalStockUsed}</div>
+                </div>
+                <div className="rounded-xl border border-red-500/10 bg-red-500/5 p-3 text-center">
+                  <div className="text-xs text-gray-500">Bỏ đi</div>
+                  <div className="text-lg font-bold text-red-400 mt-1">{extData.cuttingEfficiency.totalWaste}</div>
+                </div>
+                <div className="rounded-xl border border-emerald-500/10 bg-emerald-500/5 p-3 text-center">
+                  <div className="text-xs text-gray-500">Tái sử dụng</div>
+                  <div className="text-lg font-bold text-emerald-400 mt-1">{extData.cuttingEfficiency.totalReusable}</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-white/10 text-sm text-gray-500">Đang tải...</div>
+          )}
+        </section>
+      </div>
+
+      {/* Top 5 Khách hàng */}
+      <section className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-6">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-amber-400" />
+              Top 5 Khách hàng
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">Xếp hạng theo tổng giá trị đơn hàng.</p>
+          </div>
+        </div>
+        {extData && extData.topCustomers.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="py-3 pl-2 text-left text-xs font-bold uppercase tracking-wider text-gray-500">#</th>
+                  <th className="py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">Khách hàng</th>
+                  <th className="py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-500">Số đơn</th>
+                  <th className="py-3 pr-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">Tổng giá trị</th>
+                </tr>
+              </thead>
+              <tbody>
+                {extData.topCustomers.map((c, i) => (
+                  <tr key={c.name} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 pl-2">
+                      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                        i === 0 ? "bg-amber-500/20 text-amber-300" : i === 1 ? "bg-gray-400/20 text-gray-300" : i === 2 ? "bg-orange-500/20 text-orange-300" : "bg-white/5 text-gray-500"
+                      }`}>{i + 1}</span>
+                    </td>
+                    <td className="py-3 font-semibold text-gray-200">{c.name}</td>
+                    <td className="py-3 text-center text-gray-400">{c.totalOrders}</td>
+                    <td className="py-3 pr-2 text-right font-mono font-bold text-emerald-400">{money(c.totalValue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-white/10 text-sm text-gray-500">Chưa có dữ liệu khách hàng.</div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function RadialRing({ label, value, color }: { label: string; value: number; color: string }) {
+  const radius = 50;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (Math.min(value, 100) / 100) * circumference;
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r={radius} fill="none" stroke="#ffffff10" strokeWidth="8" />
+        <circle
+          cx="60" cy="60" r={radius} fill="none" stroke={color} strokeWidth="8"
+          strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset}
+          transform="rotate(-90 60 60)"
+          style={{ transition: "stroke-dashoffset 0.8s ease" }}
+        />
+        <text x="60" y="56" textAnchor="middle" className="fill-gray-100 text-lg font-bold" fontSize="20">{value}%</text>
+        <text x="60" y="74" textAnchor="middle" className="fill-gray-500 text-xs" fontSize="11">{label}</text>
+      </svg>
     </div>
   );
 }

@@ -3,10 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   User, Bell, ChevronRight, Zap, Target, CreditCard, Clock,
-  Activity, Scissors, ClipboardList, Package
+  Activity, Scissors, ClipboardList, Package, AlertTriangle, BarChart3
 } from "lucide-react";
 import Link from "next/link";
 import { apiData } from "@/lib/api";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+} from "recharts";
 
 interface WorkerInfo {
   hoten: string;
@@ -45,13 +48,41 @@ export default function WorkerDashboard() {
     setTodayText(new Date().toLocaleDateString("vi-VN", { weekday: "long", year: "numeric", month: "long", day: "numeric" }));
   }, []);
 
+  interface PerformanceData {
+    summary: {
+      total: number;
+      done: number;
+      active: number;
+      pending: number;
+      rejected: number;
+      issueCount: number;
+    };
+    completionRate: number;
+    recentCuts: Array<{
+      mapc: number;
+      madh: number;
+      customerName: string;
+      status: string;
+      cuttingCount: number;
+      completedCount: number;
+    }>;
+    dailyActivity: Array<{
+      date: string;
+      cuts: number;
+      issues: number;
+    }>;
+  }
+
   const [worker, setWorker] = useState<WorkerInfo | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [counts, setCounts] = useState<DashboardSummary["counts"]>({ pending: 0, active: 0, done: 0, issues: 0, unread: 0 });
   const [loading, setLoading] = useState(true);
+  const [perfData, setPerfData] = useState<PerformanceData | null>(null);
+  const [perfLoading, setPerfLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
+    setPerfLoading(true);
     try {
       const data = await apiData<DashboardSummary>("/api/worker/tasks/summary");
       setWorker(data.worker);
@@ -61,6 +92,15 @@ export default function WorkerDashboard() {
       console.error("Lỗi tải dashboard:", e);
     } finally {
       setLoading(false);
+    }
+
+    try {
+      const perf = await apiData<PerformanceData>("/api/worker/performance");
+      setPerfData(perf);
+    } catch (e) {
+      console.error("Lỗi tải worker performance:", e);
+    } finally {
+      setPerfLoading(false);
     }
   }, []);
 
@@ -239,6 +279,152 @@ export default function WorkerDashboard() {
         )}
       </div>
 
+    {/* ===== PHẦN MỞ RỘNG: HIỆU NĂNG CÁ NHÂN ===== */}
+    <div className="px-5 pb-8 space-y-6">
+      <h2 className="text-sm font-bold text-gray-100 px-1 flex items-center gap-2">
+        <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+        Hiệu Năng Cá Nhân
+      </h2>
+
+      {perfLoading ? (
+        <div className="space-y-4">
+          <div className="h-44 bg-[#12141a] rounded-3xl border border-white/5 animate-pulse" />
+          <div className="h-60 bg-[#12141a] rounded-3xl border border-white/5 animate-pulse" />
+        </div>
+      ) : !perfData ? (
+        <div className="bg-[#12141a] rounded-2xl p-6 border border-white/5 text-center">
+          <AlertTriangle className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">Không thể tải dữ liệu hiệu năng.</p>
+        </div>
+      ) : (
+        <>
+          {/* 1. Performance Summary Card */}
+          <div className="bg-[#12141a] rounded-3xl p-5 border border-white/5 space-y-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Tỷ lệ hoàn thành</h3>
+                <p className="text-2xl font-black text-white mt-1">{perfData.completionRate}%</p>
+                <p className="text-[11px] text-gray-400 mt-1">Được tính trên tổng số phân công.</p>
+              </div>
+              <div className="shrink-0">
+                <RadialRingMini value={perfData.completionRate} color="#10b981" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-2 pt-2 border-t border-white/5">
+              <MetricMiniBlock label="Tổng" value={perfData.summary.total} tone="text-gray-200 bg-white/5" />
+              <MetricMiniBlock label="Xong" value={perfData.summary.done} tone="text-emerald-400 bg-emerald-500/10" />
+              <MetricMiniBlock label="Đang làm" value={perfData.summary.active} tone="text-blue-400 bg-blue-500/10" />
+              <MetricMiniBlock label="Từ chối" value={perfData.summary.rejected} tone="text-red-400 bg-red-500/10" />
+              <MetricMiniBlock label="Sự cố" value={perfData.summary.issueCount} tone="text-amber-400 bg-amber-500/10" />
+            </div>
+          </div>
+
+          {/* 2. Hoạt động 7 ngày gần nhất */}
+          <div className="bg-[#12141a] rounded-3xl p-5 border border-white/5 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Lịch sử cắt 7 ngày qua</h3>
+                <p className="text-[11px] text-gray-500 mt-0.5">Số lần cắt nhôm thực tế tại xưởng.</p>
+              </div>
+              <BarChart3 className="w-4 h-4 text-purple-400" />
+            </div>
+            <div className="h-44 w-full">
+              {perfData.dailyActivity.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={perfData.dailyActivity} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" />
+                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} tickFormatter={(val) => {
+                      try {
+                        const parts = val.split("-");
+                        return `${parts[2]}/${parts[1]}`;
+                      } catch {
+                        return val;
+                      }
+                    }} />
+                    <YAxis stroke="#94a3b8" fontSize={9} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#111827", borderColor: "#374151", borderRadius: 12, fontSize: 11 }}
+                      itemStyle={{ color: "#f3f4f6" }}
+                      labelStyle={{ color: "#9ca3af", fontWeight: "bold" }}
+                    />
+                    <Bar dataKey="cuts" barSize={12} radius={[4, 4, 0, 0]}>
+                      {perfData.dailyActivity.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.issues > 0 ? "#ef4444" : "#3b82f6"}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs text-gray-500">Không có hoạt động.</div>
+              )}
+            </div>
+            <div className="flex items-center gap-4 mt-2 justify-center text-[10px] text-gray-500">
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                Ngày bình thường
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                Ngày có báo cáo sự cố
+              </span>
+            </div>
+          </div>
+
+          {/* 3. Lịch sử phân công gần đây */}
+          <div className="bg-[#12141a] rounded-3xl p-5 border border-white/5 shadow-sm space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Phân công gần đây</h3>
+                <p className="text-[11px] text-gray-500 mt-0.5">Tiến độ cắt phôi của 5 nhiệm vụ gần nhất.</p>
+              </div>
+              <ClipboardList className="w-4 h-4 text-orange-400" />
+            </div>
+
+            <div className="space-y-2">
+              {perfData.recentCuts.length > 0 ? (
+                perfData.recentCuts.map((item) => (
+                  <Link key={item.mapc} href="/worker/tasks" className="block">
+                    <div className="p-3 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between hover:bg-white/5 transition-colors">
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-gray-200">
+                          PC-{item.mapc} · DH-{item.madh}
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          KH: {item.customerName}
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          Tiến độ: {item.completedCount}/{item.cuttingCount} thanh sơ đồ cắt
+                        </p>
+                      </div>
+                      <div className="text-right flex flex-col items-end gap-1.5">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                          item.status === "HOAN_THANH" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                          item.status === "DANG_THUC_HIEN" ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" :
+                          item.status === "TU_CHOI" ? "bg-red-500/10 text-red-400 border border-red-500/20" :
+                          "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                        }`}>
+                          {item.status === "HOAN_THANH" ? "Xong" :
+                           item.status === "DANG_THUC_HIEN" ? "Đang làm" :
+                           item.status === "TU_CHOI" ? "Từ chối" : "Chờ làm"}
+                        </span>
+                        <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
+                      </div>
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <div className="text-center py-4 text-xs text-gray-500">Chưa có lịch sử phân công.</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+
     </div>
   );
 }
@@ -248,6 +434,35 @@ function MiniMetric({ label, value, tone }: { label: string; value: number; tone
     <div className="rounded-2xl border border-white/10 bg-white/10 px-3 py-2 backdrop-blur-sm">
       <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-100/70">{label}</div>
       <div className={`mt-0.5 text-lg font-extrabold ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function RadialRingMini({ value, color }: { value: number; color: string }) {
+  const radius = 24;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (Math.min(value, 100) / 100) * circumference;
+  return (
+    <div className="flex flex-col items-center">
+      <svg width="64" height="64" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r={radius} fill="none" stroke="#ffffff10" strokeWidth="4" />
+        <circle
+          cx="32" cy="32" r={radius} fill="none" stroke={color} strokeWidth="4"
+          strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset}
+          transform="rotate(-90 32 32)"
+          style={{ transition: "stroke-dashoffset 0.8s ease" }}
+        />
+        <text x="32" y="36" textAnchor="middle" className="fill-gray-100 text-xs font-black" fontSize="12">{Math.round(value)}%</text>
+      </svg>
+    </div>
+  );
+}
+
+function MetricMiniBlock({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <div className={`p-2 rounded-xl text-center border border-white/5 ${tone}`}>
+      <div className="text-[9px] font-bold uppercase tracking-wider opacity-80">{label}</div>
+      <div className="text-sm font-black mt-0.5">{value}</div>
     </div>
   );
 }

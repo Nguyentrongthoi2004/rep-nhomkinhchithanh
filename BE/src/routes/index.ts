@@ -38,6 +38,7 @@ import {
 import { usersRouter } from "@/modules/users/users.routes";
 import { workerTasksRouter } from "@/modules/worker-tasks/worker-tasks.routes";
 import { rulesRouter } from "@/modules/rules/rules.routes";
+import { adminDashboardRouter, workerDashboardRouter } from "@/modules/dashboard/dashboard.routes";
 
 // Đăng ký tất cả đường dẫn API của hệ thống Mini-ERP.
 // Phân chia theo 3 nhóm: công khai (xác thực, kiểm tra sức khỏe), quản trị viên (/admin/*), thợ (/worker/*).
@@ -69,6 +70,7 @@ apiRouter.use("/admin/raw-stock", adminRawStockRouter);
 apiRouter.use("/admin/rules", rulesRouter);
 apiRouter.use("/admin/seed", adminSeedRouter);
 apiRouter.use("/admin/users", usersRouter);
+apiRouter.use("/admin/dashboard-stats", adminDashboardRouter);
 
 // --- Nhóm thợ: yêu cầu authMiddleware + requireRole("WORKER") ---
 apiRouter.use("/worker/cutting-plans", workerCuttingPlansRouter);
@@ -77,3 +79,4 @@ apiRouter.use("/worker/images", workerImagesRouter);
 apiRouter.use("/worker/notifications", notificationsRouter);
 apiRouter.use("/worker/raw-stock", workerRawStockRouter);
 apiRouter.use("/worker/tasks", workerTasksRouter);
+apiRouter.use("/worker/performance", workerDashboardRouter);
