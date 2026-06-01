@@ -1,6 +1,8 @@
 import { HttpError } from "@/lib/http";
 import { supabaseAdmin } from "@/lib/supabase";
 import { notificationsService } from "@/modules/notifications/notifications.service";
+import { isTerminalOrderState } from "@/modules/orders/orders.service";
+import { activityLogsService } from "@/modules/activity-logs/activity-logs.service";
 import type { ReportIssueDto, SubmitProposalDto, TrimIssueDto } from "./cutting-plans.schema";
 
 type BomItem = {
@@ -894,8 +896,11 @@ export const cuttingPlansService = {
   },
 
   // Tạo sơ đồ cắt cho phân công: lấy BOM → expandPieces → planCuts (FFD) → lưu vào sodocat + chitietcat
-  async createForAssignment(mapc: number) {
+  async createForAssignment(mapc: number, actorId?: number) {
     const assignment = await getAssignment(mapc);
+    if (assignment.donhang?.trangthai && isTerminalOrderState(assignment.donhang.trangthai)) {
+      throw HttpError.badRequest("Đơn hàng liên kết đã hoàn thành hoặc đã hủy, không thể tạo sơ đồ cắt");
+    }
     if (["KHAO_SAT", "BAO_GIA_NHAP"].includes(assignment.donhang?.trangthai as string)) {
       throw HttpError.badRequest("Cần duyệt giá đơn hàng trước khi tạo sơ đồ cắt");
     }
@@ -967,6 +972,18 @@ export const cuttingPlansService = {
     if (cutErr) throw HttpError.internal(cutErr.message);
 
     const plans = await listPlansForAssignment(mapc);
+    void activityLogsService.record({
+      userId: actorId ?? null,
+      action: "CUTTING_PLAN_CREATED",
+      targetType: "phancong",
+      targetId: mapc,
+      details: {
+        madh: assignment.madh,
+        planCount: plans.length,
+        totalRequiredLength: metrics.totalRequiredLength,
+        totalKerfLoss: metrics.totalKerfLoss,
+      },
+    });
     return { plans, metrics };
   },
 
@@ -974,22 +991,33 @@ export const cuttingPlansService = {
   async completePlan(masdc: number, matho: number) {
     const { data: plan, error } = await supabaseAdmin
       .from("sodocat")
-      .select("masdc, mapc, maphoi, trangthai, khothanhphoi:maphoi(chieudaihientai, trangthai), phancong:mapc(matho), chitietcat(mactc, chieudaicat, trangthai)")
+      .select("masdc, mapc, maphoi, trangthai, khothanhphoi:maphoi(chieudaihientai, trangthai), phancong:mapc(matho, madh, donhang:madh(trangthai)), chitietcat(mactc, chieudaicat, trangthai)")
       .eq("masdc", masdc)
       .maybeSingle();
     if (error) throw HttpError.internal(error.message);
     if (!plan) throw HttpError.notFound(`Cutting plan ${masdc} not found`);
 
-    const typed = plan as unknown as {
+    interface CuttingPlanWithOrder {
       masdc: number;
       mapc: number;
       maphoi: number;
       trangthai: string;
       khothanhphoi: { chieudaihientai: number; trangthai: string } | null;
-      phancong: { matho: number } | null;
+      phancong: {
+        matho: number;
+        madh: number;
+        donhang: { trangthai: string } | null;
+      } | null;
       chitietcat: Array<{ mactc: number; chieudaicat: number; trangthai: string }>;
-    };
+    }
+    const typed = plan as unknown as CuttingPlanWithOrder;
     if (typed.phancong?.matho !== matho) throw HttpError.forbidden("Cutting plan is not assigned to this worker");
+
+    const orderStatus = typed.phancong?.donhang?.trangthai;
+    if (orderStatus && isTerminalOrderState(orderStatus)) {
+      throw HttpError.badRequest("Đơn hàng liên kết đã hoàn thành hoặc đã hủy, không thể xác nhận hoàn thành sơ đồ cắt");
+    }
+
     if (typed.trangthai === "HOAN_THANH") {
       throw HttpError.badRequest("Sơ đồ cắt này đã hoàn thành, không thể xác nhận lại");
     }
@@ -1063,19 +1091,29 @@ export const cuttingPlansService = {
   async reportIssue(masdc: number, matho: number, input: ReportIssueDto) {
     const { data: plan, error } = await supabaseAdmin
       .from("sodocat")
-      .select("masdc, mapc, maphoi, trangthai, khothanhphoi:maphoi(chieudaihientai, trangthai), phancong:mapc(matho, madh)")
+      .select("masdc, mapc, maphoi, trangthai, khothanhphoi:maphoi(chieudaihientai, trangthai), phancong:mapc(matho, madh, donhang:madh(trangthai))")
       .eq("masdc", masdc)
       .maybeSingle();
     if (error) throw HttpError.internal(error.message);
     if (!plan) throw HttpError.notFound(`Cutting plan ${masdc} not found`);
-    const typed = plan as unknown as {
+    interface CuttingPlanReportWithOrder {
       mapc: number;
       maphoi: number;
       trangthai: string;
       khothanhphoi: { chieudaihientai: number; trangthai: string } | null;
-      phancong: { matho: number; madh: number } | null;
-    };
+      phancong: {
+        matho: number;
+        madh: number;
+        donhang: { trangthai: string } | null;
+      } | null;
+    }
+    const typed = plan as unknown as CuttingPlanReportWithOrder;
     if (typed.phancong?.matho !== matho) throw HttpError.forbidden("Cutting plan is not assigned to this worker");
+
+    const orderStatus = typed.phancong?.donhang?.trangthai;
+    if (orderStatus && isTerminalOrderState(orderStatus)) {
+      throw HttpError.badRequest("Đơn hàng liên kết đã hoàn thành hoặc đã hủy, không thể báo sự cố");
+    }
     if (typed.trangthai === "HOAN_THANH") {
       throw HttpError.badRequest("Sơ đồ cắt này đã hoàn thành, không thể báo thêm sự cố");
     }
@@ -1137,6 +1175,9 @@ export const cuttingPlansService = {
   // --- DOT 4: PROPOSAL API ---
   async submitProposal(mapc: number, matho: number, dto: SubmitProposalDto) {
     const assignment = await getAssignment(mapc);
+    if (assignment.donhang?.trangthai && isTerminalOrderState(assignment.donhang.trangthai)) {
+      throw HttpError.badRequest("Đơn hàng liên kết đã hoàn thành hoặc đã hủy, không thể gửi đề xuất cắt");
+    }
     if (assignment.matho !== matho) throw HttpError.forbidden("Ban khong duoc phan cong don nay");
 
     const bomItems = assignment.donhang?.chitietdh ?? [];
@@ -1434,6 +1475,28 @@ export const cuttingPlansService = {
   },
 
   async approveProposal(madxc: number, adminId: number, ghichu?: string) {
+    const { data: proposal, error: propErr } = await supabaseAdmin
+      .from("dexuatcat")
+      .select("madxc, mapc, phancong:mapc(madh, donhang:madh(trangthai))")
+      .eq("madxc", madxc)
+      .maybeSingle();
+    if (propErr) throw HttpError.internal(propErr.message);
+    if (!proposal) throw HttpError.notFound("Không tìm thấy đề xuất cắt");
+
+    interface ProposalWithOrder {
+      madxc: number;
+      mapc: number;
+      phancong: {
+        madh: number;
+        donhang: { trangthai: string } | null;
+      } | null;
+    }
+    const typed = proposal as unknown as ProposalWithOrder;
+    const orderStatus = typed.phancong?.donhang?.trangthai;
+    if (orderStatus && isTerminalOrderState(orderStatus)) {
+      throw HttpError.badRequest("Đơn hàng liên kết đã hoàn thành hoặc đã hủy, không thể duyệt đề xuất cắt");
+    }
+
     const { data, error } = await supabaseAdmin.rpc("approve_cutting_proposal", {
       p_proposal_id: madxc,
       p_admin_id: adminId,
@@ -1444,6 +1507,28 @@ export const cuttingPlansService = {
   },
 
   async rejectProposal(madxc: number, adminId: number, ghichu?: string) {
+    const { data: proposal, error: propErr } = await supabaseAdmin
+      .from("dexuatcat")
+      .select("madxc, mapc, phancong:mapc(madh, donhang:madh(trangthai))")
+      .eq("madxc", madxc)
+      .maybeSingle();
+    if (propErr) throw HttpError.internal(propErr.message);
+    if (!proposal) throw HttpError.notFound("Không tìm thấy đề xuất cắt");
+
+    interface ProposalWithOrder {
+      madxc: number;
+      mapc: number;
+      phancong: {
+        madh: number;
+        donhang: { trangthai: string } | null;
+      } | null;
+    }
+    const typed = proposal as unknown as ProposalWithOrder;
+    const orderStatus = typed.phancong?.donhang?.trangthai;
+    if (orderStatus && isTerminalOrderState(orderStatus)) {
+      throw HttpError.badRequest("Đơn hàng liên kết đã hoàn thành hoặc đã hủy, không thể từ chối đề xuất cắt");
+    }
+
     const { data, error } = await supabaseAdmin.rpc("reject_cutting_proposal", {
       p_proposal_id: madxc,
       p_admin_id: adminId,

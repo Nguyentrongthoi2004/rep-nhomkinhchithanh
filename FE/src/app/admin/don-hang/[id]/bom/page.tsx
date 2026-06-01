@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, ClipboardList, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { apiData, apiJson } from "@/lib/api";
+import { calculateQuoteLabor } from "@/lib/quote-pricing";
 
 type MaterialOption = {
   mavt: number;
@@ -155,7 +156,6 @@ export default function OrderBomPage() {
   const [frameId, setFrameId] = useState(0);
   const [wingId, setWingId] = useState(0);
   const [glassId, setGlassId] = useState(0);
-  const [laborPerSqm, setLaborPerSqm] = useState(350000);
   const [margin, setMargin] = useState(15);
   const [saving, setSaving] = useState(false);
   const [manualLines, setManualLines] = useState<ManualLine[]>([]);
@@ -255,17 +255,23 @@ export default function OrderBomPage() {
   );
   const doorDims = useMemo(() => (hasSize ? calcDoorDims(Number(width), Number(height)) : null), [hasSize, height, width]);
 
-  const sqm = useMemo(() => {
-    const doorSqm = mode === "DOOR_TEMPLATE" && hasSize ? (Number(width) * Number(height)) / 1_000_000 : 0;
-    const manualSqm = manualBom.reduce((sum, it) => {
-      if (it.w !== undefined && it.h !== undefined) return sum + (it.w * it.h * it.qty) / 1_000_000;
-      return sum;
-    }, 0);
-    return doorSqm + manualSqm;
-  }, [hasSize, height, manualBom, mode, width]);
-
   const materialTotal = useMemo(() => bom.reduce((sum, item) => sum + (item.unitPrice || 0) * item.qty, 0), [bom]);
-  const laborTotal = Math.round(sqm * laborPerSqm);
+  const doorAreaSqm = mode === "DOOR_TEMPLATE" && hasSize ? (Number(width) * Number(height)) / 1_000_000 : 0;
+  const labor = useMemo(
+    () =>
+      calculateQuoteLabor(
+        bom.map((item) => ({
+          name: item.name,
+          length: item.length ?? null,
+          w: item.w ?? null,
+          h: item.h ?? null,
+          qty: item.qty,
+        })),
+        doorAreaSqm,
+      ),
+    [bom, doorAreaSqm],
+  );
+  const laborTotal = labor.total;
   const quoteTotal = Math.round((materialTotal + laborTotal) * (1 + margin / 100));
 
   const saveBom = async () => {
@@ -481,8 +487,13 @@ export default function OrderBomPage() {
           </Card>
 
           <Card title="Cấu hình tạm tính">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <NumberInput label="Nhân công / m²" value={laborPerSqm} onChange={(v) => setLaborPerSqm(v === "" ? 0 : v)} />
+            <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm">
+              <Line label={`Gia công xưởng (${labor.linearMeters.toFixed(2)} m dài)`} value={money(labor.fabrication)} />
+              <Line label={`Xử lý kính/tấm (${labor.sheetSqm.toFixed(2)} m²)`} value={money(labor.glassHandling)} />
+              <Line label={`Lắp đặt (${labor.installationAreaSqm.toFixed(2)} m²)`} value={money(labor.installation)} />
+              <Line label="Khảo sát / di chuyển" value={money(labor.siteSetup)} />
+            </div>
+            <div className="mt-4">
               <NumberInput label="Lợi nhuận (%)" value={margin} onChange={(v) => setMargin(v === "" ? 0 : v)} />
             </div>
           </Card>
@@ -533,7 +544,7 @@ export default function OrderBomPage() {
 
             <div className="mt-5 space-y-2 text-sm">
               <Line label="Vật tư" value={money(materialTotal)} />
-              <Line label={`Nhân công (${sqm.toFixed(2)} m²)`} value={money(laborTotal)} />
+              <Line label="Nhân công" value={money(laborTotal)} />
               <Line label={`Lợi nhuận (${margin}%)`} value={money(quoteTotal - materialTotal - laborTotal)} />
             </div>
 

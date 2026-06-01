@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   User, Bell, ChevronRight, Zap, Target, CreditCard, Clock,
   Activity, Scissors, ClipboardList, Package, AlertTriangle, BarChart3
 } from "lucide-react";
 import Link from "next/link";
 import { apiData } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from "recharts";
@@ -37,6 +38,12 @@ interface DashboardSummary {
 }
 
 export default function WorkerDashboard() {
+  const supabase = useMemo(() => createClient(), []);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [greeting, setGreeting] = useState("Xin chào");
   const [todayText, setTodayText] = useState("");
   useEffect(() => {
@@ -49,6 +56,12 @@ export default function WorkerDashboard() {
   }, []);
 
   interface PerformanceData {
+    totalAssignments: number;
+    activeAssignments: number;
+    completedAssignments: number;
+    rejectedAssignments: number;
+    issueCount: number;
+    weeklyCutsCount: number;
     summary: {
       total: number;
       done: number;
@@ -79,6 +92,7 @@ export default function WorkerDashboard() {
   const [loading, setLoading] = useState(true);
   const [perfData, setPerfData] = useState<PerformanceData | null>(null);
   const [perfLoading, setPerfLoading] = useState(true);
+  const [workerId, setWorkerId] = useState<number | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -105,6 +119,60 @@ export default function WorkerDashboard() {
   }, []);
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+
+  const resolveWorkerId = useCallback(async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userEmail = sessionData.session?.user?.email;
+      if (!userEmail) {
+        setWorkerId(null);
+        return;
+      }
+
+      const { data: userRow } = await supabase
+        .from("nguoidung")
+        .select("mand")
+        .eq("tendangnhap", userEmail)
+        .single();
+
+      const row = userRow as { mand?: number | string | null } | null;
+      const nextWorkerId = Number(row?.mand);
+      setWorkerId(Number.isFinite(nextWorkerId) && nextWorkerId > 0 ? nextWorkerId : null);
+    } catch (e) {
+      console.error("Lỗi xác định mã thợ realtime:", e);
+      setWorkerId(null);
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    void resolveWorkerId();
+  }, [resolveWorkerId]);
+
+  useEffect(() => {
+    if (!workerId) return;
+
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        void fetchDashboard();
+      }, 500);
+    };
+
+    const workerFilter = `matho=eq.${workerId}`;
+    const channel = supabase
+      .channel(`worker-dashboard-realtime-${workerId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "phancong", filter: workerFilter }, scheduleRefresh)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "phancong", filter: workerFilter }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "nhatkygiacong", filter: workerFilter }, scheduleRefresh)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "nhatkygiacong", filter: workerFilter }, scheduleRefresh)
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [fetchDashboard, supabase, workerId]);
 
   const activeTasks = assignments.filter(a => a.trangthai === "DANG_THUC_HIEN");
   const pendingTasks = assignments.filter(a => a.trangthai === "CHO_THUC_HIEN");
@@ -232,6 +300,26 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Phân công đang thực hiện */}
+      <div className="px-5 pb-6">
+        <h2 className="text-sm font-bold text-gray-100 mb-4 px-1">Chỉ Số Công Việc</h2>
+        {perfLoading ? (
+          <div className="grid grid-cols-2 gap-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-24 rounded-2xl border border-white/5 bg-[#12141a] animate-pulse" />
+            ))}
+          </div>
+        ) : perfData ? (
+          <div className="grid grid-cols-2 gap-3">
+            <WorkerKpiCard label="Tổng việc" value={perfData.totalAssignments} tone="text-gray-100 bg-white/5 border-white/10" />
+            <WorkerKpiCard label="Đang làm" value={perfData.activeAssignments} tone="text-sky-300 bg-sky-500/10 border-sky-500/20" />
+            <WorkerKpiCard label="Hoàn thành" value={perfData.completedAssignments} tone="text-emerald-300 bg-emerald-500/10 border-emerald-500/20" />
+            <WorkerKpiCard label="Cắt tuần này" value={perfData.weeklyCutsCount} tone="text-amber-300 bg-amber-500/10 border-amber-500/20" />
+            <WorkerKpiCard label="Từ chối" value={perfData.rejectedAssignments} tone="text-red-300 bg-red-500/10 border-red-500/20" />
+            <WorkerKpiCard label="Sự cố" value={perfData.issueCount} tone="text-orange-300 bg-orange-500/10 border-orange-500/20" />
+          </div>
+        ) : null}
+      </div>
+
       <div className="px-5 space-y-3 pb-8">
         <h2 className="text-sm font-bold text-gray-100 mb-3 px-1">Đang Thực Hiện</h2>
 
@@ -252,7 +340,7 @@ export default function WorkerDashboard() {
           </div>
         ) : (
           assignments.map(a => (
-            <Link key={a.mapc} href="/worker/tasks">
+            <Link key={a.mapc} href={`/worker/tasks?mapc=${a.mapc}`}>
               <div className="bg-[#12141a] rounded-xl p-4 border border-white/5 flex items-center justify-between shadow-sm active:scale-95 transition-transform">
                 <div className="flex items-center">
                   <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center border border-blue-500/20 mr-3">
@@ -289,7 +377,7 @@ export default function WorkerDashboard() {
       {perfLoading ? (
         <div className="space-y-4">
           <div className="h-44 bg-[#12141a] rounded-3xl border border-white/5 animate-pulse" />
-          <div className="h-60 bg-[#12141a] rounded-3xl border border-white/5 animate-pulse" />
+          <div className="h-[370px] bg-[#12141a] rounded-3xl border border-white/5 animate-pulse" />
         </div>
       ) : !perfData ? (
         <div className="bg-[#12141a] rounded-2xl p-6 border border-white/5 text-center">
@@ -329,8 +417,10 @@ export default function WorkerDashboard() {
               </div>
               <BarChart3 className="w-4 h-4 text-purple-400" />
             </div>
-            <div className="h-44 w-full">
-              {perfData.dailyActivity.length > 0 ? (
+            <div className="h-[260px] w-full min-w-0">
+              {!mounted ? (
+                <div className="w-full h-full" />
+              ) : perfData.dailyActivity.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={perfData.dailyActivity} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" />
@@ -387,7 +477,7 @@ export default function WorkerDashboard() {
             <div className="space-y-2">
               {perfData.recentCuts.length > 0 ? (
                 perfData.recentCuts.map((item) => (
-                  <Link key={item.mapc} href="/worker/tasks" className="block">
+                  <Link key={item.mapc} href={`/worker/tasks?mapc=${item.mapc}`} className="block">
                     <div className="p-3 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between hover:bg-white/5 transition-colors">
                       <div className="space-y-1">
                         <p className="text-xs font-bold text-gray-200">
@@ -434,6 +524,15 @@ function MiniMetric({ label, value, tone }: { label: string; value: number; tone
     <div className="rounded-2xl border border-white/10 bg-white/10 px-3 py-2 backdrop-blur-sm">
       <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-100/70">{label}</div>
       <div className={`mt-0.5 text-lg font-extrabold ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function WorkerKpiCard({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <div className={`rounded-2xl border px-3 py-3 ${tone}`}>
+      <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">{label}</div>
+      <div className="mt-1 font-mono text-2xl font-black">{value}</div>
     </div>
   );
 }

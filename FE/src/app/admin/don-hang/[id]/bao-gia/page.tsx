@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, FileText, Loader2, Mail, Printer, X } from "lucide-react";
 import { apiData, apiJson } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
+import { calculateQuoteLabor } from "@/lib/quote-pricing";
 
 type OrderDetail = {
   madh: number;
@@ -91,6 +92,21 @@ export default function QuotePage() {
 
   const materialTotal = useMemo(() => (order?.chitietdh ?? []).reduce((sum, it) => sum + Number(it.thanhtien ?? 0), 0), [order]);
   const quoteGap = order ? Math.round(Number(order.tonggiatri || 0) - materialTotal) : 0;
+  const labor = useMemo(
+    () =>
+      calculateQuoteLabor(
+        (order?.chitietdh ?? []).map((item) => ({
+          name: item.mota ?? item.vattu?.tenvt ?? null,
+          unit: item.vattu?.donvitinh ?? null,
+          length: item.chieudaicat,
+          qty: item.soluong,
+        })),
+      ),
+    [order],
+  );
+  const displayedLaborTotal = quoteGap > 0 ? Math.min(labor.total, quoteGap) : 0;
+  const profitOrAdjustment = Math.round(quoteGap - displayedLaborTotal);
+  const showLaborBreakdown = displayedLaborTotal === labor.total && labor.total > 0;
   const hasBom = (order?.chitietdh?.length ?? 0) > 0;
   const quoteSent = Boolean(order?.baogia_gui_luc);
 
@@ -124,8 +140,8 @@ export default function QuotePage() {
           doorType: null,
           width: null,
           height: null,
-          laborCost: null,
-          margin: null,
+          laborCost: displayedLaborTotal || null,
+          margin: profitOrAdjustment || null,
         }),
       });
       const data = json.data as { messageId: string; previewUrl: string | null };
@@ -240,7 +256,12 @@ export default function QuotePage() {
                   <div className="mt-6 flex justify-end">
                     <div className="w-full max-w-sm space-y-2 text-sm">
                       <Line label="Vật tư" value={money(materialTotal)} />
-                      {Math.abs(quoteGap) > 10 && <Line label="Nhân công & lợi nhuận" value={money(quoteGap)} />}
+                      {displayedLaborTotal > 10 && <Line label="Nhân công" value={money(displayedLaborTotal)} />}
+                      {showLaborBreakdown && labor.fabrication > 10 && <Line label={`- Gia công (${labor.linearMeters.toFixed(2)} m dài)`} value={money(labor.fabrication)} />}
+                      {showLaborBreakdown && labor.glassHandling > 10 && <Line label={`- Kính/tấm (${labor.sheetSqm.toFixed(2)} m²)`} value={money(labor.glassHandling)} />}
+                      {showLaborBreakdown && labor.installation > 10 && <Line label={`- Lắp đặt (${labor.installationAreaSqm.toFixed(2)} m²)`} value={money(labor.installation)} />}
+                      {showLaborBreakdown && labor.siteSetup > 10 && <Line label="- Khảo sát / di chuyển" value={money(labor.siteSetup)} />}
+                      {Math.abs(profitOrAdjustment) > 10 && <Line label="Lợi nhuận / điều chỉnh" value={money(profitOrAdjustment)} />}
                       <div className="flex justify-between border-t border-white/10 pt-3 text-lg font-bold print:border-gray-300">
                         <span>Tổng cộng</span>
                         <span>{money(order.tonggiatri)}</span>

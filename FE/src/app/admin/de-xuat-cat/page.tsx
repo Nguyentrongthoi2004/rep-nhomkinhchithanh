@@ -1,8 +1,25 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardList, CheckCircle2, Loader2, RefreshCw, Eye, Check, X, AlertTriangle, HelpCircle, Info, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  ClipboardList,
+  Eye,
+  Gauge,
+  HelpCircle,
+  Info,
+  Loader2,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  TrendingDown,
+  TrendingUp,
+  X,
+  XCircle,
+} from "lucide-react";
 import { 
   adminListCuttingProposals, 
   adminGetCuttingProposalDetail, 
@@ -18,7 +35,9 @@ type ProposalSummary = {
   trangthai: "CHO_DUYET" | "DA_DUYET" | "TU_CHOI" | "HET_HIEU_LUC";
   lydodexuat: string | null;
   admin_ghichu: string | null;
+  tonghaohut_cu: number | null;
   tonghaohut_moi: number | null;
+  tiletandung_cu: number | null;
   tiletandung_moi: number | null;
   score_moi: number | null;
   metrics_moi: any;
@@ -28,9 +47,33 @@ type ProposalSummary = {
   } | null;
 };
 
+type StatusFilter = "ALL" | ProposalSummary["trangthai"];
+type DecisionFilter = "ALL" | "NEN_DUYET" | "CAN_XEM_XET" | "KHONG_NEN_DUYET";
+type SortMode = "priority" | "newest" | "score" | "utilization";
+
 function formatScore(score: number | null | undefined): string {
   if (score == null || !Number.isFinite(Number(score))) return "—";
   return Math.round(Number(score)).toLocaleString("vi-VN");
+}
+
+function formatMm(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  return `${Math.round(Number(value)).toLocaleString("vi-VN")} mm`;
+}
+
+function formatPercent(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  return `${Number(value).toFixed(1)}%`;
+}
+
+function numberValue(value: number | null | undefined) {
+  return value == null || !Number.isFinite(Number(value)) ? null : Number(value);
+}
+
+function deltaValue(before: number | null | undefined, after: number | null | undefined) {
+  const b = numberValue(before);
+  const a = numberValue(after);
+  return b == null || a == null ? null : a - b;
 }
 
 function scoreColor(score: number | null | undefined): string {
@@ -63,6 +106,40 @@ function loaiPhanDuLabel(loai: string | null | undefined): { text: string; cls: 
       return { text: loai || "—", cls: "text-gray-400 bg-gray-500/10 border-gray-500/20" };
   }
 }
+
+function proposalDecision(detail: any): "NEN_DUYET" | "CAN_XEM_XET" | "KHONG_NEN_DUYET" {
+  return evaluateProposal(detail)?.status ?? "CAN_XEM_XET";
+}
+
+function decisionBadge(decision: DecisionFilter) {
+  switch (decision) {
+    case "NEN_DUYET":
+      return { text: "Nên duyệt", cls: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
+    case "KHONG_NEN_DUYET":
+      return { text: "Rủi ro cao", cls: "border-rose-500/25 bg-rose-500/10 text-rose-300" };
+    case "CAN_XEM_XET":
+      return { text: "Cần xem xét", cls: "border-amber-500/25 bg-amber-500/10 text-amber-300" };
+    default:
+      return { text: "Tất cả", cls: "border-white/10 bg-white/5 text-gray-300" };
+  }
+}
+
+function priorityRank(proposal: ProposalSummary) {
+  if (proposal.trangthai !== "CHO_DUYET") return 10;
+  const decision = proposalDecision(proposal);
+  if (decision === "KHONG_NEN_DUYET") return 0;
+  if (decision === "NEN_DUYET") return 1;
+  return 2;
+}
+
+const PROPOSAL_CUT_COLORS = [
+  "bg-sky-500/75",
+  "bg-emerald-500/75",
+  "bg-amber-500/75",
+  "bg-violet-500/75",
+  "bg-rose-500/75",
+  "bg-cyan-500/75",
+];
 
 function getStatusReasonText(status: string | null | undefined): string {
   switch (status) {
@@ -191,6 +268,162 @@ function evaluateProposal(detail: any) {
   return { status, colorClass, title, reasons: displayedReasons };
 }
 
+function ReviewStat({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof ClipboardList;
+  label: string;
+  value: string | number;
+  tone: "sky" | "amber" | "rose" | "emerald";
+}) {
+  const tones = {
+    sky: "border-sky-500/20 bg-sky-500/10 text-sky-300",
+    amber: "border-amber-500/20 bg-amber-500/10 text-amber-300",
+    rose: "border-rose-500/20 bg-rose-500/10 text-rose-300",
+    emerald: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
+  };
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4">
+      <div className="flex items-center gap-3">
+        <div className={`rounded-xl border p-2.5 ${tones[tone]}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <div className="text-xs font-bold uppercase tracking-wider text-gray-500">{label}</div>
+          <div className="mt-1 text-xl font-bold text-gray-100">{value}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilterBox({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode }) {
+  return (
+    <label className="min-w-[170px]">
+      <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-gray-500">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-gray-100 outline-none focus:border-sky-400"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function MiniReviewMetric({
+  label,
+  value,
+  delta,
+  positiveWhen,
+  suffix = "",
+}: {
+  label: string;
+  value: string;
+  delta?: number | null;
+  positiveWhen?: "up" | "down";
+  suffix?: string;
+}) {
+  const hasDelta = delta != null && Number.isFinite(delta) && delta !== 0;
+  const positive = hasDelta && positiveWhen ? (positiveWhen === "up" ? delta > 0 : delta < 0) : false;
+  const Icon = !hasDelta ? null : delta > 0 ? TrendingUp : TrendingDown;
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+      <div className="text-[11px] text-gray-500">{label}</div>
+      <div className="mt-0.5 truncate text-sm font-bold text-gray-100">{value}</div>
+      {hasDelta && Icon ? (
+        <div className={`mt-1 flex items-center text-[10px] font-bold ${positive ? "text-emerald-300" : "text-amber-300"}`}>
+          <Icon className="mr-1 h-3 w-3" />
+          {delta > 0 ? "+" : ""}
+          {Math.abs(delta) >= 10 ? Math.round(delta).toLocaleString("vi-VN") : delta.toFixed(1)}
+          {suffix}
+        </div>
+      ) : (
+        <div className="mt-1 text-[10px] text-gray-600">Không đổi</div>
+      )}
+    </div>
+  );
+}
+
+function CompareMetric({
+  label,
+  before,
+  after,
+  delta,
+  positiveWhen,
+  suffix = "",
+}: {
+  label: string;
+  before: string;
+  after: string;
+  delta: number | null;
+  positiveWhen: "up" | "down";
+  suffix?: string;
+}) {
+  const hasDelta = delta != null && Number.isFinite(delta) && delta !== 0;
+  const positive = hasDelta ? (positiveWhen === "up" ? delta > 0 : delta < 0) : false;
+  const Icon = !hasDelta ? Gauge : delta > 0 ? TrendingUp : TrendingDown;
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+      <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{label}</div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <div className="text-gray-600">Cũ</div>
+          <div className="mt-0.5 font-mono font-bold text-gray-300">{before}</div>
+        </div>
+        <div>
+          <div className="text-gray-600">Mới</div>
+          <div className="mt-0.5 font-mono font-bold text-gray-100">{after}</div>
+        </div>
+      </div>
+      <div className={`mt-2 inline-flex items-center rounded-lg border px-2 py-1 text-[11px] font-bold ${hasDelta ? (positive ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" : "border-amber-500/25 bg-amber-500/10 text-amber-300") : "border-white/10 bg-white/5 text-gray-400"}`}>
+        <Icon className="mr-1 h-3 w-3" />
+        {hasDelta ? `${delta > 0 ? "+" : ""}${Math.abs(delta) >= 10 ? Math.round(delta).toLocaleString("vi-VN") : delta.toFixed(1)}${suffix}` : "Không đổi"}
+      </div>
+    </div>
+  );
+}
+
+function ProposalBarDiagram({ group }: { group: any }) {
+  const barLength = Number(group.chieudaiphoi_truoccat || 0);
+  if (!barLength || barLength <= 0) return null;
+  const cuts = group.cuts ?? [];
+  const remainder = Math.max(0, Number(group.phandu_saucat || 0));
+  return (
+    <div className="px-4 py-3">
+      <div className="mb-2 flex items-center justify-between text-[11px] text-gray-500">
+        <span>Sơ đồ đề xuất</span>
+        <span>
+          Cắt <b className="text-gray-200">{cuts.length}</b> nhát · Dư <b className={remainder >= 1500 ? "text-emerald-300" : remainder > 0 ? "text-amber-300" : "text-gray-400"}>{formatMm(remainder)}</b>
+        </span>
+      </div>
+      <div className="flex h-14 overflow-hidden rounded-xl border border-white/10 bg-black/35">
+        {cuts.map((cut: any, index: number) => {
+          const width = Math.max(7, (Number(cut.chieudaicat || 0) / barLength) * 100);
+          return (
+            <div
+              key={cut.mactdxc || `${cut.maphoi}-${cut.thutucat}-${index}`}
+              className={`flex min-w-[52px] flex-col items-center justify-center border-r border-black/40 text-[10px] font-bold text-white ${PROPOSAL_CUT_COLORS[index % PROPOSAL_CUT_COLORS.length]}`}
+              style={{ width: `${width}%` }}
+              title={`#${cut.thutucat}: CT-${cut.mactdh} - ${formatMm(cut.chieudaicat)}`}
+            >
+              <span>#{cut.thutucat}</span>
+              <span>{Math.round(Number(cut.chieudaicat || 0)).toLocaleString("vi-VN")}</span>
+            </div>
+          );
+        })}
+        <div className="flex min-w-[58px] flex-1 items-center justify-center bg-amber-500/15 px-2 text-center text-[10px] font-bold text-amber-200">
+          {remainder > 0 ? `Dư ${Math.round(remainder).toLocaleString("vi-VN")}` : "Dư 0"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminProposalsPage() {
   const [proposals, setProposals] = useState<ProposalSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,6 +439,10 @@ export default function AdminProposalsPage() {
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showScoreTooltip, setShowScoreTooltip] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("ALL");
+  const [sortMode, setSortMode] = useState<SortMode>("priority");
+  const [query, setQuery] = useState("");
 
   const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
     setToast({ message, type });
@@ -320,6 +557,48 @@ export default function AdminProposalsPage() {
     }));
   }, [detail]);
 
+  const proposalStats = useMemo(() => {
+    const pending = proposals.filter((proposal) => proposal.trangthai === "CHO_DUYET");
+    const approved = proposals.filter((proposal) => proposal.trangthai === "DA_DUYET");
+    const risky = proposals.filter((proposal) => proposal.trangthai === "CHO_DUYET" && proposalDecision(proposal) === "KHONG_NEN_DUYET");
+    const averageUtilization =
+      proposals.length > 0
+        ? proposals.reduce((sum, proposal) => sum + (numberValue(proposal.tiletandung_moi) ?? 0), 0) / proposals.length
+        : null;
+    return {
+      total: proposals.length,
+      pending: pending.length,
+      approved: approved.length,
+      risky: risky.length,
+      averageUtilization,
+    };
+  }, [proposals]);
+
+  const visibleProposals = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return proposals
+      .filter((proposal) => statusFilter === "ALL" || proposal.trangthai === statusFilter)
+      .filter((proposal) => decisionFilter === "ALL" || proposalDecision(proposal) === decisionFilter)
+      .filter((proposal) => {
+        if (!keyword) return true;
+        return [
+          `#${proposal.madxc}`,
+          `pc-${proposal.mapc}`,
+          proposal.phancong?.madh ? `dh-${proposal.phancong.madh}` : "",
+          proposal.nguoidung?.hoten ?? "",
+          proposal.lydodexuat ?? "",
+          proposal.trangthai,
+        ].join(" ").toLowerCase().includes(keyword);
+      })
+      .sort((a, b) => {
+        if (sortMode === "newest") return new Date(b.ngaytao).getTime() - new Date(a.ngaytao).getTime();
+        if (sortMode === "score") return (numberValue(b.score_moi) ?? -999999) - (numberValue(a.score_moi) ?? -999999);
+        if (sortMode === "utilization") return (numberValue(b.tiletandung_moi) ?? -1) - (numberValue(a.tiletandung_moi) ?? -1);
+        const priority = priorityRank(a) - priorityRank(b);
+        return priority || new Date(b.ngaytao).getTime() - new Date(a.ngaytao).getTime();
+      });
+  }, [decisionFilter, proposals, query, sortMode, statusFilter]);
+
   return (
     <div className="space-y-6 pb-20 relative">
       <div className="admin-metal-panel border border-white/10 rounded-2xl p-6 flex items-center justify-between gap-4 relative overflow-hidden">
@@ -339,6 +618,46 @@ export default function AdminProposalsPage() {
 
       {errorMsg && <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 text-sm">{errorMsg}</div>}
 
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <ReviewStat icon={ClipboardList} label="Tổng đề xuất" value={proposalStats.total} tone="sky" />
+        <ReviewStat icon={AlertTriangle} label="Chờ duyệt" value={proposalStats.pending} tone="amber" />
+        <ReviewStat icon={XCircle} label="Rủi ro cao" value={proposalStats.risky} tone="rose" />
+        <ReviewStat icon={Gauge} label="Tận dụng TB" value={formatPercent(proposalStats.averageUtilization)} tone="emerald" />
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm mã đề xuất, PC, DH, thợ, lý do..."
+              className="h-11 w-full rounded-xl border border-white/10 bg-black/30 pl-10 pr-4 text-sm text-gray-100 outline-none focus:border-sky-400"
+            />
+          </label>
+          <FilterBox label="Trạng thái" value={statusFilter} onChange={(value) => setStatusFilter(value as StatusFilter)}>
+            <option value="ALL">Tất cả trạng thái</option>
+            <option value="CHO_DUYET">Chờ duyệt</option>
+            <option value="DA_DUYET">Đã duyệt</option>
+            <option value="TU_CHOI">Từ chối</option>
+            <option value="HET_HIEU_LUC">Hết hiệu lực</option>
+          </FilterBox>
+          <FilterBox label="Khuyến nghị" value={decisionFilter} onChange={(value) => setDecisionFilter(value as DecisionFilter)}>
+            <option value="ALL">Tất cả khuyến nghị</option>
+            <option value="NEN_DUYET">Nên duyệt</option>
+            <option value="CAN_XEM_XET">Cần xem xét</option>
+            <option value="KHONG_NEN_DUYET">Rủi ro cao</option>
+          </FilterBox>
+          <FilterBox label="Sắp xếp" value={sortMode} onChange={(value) => setSortMode(value as SortMode)}>
+            <option value="priority">Ưu tiên xử lý</option>
+            <option value="newest">Mới nhất</option>
+            <option value="score">Score cao</option>
+            <option value="utilization">Tận dụng cao</option>
+          </FilterBox>
+        </div>
+      </section>
+
       {loading ? (
         <div className="py-16 flex justify-center text-gray-400"><Loader2 className="w-8 h-8 animate-spin" /></div>
       ) : proposals.length === 0 ? (
@@ -346,16 +665,38 @@ export default function AdminProposalsPage() {
           <CheckCircle2 className="w-10 h-10 mx-auto text-sky-400 mb-3" />
           <p className="text-gray-200 font-bold">Không có đề xuất cắt nào.</p>
         </div>
+      ) : visibleProposals.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 bg-[#0a0a0c] px-5 py-16 text-center">
+          <SlidersHorizontal className="w-10 h-10 mx-auto text-gray-500 mb-3" />
+          <p className="text-gray-200 font-bold">Không có đề xuất khớp bộ lọc.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("ALL");
+              setDecisionFilter("ALL");
+              setQuery("");
+            }}
+            className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-gray-200 hover:bg-white/10"
+          >
+            Xóa lọc
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {proposals.map((p) => (
-            <div key={p.madxc} className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-5 hover:border-sky-500/30 transition-colors">
+          {visibleProposals.map((p) => {
+            const decision = proposalDecision(p);
+            const decisionMeta = decisionBadge(decision);
+            const wasteDelta = deltaValue(p.tonghaohut_cu, p.tonghaohut_moi);
+            const utilizationDelta = deltaValue(p.tiletandung_cu, p.tiletandung_moi);
+            return (
+            <div key={p.madxc} className={`rounded-2xl border bg-[#0a0a0c] p-5 transition-colors hover:border-sky-500/40 ${p.trangthai === "CHO_DUYET" ? "border-white/15" : "border-white/10 opacity-90"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     <span className="text-[11px] font-mono text-white bg-white/10 border border-white/20 rounded-md px-2 py-0.5">#{p.madxc}</span>
                     <span className="text-[11px] font-mono text-sky-300 bg-sky-500/10 border border-sky-500/20 rounded-md px-2 py-0.5">PC-{p.mapc}</span>
                     {p.phancong?.madh && <span className="text-[11px] font-mono text-gray-300 bg-white/5 border border-white/10 rounded-md px-2 py-0.5">DH-{p.phancong.madh}</span>}
+                    <span className={`text-[11px] font-bold border rounded-md px-2 py-0.5 ${decisionMeta.cls}`}>{decisionMeta.text}</span>
                   </div>
                   <h3 className="text-base font-bold text-gray-100 mt-2">Người gửi: {p.nguoidung?.hoten || "Không rõ"}</h3>
                   <p className="text-xs text-gray-400 mt-1">
@@ -378,13 +719,19 @@ export default function AdminProposalsPage() {
                   </button>
                 </div>
               </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <MiniReviewMetric label="Tận dụng" value={formatPercent(p.tiletandung_moi)} delta={utilizationDelta} positiveWhen="up" suffix="%" />
+                <MiniReviewMetric label="Hao hụt" value={formatMm(p.tonghaohut_moi)} delta={wasteDelta} positiveWhen="down" suffix=" mm" />
+                <MiniReviewMetric label="Score" value={formatScore(p.score_moi)} />
+              </div>
               
               <div className="mt-4 rounded-xl bg-black/25 border border-white/5 px-3 py-2 text-xs text-gray-300">
                 <span className="text-gray-500 font-semibold block mb-1">Lý do đề xuất:</span>
                 {p.lydodexuat || <span className="italic text-gray-600">Không có lý do</span>}
               </div>
             </div>
-          ))}
+          );})}
         </div>
       )}
 
@@ -393,7 +740,7 @@ export default function AdminProposalsPage() {
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeDetail} />
           
-          <div className="relative w-full max-w-2xl h-full bg-[#12141a] border-l border-white/10 flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
+          <div className="relative w-full max-w-5xl h-full bg-[#12141a] border-l border-white/10 flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
               <h2 className="text-lg font-bold text-white flex items-center">
                 Chi tiết đề xuất #{selectedId}
@@ -422,6 +769,52 @@ export default function AdminProposalsPage() {
                         <div className="text-sm text-gray-300">{detail.admin_ghichu}</div>
                       </div>
                     )}
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+                    <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <div className="text-sm font-bold text-gray-100">Snapshot so sánh</div>
+                        <div className="text-xs text-gray-500">Đọc nhanh phương án cũ so với đề xuất mới trước khi xem từng phôi.</div>
+                      </div>
+                      <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-bold ${decisionBadge(proposalDecision(detail)).cls}`}>
+                        {decisionBadge(proposalDecision(detail)).text}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                      <CompareMetric
+                        label="Tận dụng phôi"
+                        before={formatPercent(detail.tiletandung_cu)}
+                        after={formatPercent(detail.tiletandung_moi)}
+                        delta={deltaValue(detail.tiletandung_cu, detail.tiletandung_moi)}
+                        positiveWhen="up"
+                        suffix="%"
+                      />
+                      <CompareMetric
+                        label="Hao hụt"
+                        before={formatMm(detail.tonghaohut_cu)}
+                        after={formatMm(detail.tonghaohut_moi)}
+                        delta={deltaValue(detail.tonghaohut_cu, detail.tonghaohut_moi)}
+                        positiveWhen="down"
+                        suffix=" mm"
+                      />
+                      <CompareMetric
+                        label="Dư tái sử dụng"
+                        before={formatMm(detail.phandutaisudung_cu)}
+                        after={formatMm(detail.phandutaisudung_moi)}
+                        delta={deltaValue(detail.phandutaisudung_cu, detail.phandutaisudung_moi)}
+                        positiveWhen="up"
+                        suffix=" mm"
+                      />
+                      <CompareMetric
+                        label="Phế liệu"
+                        before={formatMm(detail.phanduphelieu_cu)}
+                        after={formatMm(detail.phanduphelieu_moi)}
+                        delta={deltaValue(detail.phanduphelieu_cu, detail.phanduphelieu_moi)}
+                        positiveWhen="down"
+                        suffix=" mm"
+                      />
+                    </div>
                   </div>
 
                   {/* HET_HIEU_LUC explanation */}
@@ -564,6 +957,8 @@ export default function AdminProposalsPage() {
                                 )}
                               </div>
                             </div>
+
+                            <ProposalBarDiagram group={group} />
 
                             {/* Cuts */}
                             <div className="divide-y divide-white/5">

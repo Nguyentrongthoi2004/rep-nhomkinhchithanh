@@ -5,7 +5,24 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, ClipboardList, Edit3, ExternalLink, FileText, ImagePlus, Images, ListChecks, Loader2, ReceiptText, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarCheck,
+  CheckCircle2,
+  ClipboardList,
+  Edit3,
+  ExternalLink,
+  FileText,
+  Hammer,
+  ImagePlus,
+  Images,
+  ListChecks,
+  Loader2,
+  Send,
+  WalletCards,
+  ReceiptText,
+  Trash2,
+} from "lucide-react";
 import { apiData, apiJson, imageDisplayUrl } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
 import { CustomerContactModal, type CustomerContact } from "@/components/admin/CustomerContactModal";
@@ -42,6 +59,14 @@ type OrderImage = {
   maphoi?: number | null;
   thoigian: string;
   nguoidung?: { hoten?: string | null } | null;
+};
+
+type TimelineStep = {
+  title: string;
+  description: string;
+  time: string | null;
+  active: boolean;
+  icon: typeof CalendarCheck;
 };
 
 const money = (value: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
@@ -93,6 +118,7 @@ export default function AdminOrderDetailPage() {
   const quoteGap = order ? Math.round(Number(order.tonggiatri) - bomSumMaterial) : 0;
   const hasBom = (order?.chitietdh?.length ?? 0) > 0;
   const isApproved = order ? !["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai) : false;
+  const timeline = useMemo(() => (order ? buildOrderTimeline(order, images) : []), [images, order]);
 
   const handleAddImage = async (e: FormEvent) => {
     e.preventDefault();
@@ -295,6 +321,8 @@ export default function AdminOrderDetailPage() {
             )}
           </section>
 
+          <OrderProgressTimeline steps={timeline} status={order.trangthai} />
+
           <section className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-6 xl:col-span-12">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -419,6 +447,136 @@ function formatCutSize(item: OrderDetail["chitietdh"][number]) {
   if (dim) return `${dim[1]} x ${dim[2]} mm`;
   if (item.chieudaicat != null) return `${item.chieudaicat} mm`;
   return "Theo SL";
+}
+
+function formatTimelineTime(value: string | null) {
+  return value ? new Date(value).toLocaleString("vi-VN") : "Chưa có thời gian ghi nhận";
+}
+
+function firstImageTime(images: OrderImage[], predicate: (image: OrderImage) => boolean) {
+  return images
+    .filter(predicate)
+    .map((image) => image.thoigian)
+    .filter(Boolean)
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0] ?? null;
+}
+
+function imageText(image: OrderImage) {
+  return `${image.mota ?? ""} ${image.duongdan ?? ""}`.toLowerCase();
+}
+
+function isCompletionImage(image: OrderImage) {
+  const text = imageText(image);
+  return image.loaianh === "HOAN_THANH_CONG_TRINH" || text.includes("hoan thanh") || text.includes("hoàn thành") || text.includes("nghiem thu") || text.includes("nghiệm thu");
+}
+
+function isCutPhoto(image: OrderImage) {
+  const text = imageText(image);
+  return image.loaianh === "CAT_PHOI" || text.includes("cat phoi") || text.includes("cắt phôi");
+}
+
+function buildOrderTimeline(order: OrderDetail, images: OrderImage[]): TimelineStep[] {
+  const paidStatuses = ["DA_COC", "DA_THANH_TOAN", "DANG_GIA_CONG", "HOAN_THANH"];
+  const productionStatuses = ["DANG_GIA_CONG", "HOAN_THANH"];
+  const completionStatuses = ["HOAN_THANH"];
+  const completionImageTime = firstImageTime(images, isCompletionImage);
+  const cutImageTime = firstImageTime(images, isCutPhoto);
+  const assignmentEvidenceTime = firstImageTime(images, (image) => Boolean(image.mapc || image.masdc));
+  const hasCompletionEvidence = Boolean(completionImageTime) || completionStatuses.includes(order.trangthai);
+  const hasProductionEvidence =
+    hasCompletionEvidence ||
+    Boolean(cutImageTime || assignmentEvidenceTime) ||
+    productionStatuses.includes(order.trangthai);
+  const hasPaymentEvidence = hasProductionEvidence || paidStatuses.includes(order.trangthai);
+  const hasQuoteEvidence =
+    hasPaymentEvidence ||
+    Boolean(order.baogia_gui_luc) ||
+    !["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai);
+  const productionTime = cutImageTime ?? assignmentEvidenceTime ?? (hasProductionEvidence ? completionImageTime : null);
+
+  return [
+    {
+      title: "Tiếp nhận & lập đơn",
+      description: "Đơn hàng đã được tạo trong hệ thống.",
+      time: order.ngaytao,
+      active: true,
+      icon: CalendarCheck,
+    },
+    {
+      title: "Gửi báo giá & duyệt giá",
+      description: order.baogia_gui_luc ? "Báo giá đã gửi cho khách." : "Đơn đã qua bước báo giá theo trạng thái hoặc bằng chứng về sau.",
+      time: order.baogia_gui_luc,
+      active: hasQuoteEvidence,
+      icon: Send,
+    },
+    {
+      title: "Thanh toán / đặt cọc",
+      description: "Đơn đã đi qua bước đặt cọc hoặc thanh toán.",
+      time: null,
+      active: hasPaymentEvidence,
+      icon: WalletCards,
+    },
+    {
+      title: "Phân công / gia công",
+      description: cutImageTime ? "Đã có ảnh xác nhận cắt phôi." : "Đơn đã có bằng chứng được giao hoặc đi vào gia công.",
+      time: productionTime,
+      active: hasProductionEvidence,
+      icon: Hammer,
+    },
+    {
+      title: "Nghiệm thu / hoàn thành công trình",
+      description: completionImageTime ? "Đã có ảnh xác nhận hoàn thành công trình." : "Đơn đã được đánh dấu hoàn thành.",
+      time: completionImageTime,
+      active: hasCompletionEvidence,
+      icon: CheckCircle2,
+    },
+  ];
+}
+
+function OrderProgressTimeline({ steps, status }: { steps: TimelineStep[]; status: string }) {
+  return (
+    <section className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-6 xl:col-span-12">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-sm font-bold text-gray-100">Timeline tiến độ đơn hàng</div>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500">Theo dõi các mốc chính từ tiếp nhận đến nghiệm thu, ưu tiên bằng chứng ảnh thực tế.</p>
+        </div>
+        <span className="inline-flex w-fit rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs font-bold text-gray-300">
+          {formatOrderStatus(status)}
+        </span>
+      </div>
+
+      <ol className="mt-6 space-y-0">
+        {steps.map((step, index) => {
+          const Icon = step.icon;
+          const isLast = index === steps.length - 1;
+          return (
+            <li key={step.title} className="grid grid-cols-[2rem_1fr] gap-4">
+              <div className="flex flex-col items-center">
+                <div
+                  className={`flex h-8 w-8 items-center justify-center rounded-full border ${
+                    step.active
+                      ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
+                      : "border-white/10 bg-white/[0.03] text-gray-500"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                </div>
+                {!isLast && <div className={`h-full min-h-10 w-px ${step.active ? "bg-emerald-400/30" : "bg-white/10"}`} />}
+              </div>
+              <div className={`pb-5 ${isLast ? "pb-0" : ""}`}>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div className={`text-sm font-bold ${step.active ? "text-gray-100" : "text-gray-500"}`}>{step.title}</div>
+                  <div className={`text-xs ${step.active ? "text-emerald-200/80" : "text-gray-600"}`}>{formatTimelineTime(step.time)}</div>
+                </div>
+                <p className={`mt-1 text-xs leading-relaxed ${step.active ? "text-gray-400" : "text-gray-600"}`}>{step.description}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {

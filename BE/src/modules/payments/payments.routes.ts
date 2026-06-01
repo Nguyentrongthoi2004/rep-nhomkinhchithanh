@@ -21,6 +21,6 @@ paymentsRouter.post(
   "/",
   validate(createPaymentSchema, "body"),
   asyncHandler(async (req, res) => {
-    sendCreated(res, await paymentsService.create(req.body as CreatePaymentDto));
+    sendCreated(res, await paymentsService.create(req.body as CreatePaymentDto, req.user!.mand));
   }),
 );

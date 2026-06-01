@@ -3,6 +3,7 @@ import {
   adminAccessRequestsRouter,
   publicAccessRequestsRouter,
 } from "@/modules/access-requests/access-requests.routes";
+import { activityLogsRouter } from "@/modules/activity-logs/activity-logs.routes";
 import { assignmentsRouter } from "@/modules/assignments/assignments.routes";
 import { authRouter } from "@/modules/auth/auth.routes";
 import {
@@ -52,6 +53,7 @@ apiRouter.use("/seed", deprecatedSeedRouter);
 
 // --- Nhóm quản trị viên: yêu cầu authMiddleware + requireRole("ADMIN") ---
 apiRouter.use("/admin/access-requests", adminAccessRequestsRouter);
+apiRouter.use("/admin/activity-logs", activityLogsRouter);
 apiRouter.use("/admin/assignments", assignmentsRouter);
 apiRouter.use("/admin/categories", categoriesRouter);
 apiRouter.use("/admin/customers", customersRouter);

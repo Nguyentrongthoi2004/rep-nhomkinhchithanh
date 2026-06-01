@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { HttpError } from "@/lib/http";
 import { notificationsService } from "@/modules/notifications/notifications.service";
+import { isTerminalOrderState } from "@/modules/orders/orders.service";
 import type { RejectTaskDto, UpdateTaskDto } from "./worker-tasks.schema";
 
 const TABLE = "phancong";
@@ -218,7 +219,21 @@ export const workerTasksService = {
   // Thợ cập nhật trạng thái nhiệm vụ (VD: chuyển sang DANG_THUC_HIEN).
   async updateStatus(mapc: number, matho: number, dto: UpdateTaskDto) {
     // Đảm bảo nhiệm vụ thuộc về worker này
-    const current = await this.getForWorker(mapc, matho) as { trangthai?: string };
+    interface WorkerTaskWithOrder {
+      mapc: number;
+      matho: number;
+      trangthai: string;
+      donhang?: {
+        madh: number;
+        trangthai: string;
+        khachhang?: { hoten?: string | null } | null;
+      } | null;
+    }
+    const current = (await this.getForWorker(mapc, matho)) as unknown as WorkerTaskWithOrder;
+    if (current.donhang?.trangthai && isTerminalOrderState(current.donhang.trangthai)) {
+      throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể cập nhật nhiệm vụ");
+    }
+
     if (current.trangthai === "TU_CHOI") throw HttpError.badRequest("Nhiệm vụ đã bị từ chối");
     if (dto.trangthai === "HOAN_THANH") {
       if (current.trangthai !== "DANG_THUC_HIEN") {
@@ -249,12 +264,20 @@ export const workerTasksService = {
 
   // Thợ từ chối nhiệm vụ: ghi lý do từ chối, gửi thông báo cho quản trị viên.
   async reject(mapc: number, matho: number, dto: RejectTaskDto) {
-    const current = await this.getForWorker(mapc, matho) as {
+    interface WorkerTaskWithOrder {
       mapc: number;
       madh: number;
       trangthai: string;
-      donhang?: { khachhang?: { hoten?: string | null } | null } | null;
-    };
+      donhang?: {
+        trangthai: string;
+        khachhang?: { hoten?: string | null } | null;
+      } | null;
+    }
+    const current = (await this.getForWorker(mapc, matho)) as unknown as WorkerTaskWithOrder;
+    if (current.donhang?.trangthai && isTerminalOrderState(current.donhang.trangthai)) {
+      throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể cập nhật nhiệm vụ");
+    }
+
     if (current.trangthai === "HOAN_THANH") {
       throw HttpError.badRequest("Không thể từ chối nhiệm vụ đã hoàn thành");
     }

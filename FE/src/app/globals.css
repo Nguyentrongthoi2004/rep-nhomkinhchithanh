@@ -225,13 +225,63 @@ body {
 
 /* In / PDF: nền phẳng, bớt gradient (file PDF gọn & dễ đọc hơn) */
 @media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
   body {
     background: #fff !important;
     color: #111 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .admin-metal-bg {
     background: #fff !important;
+  }
+
+  .dashboard-print-area {
+    color: #111 !important;
+  }
+
+  .dashboard-print-area,
+  .dashboard-print-area * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .dashboard-print-area section,
+  .dashboard-print-area article,
+  .dashboard-print-area [class*="rounded-"] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .dashboard-print-area [class*="bg-[#"],
+  .dashboard-print-area [class*="bg-white"],
+  .dashboard-print-area [class*="bg-blue"],
+  .dashboard-print-area [class*="bg-emerald"],
+  .dashboard-print-area [class*="bg-amber"],
+  .dashboard-print-area [class*="bg-red"],
+  .dashboard-print-area [class*="bg-violet"],
+  .dashboard-print-area [class*="bg-sky"] {
+    background: #fff !important;
+  }
+
+  .dashboard-print-area [class*="text-gray"],
+  .dashboard-print-area [class*="text-slate"],
+  .dashboard-print-area [class*="text-white"] {
+    color: #111 !important;
+  }
+
+  .dashboard-print-area [class*="border-white"] {
+    border-color: #d4d4d8 !important;
+  }
+
+  .dashboard-print-area .recharts-wrapper,
+  .dashboard-print-area .recharts-surface {
+    max-width: 100% !important;
   }
 }
 

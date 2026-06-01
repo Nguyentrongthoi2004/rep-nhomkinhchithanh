@@ -1,5 +1,6 @@
 import { HttpError } from "@/lib/http";
 import { supabaseAdmin } from "@/lib/supabase";
+import { activityLogsService } from "@/modules/activity-logs/activity-logs.service";
 import { notificationsService } from "@/modules/notifications/notifications.service";
 import type { CreateOrderDto, UpdateOrderCustomerDto, UpdateOrderDto, UpdateOrderStatusDto } from "./orders.schema";
 
@@ -130,6 +131,12 @@ async function resolveLineUnitPrices(items: CreateOrderItem[]): Promise<number[]
   });
 }
 
+export const TERMINAL_ORDER_STATUSES = ["HOAN_THANH", "DA_HUY"];
+
+export function isTerminalOrderState(status: string): boolean {
+  return TERMINAL_ORDER_STATUSES.includes(status);
+}
+
 export const ordersService = {
   // Lấy danh sách tất cả đơn hàng, sắp xếp mới nhất trước
   async list() {
@@ -161,7 +168,7 @@ export const ordersService = {
   },
 
   // Xử lý tạo đơn hàng mới: tìm/tạo khách hàng theo SĐT → insert đơn → lập BOM → gửi thông báo
-  async create(dto: CreateOrderDto) {
+  async create(dto: CreateOrderDto, actorId?: number) {
     const customerId = await this.getOrCreateCustomer(dto.customer, dto.phone, dto.address ?? null, dto.email);
 
     const { data: order, error: orderErr } = await supabaseAdmin
@@ -200,6 +207,18 @@ export const ordersService = {
         data: { doi_tuong: "donhang", ma_doi_tuong: order.madh },
       })
       .catch(() => null);
+    void activityLogsService.record({
+      userId: actorId ?? null,
+      action: "ORDER_CREATED",
+      targetType: "donhang",
+      targetId: order.madh,
+      details: {
+        customer: dto.customer,
+        phone: dto.phone,
+        itemCount: dto.items.length,
+        totalCost: dto.totalCost,
+      },
+    });
 
     return {
       madh: order.madh,
@@ -216,6 +235,10 @@ export const ordersService = {
       .maybeSingle();
     if (exErr) throw HttpError.internal(exErr.message);
     if (!existing) throw HttpError.notFound(`Order ${id} not found`);
+
+    if (isTerminalOrderState(existing.trangthai as string)) {
+      throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể thay đổi trạng thái");
+    }
 
     if (
       existing.trangthai === "BAO_GIA_NHAP" &&
@@ -238,7 +261,7 @@ export const ordersService = {
   },
 
   // Duyệt giá đơn hàng: kiểm tra đã gửi báo giá (baogia_gui_luc != null) → chuyển trạng thái DA_DUYET_GIA
-  async approvePrice(id: number) {
+  async approvePrice(id: number, actorId?: number) {
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("donhang")
       .select("madh, trangthai, baogia_gui_luc")
@@ -249,6 +272,9 @@ export const ordersService = {
     }
     if (exErr) throw HttpError.internal(exErr.message);
     if (!existing) throw HttpError.notFound(`Order ${id} not found`);
+    if (isTerminalOrderState(existing.trangthai as string)) {
+      throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể duyệt giá");
+    }
     if (existing.trangthai === "DA_HUY") throw HttpError.badRequest("Không thể duyệt giá cho đơn đã hủy");
     if (!["KHAO_SAT", "BAO_GIA_NHAP"].includes(existing.trangthai as string)) {
       throw HttpError.badRequest("Chỉ duyệt giá cho đơn đang chờ duyệt giá");
@@ -273,11 +299,18 @@ export const ordersService = {
         data: { doi_tuong: "donhang", ma_doi_tuong: id },
       })
       .catch(() => null);
+    void activityLogsService.record({
+      userId: actorId ?? null,
+      action: "ORDER_PRICE_APPROVED",
+      targetType: "donhang",
+      targetId: id,
+      details: { previousStatus: existing.trangthai, nextStatus: "DA_DUYET_GIA" },
+    });
     return data;
   },
 
   // Lập/sửa BOM đơn hàng: xóa BOM cũ → tính lại đơn giá → insert BOM mới → reset trạng thái về BAO_GIA_NHAP
-  async updateDetails(id: number, dto: UpdateOrderDto) {
+  async updateDetails(id: number, dto: UpdateOrderDto, actorId?: number) {
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("donhang")
       .select("madh, trangthai")
@@ -285,6 +318,9 @@ export const ordersService = {
       .maybeSingle();
     if (exErr) throw HttpError.internal(exErr.message);
     if (!existing) throw HttpError.notFound(`Order ${id} not found`);
+    if (isTerminalOrderState(existing.trangthai as string)) {
+      throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể sửa BOM");
+    }
     if (!["KHAO_SAT", "BAO_GIA_NHAP"].includes(existing.trangthai as string)) {
       throw HttpError.badRequest("Chỉ cho phép lập/sửa BOM trước khi đơn được duyệt giá.");
     }
@@ -342,6 +378,19 @@ export const ordersService = {
         data: { doi_tuong: "donhang", ma_doi_tuong: id },
       })
       .catch(() => null);
+    void activityLogsService.record({
+      userId: actorId ?? null,
+      action: "ORDER_BOM_UPDATED",
+      targetType: "donhang",
+      targetId: id,
+      details: {
+        customer: dto.customer,
+        phone: dto.phone,
+        itemCount: dto.items.length,
+        totalCost: dto.totalCost,
+        previousStatus: existing.trangthai,
+      },
+    });
 
     return updated;
   },
@@ -354,6 +403,9 @@ export const ordersService = {
       .maybeSingle();
     if (exErr) throw HttpError.internal(exErr.message);
     if (!existing) throw HttpError.notFound(`Order ${id} not found`);
+    if (isTerminalOrderState(existing.trangthai as string)) {
+      throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể sửa thông tin khách hàng");
+    }
     if (!["KHAO_SAT", "BAO_GIA_NHAP"].includes(existing.trangthai as string)) {
       throw HttpError.badRequest("Chỉ cho phép sửa thông tin khách hàng trước khi đơn được duyệt giá.");
     }
@@ -383,6 +435,9 @@ export const ordersService = {
       .maybeSingle();
     if (exErr) throw HttpError.internal(exErr.message);
     if (!existing) throw HttpError.notFound(`Order ${id} not found`);
+    if (isTerminalOrderState(existing.trangthai as string)) {
+      throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể gửi báo giá");
+    }
     if (!["BAO_GIA_NHAP", "DA_DUYET_GIA"].includes(existing.trangthai as string)) {
       throw HttpError.badRequest("Chỉ ghi nhận gửi báo giá sau khi đơn đã có BOM/báo giá.");
     }
@@ -410,10 +465,19 @@ export const ordersService = {
   },
 
   async remove(id: number) {
+    const { data: existing, error: exErr } = await supabaseAdmin
+      .from("donhang")
+      .select("madh, trangthai")
+      .eq("madh", id)
+      .maybeSingle();
+    if (exErr) throw HttpError.internal(exErr.message);
+    if (!existing) throw HttpError.notFound(`Order ${id} not found`);
+    if (!["KHAO_SAT", "BAO_GIA_NHAP"].includes(existing.trangthai as string)) {
+      throw HttpError.badRequest(`Không thể xóa đơn hàng ở trạng thái ${existing.trangthai}`);
+    }
     const { error } = await supabaseAdmin.from("donhang").delete().eq("madh", id);
     if (error) throw HttpError.internal(error.message);
   },
-
   // Tìm hoặc tạo khách hàng theo SĐT: nếu đã có thì cập nhật thông tin, nếu chưa thì tạo mới
   async getOrCreateCustomer(customerName: string, phone: string, address: string | null, email?: string | null) {
     const { data: existing, error: findErr } = await supabaseAdmin

@@ -27,7 +27,7 @@ assignmentsRouter.post(
   "/",
   validate(createAssignmentSchema, "body"),
   asyncHandler(async (req, res) => {
-    sendCreated(res, await assignmentsService.create(req.body as CreateAssignmentDto));
+    sendCreated(res, await assignmentsService.create(req.body as CreateAssignmentDto, req.user!.mand));
   }),
 );
 

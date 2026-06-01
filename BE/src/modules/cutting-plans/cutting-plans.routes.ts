@@ -90,7 +90,7 @@ adminCuttingPlansRouter.post(
   validate(createCuttingPlanSchema, "body"),
   asyncHandler(async (req, res) => {
     const body = req.body as CreateCuttingPlanDto;
-    sendCreated(res, await cuttingPlansService.createForAssignment(body.mapc));
+    sendCreated(res, await cuttingPlansService.createForAssignment(body.mapc, req.user!.mand));
   }),
 );
 

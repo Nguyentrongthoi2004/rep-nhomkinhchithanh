@@ -1,7 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Cpu, HelpCircle, Loader2, Recycle, Ruler, Save, ShieldAlert, Trash2, Info, AlertTriangle, CheckCircle2, TrendingUp } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import {
+  AlertTriangle,
+  Calculator,
+  CheckCircle2,
+  Cpu,
+  CreditCard,
+  FolderCode,
+  HelpCircle,
+  Info,
+  Loader2,
+  Package,
+  Recycle,
+  Ruler,
+  Save,
+  Scissors,
+  Settings2,
+  ShieldAlert,
+  Trash2,
+  TrendingUp,
+} from "lucide-react";
 import { apiData, apiJson } from "@/lib/api";
 
 type Rule = {
@@ -10,14 +30,31 @@ type Rule = {
   giatri: number;
 };
 
+type TabId = "setup" | "labor" | "materials" | "score" | "payments";
+
+type CodeRef = {
+  label: string;
+  path: string;
+  note: string;
+};
+
+const tabs: Array<{ id: TabId; label: string; icon: ReactNode }> = [
+  { id: "setup", label: "Thông số cắt", icon: <Settings2 className="h-4 w-4" /> },
+  { id: "labor", label: "Nhân công", icon: <Calculator className="h-4 w-4" /> },
+  { id: "materials", label: "Vật tư", icon: <Package className="h-4 w-4" /> },
+  { id: "score", label: "Score tối ưu", icon: <TrendingUp className="h-4 w-4" /> },
+  { id: "payments", label: "Thanh toán & duyệt", icon: <CreditCard className="h-4 w-4" /> },
+];
+
 export default function ConfigPage() {
+  const [activeTab, setActiveTab] = useState<TabId>("setup");
   const [kerf, setKerf] = useState(5);
   const [safeMargin, setSafeMargin] = useState(20);
   const [minScrap, setMinScrap] = useState(100);
   const [minReusable, setMinReusable] = useState(1500);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [showScoreHelp, setShowScoreHelp] = useState(false);
+
   const isInvalidConfig = minReusable <= minScrap;
   const smallScrapMinScore = Math.round(1200 - minScrap * 0.02);
 
@@ -67,260 +104,386 @@ export default function ConfigPage() {
     }
   };
 
+  const scoreContext = useMemo(
+    () => ({
+      kerf,
+      safeMargin,
+      minScrap,
+      minReusable,
+      smallScrapMinScore,
+    }),
+    [kerf, minReusable, minScrap, safeMargin, smallScrapMinScore],
+  );
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="mx-auto max-w-7xl space-y-6 pb-20">
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/5 bg-[#0a0a0c] p-5 md:flex-row md:items-center md:justify-between md:p-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100 flex items-center">
-            <Cpu className="w-6 h-6 mr-3 text-blue-500" />
-            Cấu hình thuật toán cắt
+          <h1 className="flex items-center text-2xl font-bold text-gray-100">
+            <Cpu className="mr-3 h-6 w-6 text-blue-500" />
+            Cấu hình chi tiết hệ thống
           </h1>
-          <p className="text-gray-400 text-sm mt-1 ml-9">Các thông số này được lưu vào bảng quy tắc và dùng khi tạo sơ đồ cắt.</p>
+          <p className="mt-1 text-sm text-gray-400">
+            Khu vực quản trị quy tắc tính toán quan trọng: cắt phôi, báo giá, nhân công, vật tư, score và thanh toán.
+          </p>
         </div>
 
         <button
           onClick={handleSave}
           disabled={isSaving || loading || isInvalidConfig}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center font-medium transition-colors disabled:opacity-50"
+          className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-2.5 font-bold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-          Lưu cấu hình
+          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Lưu thông số cắt
         </button>
       </div>
 
+      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0a0a0c] p-2">
+        <div className="flex min-w-max gap-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
+                activeTab === tab.id ? "bg-blue-600 text-white" : "text-gray-400 hover:bg-white/5 hover:text-gray-100"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {isInvalidConfig && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-200 p-4 rounded-xl flex items-start text-sm">
-          <AlertTriangle className="w-5 h-5 text-red-400 mr-3 shrink-0 mt-0.5" />
+        <div className="flex items-start rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-200">
+          <AlertTriangle className="mr-3 mt-0.5 h-5 w-5 shrink-0 text-red-400" />
           <div>
-            <span className="font-bold">Lỗi cấu hình:</span> Chiều dài tối thiểu tái sử dụng phôi dư ({minReusable} mm) phải lớn hơn Ngưỡng phế liệu tối đa ({minScrap} mm).
-            Nút <b>Lưu cấu hình</b> đã bị vô hiệu hóa cho đến khi cấu hình hợp lệ.
+            <span className="font-bold">Lỗi cấu hình:</span> Chiều dài tối thiểu tái sử dụng phôi dư ({minReusable} mm) phải lớn hơn ngưỡng phế liệu tối đa ({minScrap} mm).
           </div>
         </div>
       )}
 
       {loading ? (
-        <div className="py-20 flex justify-center text-gray-400"><Loader2 className="w-8 h-8 animate-spin" /></div>
+        <div className="flex justify-center py-20 text-gray-400">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-            <NumberCard
-              icon={<Ruler className="w-6 h-6 text-blue-400" />}
-              title="Độ hở lưỡi cưa"
-              desc="Phần nhôm bị hao sau mỗi nhát cắt (kerf)."
-              value={kerf}
-              onChange={setKerf}
-              min={0}
-              max={20}
+          {activeTab === "setup" && (
+            <SetupTab
+              kerf={kerf}
+              safeMargin={safeMargin}
+              minScrap={minScrap}
+              minReusable={minReusable}
+              setKerf={setKerf}
+              setSafeMargin={setSafeMargin}
+              setMinScrap={setMinScrap}
+              setMinReusable={setMinReusable}
             />
-            <NumberCard
-              icon={<ShieldAlert className="w-6 h-6 text-red-400" />}
-              title="Lề an toàn"
-              desc="Phần chừa an toàn ở hai đầu thanh phôi để kẹp máy."
-              value={safeMargin}
-              onChange={setSafeMargin}
-              min={0}
-              max={100}
-            />
-            <NumberCard
-              icon={<Trash2 className="w-6 h-6 text-amber-400" />}
-              title="Ngưỡng phế liệu tối đa"
-              desc="Phần dư nhỏ hơn ngưỡng này được xem là tận dụng gần hết phôi."
-              value={minScrap}
-              onChange={setMinScrap}
-              min={0}
-              max={500}
-            />
-            <NumberCard
-              icon={<Recycle className="w-6 h-6 text-emerald-400" />}
-              title="Chiều dài tối thiểu tái sử dụng"
-              desc="Phần dư lớn hơn hoặc bằng ngưỡng này được giữ lại làm phôi dư."
-              value={minReusable}
-              onChange={setMinReusable}
-              min={100}
-              max={5000}
-            />
-          </div>
+          )}
 
-          {/* Quy tắc tối ưu cắt & Cách tính điểm (Score) */}
-          <div className="bg-[#0a0a0c] border border-white/10 rounded-2xl shadow-lg overflow-hidden mt-4">
-            <button
-              type="button"
-              onClick={() => setShowScoreHelp(!showScoreHelp)}
-              className="w-full flex items-center justify-between px-6 py-5 text-left hover:bg-white/5 transition-colors border-b border-white/5"
-            >
-              <div className="flex items-center">
-                <HelpCircle className="w-5 h-5 text-blue-400 mr-3 shrink-0" />
-                <div>
-                  <span className="text-lg font-bold text-gray-100">Quy tắc tối ưu cắt &amp; Cách tính điểm (Score)</span>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Thông tin minh bạch hóa thuật toán tối ưu hóa phôi nhôm 1D-CSP (Cấu hình hiện tại: MIN_SCRAP = {minScrap} mm | MIN_REUSABLE_LENGTH = {minReusable} mm)
-                  </p>
-                </div>
-              </div>
-              <span className="text-xs bg-white/10 hover:bg-white/20 text-gray-300 px-3 py-1.5 rounded-lg font-medium transition-colors">
-                {showScoreHelp ? "Thu gọn chi tiết" : "Xem chi tiết quy tắc"}
-              </span>
-            </button>
-
-            {showScoreHelp && (
-              <div className="px-6 py-6 space-y-6 text-sm text-gray-300 leading-relaxed">
-                {/* Mục tiêu tối ưu */}
-                <div>
-                  <h3 className="text-base font-bold text-gray-100 flex items-center mb-3">
-                    <TrendingUp className="w-4 h-4 text-emerald-400 mr-2" />
-                    1. Mục tiêu tối ưu hóa cắt
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-400">
-                    <div className="bg-white/5 border border-white/5 rounded-xl p-3.5">
-                      <span className="font-semibold text-gray-200 block mb-1">Giảm hao hụt vật tư</span>
-                      Cắt tối ưu hóa sơ đồ sao cho tỷ lệ hao hụt do mạch cắt (kerf) và lề an toàn biên ở mức thấp nhất có thể.
-                    </div>
-                    <div className="bg-white/5 border border-white/5 rounded-xl p-3.5">
-                      <span className="font-semibold text-gray-200 block mb-1">Ưu tiên dọn kho</span>
-                      Hệ thống tự động ưu tiên chọn các thanh phôi dư cũ (<span className="text-emerald-400 font-semibold">CON_DU</span>) để cắt trước khi dùng đến phôi nguyên mới dài 5.8m hoặc 6m.
-                    </div>
-                    <div className="bg-white/5 border border-white/5 rounded-xl p-3.5">
-                      <span className="font-semibold text-gray-200 block mb-1">Ưu tiên phôi dư tái sử dụng</span>
-                      Điều chỉnh sơ đồ sao cho phần dư còn lại sau cắt đủ dài để giữ lại làm phôi dư phục vụ cho các đơn hàng sau.
-                    </div>
-                    <div className="bg-white/5 border border-white/5 rounded-xl p-3.5">
-                      <span className="font-semibold text-gray-200 block mb-1">Hạn chế phôi dư lỡ cỡ</span>
-                      Tránh tối đa việc tạo ra các phần dư lỡ cỡ (không đủ ngắn để vứt đi và không đủ dài để tái sử dụng), gây tốn kho bãi và lãng phí nhôm.
-                    </div>
-                    <div className="col-span-1 md:col-span-2 bg-red-500/5 border border-red-500/10 rounded-xl p-3.5">
-                      <span className="font-semibold text-red-300 block mb-1">Tránh dùng phôi lỗi</span>
-                      Hệ thống tự động loại trừ các phôi đang có báo cáo sự cố hư hại (<span className="text-red-400 font-semibold">LOI</span>) đang chờ quản lý xử lý để đảm bảo an toàn sản xuất.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Công thức Score */}
-                <div className="border-t border-white/5 pt-6">
-                  <h3 className="text-base font-bold text-gray-100 flex items-center mb-3">
-                    <Cpu className="w-4 h-4 text-blue-400 mr-2" />
-                    2. Công thức tính điểm (Score) đề xuất
-                  </h3>
-                  <p className="text-gray-400 mb-3">
-                    Điểm số (Score) của mỗi phương án là tổng điểm đánh giá trên từng thanh phôi được sử dụng:
-                  </p>
-                  <div className="bg-[#121214] border border-white/5 rounded-xl p-4 font-mono text-center text-blue-400 font-semibold text-xs md:text-sm">
-                    Score = Điểm tận dụng vật tư + Điểm phôi dư tái sử dụng + Điểm trạng thái phôi - Điểm phạt rủi ro
-                  </div>
-                </div>
-
-                {/* Giải thích chi tiết */}
-                <div className="border-t border-white/5 pt-6 space-y-4">
-                  <h3 className="text-base font-bold text-gray-100 flex items-center">
-                    <Info className="w-4 h-4 text-sky-400 mr-2" />
-                    3. Chi tiết thuật toán &amp; Quy tắc Heuristic Backend
-                  </h3>
-                  
-                  <div className="space-y-3.5 text-gray-400">
-                    <div>
-                      <p className="font-semibold text-gray-200 flex items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-2" />
-                        Tận dụng tối đa phôi (Phần dư &lt; {minScrap} mm)
-                      </p>
-                      <p className="pl-3.5 mt-0.5">
-                        Phần dư thừa rất nhỏ, được xem là phế liệu không thể dùng lại nhưng thể hiện phôi đã được tận dụng triệt để. 
-                        Điểm số cộng rất cao: <code className="text-emerald-400 bg-white/5 px-1 py-0.5 rounded">Score = 1200 - phần_dư * 0.02</code> (Khoảng 1200 điểm).
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-gray-200 flex items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400 mr-2" />
-                        Tái sử dụng phôi dư (Phần dư &ge; {minReusable} mm)
-                      </p>
-                      <p className="pl-3.5 mt-0.5">
-                        Phần dư đủ dài để cất lại vào kho và phục vụ cho các đơn hàng sau.
-                        Điểm số cộng tốt: <code className="text-sky-400 bg-white/5 px-1 py-0.5 rounded">Score = 700 + min(phần_dư / 25, 350)</code> (Dao động từ 700 đến 1050 điểm).
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-gray-200 flex items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-2" />
-                        Phần dư lỡ cỡ (Nằm giữa {minScrap} mm và {minReusable} mm)
-                      </p>
-                      <p className="pl-3.5 mt-0.5">
-                        Đây là trường hợp xấu nhất: Phần dư lãng phí nhiều nhôm nhưng không đủ dài để tái sử dụng hiệu quả, gây chật kho. 
-                        Bị trừ điểm rất nặng: <code className="text-red-400 bg-white/5 px-1 py-0.5 rounded">Score = -850 - ratio * 450</code> (Phạt từ -850 đến -1300 điểm, với ratio tỷ lệ lỡ cỡ).
-                      </p>
-                    </div>
-
-                    <div className="pt-2 border-t border-white/5 space-y-2">
-                      <p className="font-semibold text-gray-200">Các quy tắc Heuristic bổ trợ khi hệ thống tự động lập sơ đồ (Auto Plan):</p>
-                      <ul className="list-disc pl-5 space-y-1.5 text-xs md:text-sm">
-                        <li><span className="text-gray-200 font-medium">Ưu tiên dọn kho:</span> Nếu dùng phôi cũ (<code className="text-emerald-300">CON_DU</code>), cộng thêm <span className="text-emerald-300 font-bold">+120 điểm</span> để khuyến khích dùng phôi dư cũ trước.</li>
-                        <li><span className="text-gray-200 font-medium">Gom mảnh tối ưu:</span> Nếu phần dư sau khi cắt mảnh hiện tại vẫn chứa được mảnh nhôm khác trong BOM, cộng <span className="text-sky-300 font-bold">+240 điểm</span> để gom nhát cắt gọn gàng vào ít phôi nhất.</li>
-                        <li><span className="text-gray-200 font-medium">Bảo vệ cây dài:</span> Phạt nặng <span className="text-red-400 font-bold">-6000 điểm</span> nếu cắt một thanh dài duy nhất khi không còn thanh nào khác trong kho đáp ứng được đoạn nhôm dài nhất còn lại của BOM.</li>
-                        <li><span className="text-gray-200 font-medium">Tie-break (Khít hơn):</span> Trừ đi <code className="text-gray-400">phần_dư * 0.01</code> để ưu tiên thanh phôi khít hơn khi có nhiều thanh phôi cho kết quả tương đương.</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bảng minh họa */}
-                <div className="border-t border-white/5 pt-6">
-                  <h3 className="text-base font-bold text-gray-100 flex items-center mb-3">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 mr-2" />
-                    4. Bảng minh họa phân loại phần dư
-                  </h3>
-                  <div className="overflow-x-auto rounded-xl border border-white/10">
-                    <table className="w-full border-collapse text-left text-xs md:text-sm">
-                      <thead>
-                        <tr className="bg-white/5 border-b border-white/10 text-gray-200 font-bold">
-                          <th className="p-3.5">Phân loại phần dư</th>
-                          <th className="p-3.5">Điều kiện (Config hiện tại)</th>
-                          <th className="p-3.5">Ý nghĩa sản xuất</th>
-                          <th className="p-3.5 text-right">Tác động Score</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5 text-gray-400">
-                        <tr className="hover:bg-white/5">
-                          <td className="p-3.5 font-semibold text-emerald-400">Phế liệu nhỏ</td>
-                          <td className="p-3.5 font-mono">&lt; {minScrap} mm</td>
-                          <td className="p-3.5">Tận dụng triệt để phôi, phần nhôm bỏ đi rất nhỏ.</td>
-                          <td className="p-3.5 text-right text-emerald-400 font-semibold">+1200 đến +{smallScrapMinScore} điểm</td>
-                        </tr>
-                        <tr className="hover:bg-white/5">
-                          <td className="p-3.5 font-semibold text-sky-400">Phôi dư tái sử dụng</td>
-                          <td className="p-3.5 font-mono">&ge; {minReusable} mm</td>
-                          <td className="p-3.5">Đủ dài để thu hồi về kho, tái sử dụng cho đơn sau.</td>
-                          <td className="p-3.5 text-right text-sky-400 font-semibold">+700 đến +1050 điểm</td>
-                        </tr>
-                        <tr className="hover:bg-white/5">
-                          <td className="p-3.5 font-semibold text-amber-500">Phôi dư lỡ cỡ</td>
-                          <td className="p-3.5 font-mono">Từ {minScrap} đến dưới {minReusable} mm</td>
-                          <td className="p-3.5">Lỡ cỡ, khó tái sử dụng, gây chật kho bãi và lãng phí vật tư.</td>
-                          <td className="p-3.5 text-right text-red-400 font-semibold">-850 đến -1300 điểm (Phạt)</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Lưu ý minh bạch */}
-                <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-4 text-xs md:text-sm text-gray-400 flex items-start">
-                  <AlertTriangle className="w-5 h-5 text-amber-500 mr-3 shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-bold text-gray-200 mb-1">Lưu ý minh bạch cho người quản lý &amp; người chấm chuyên đề</h4>
-                    <p className="mb-1.5">
-                      Điểm đánh giá (Score) là phần diễn giải dựa trên quy tắc heuristic đang được Backend sử dụng để tối ưu hóa phôi nhôm dựa trên các thông số cấu hình vật lý.
-                      Hệ thống hoàn toàn <span className="text-gray-200 font-medium">không sinh điểm ngẫu nhiên hoặc sử dụng mô hình trí tuệ nhân tạo (AI)</span> để chấm điểm tự do.
-                    </p>
-                    <p>
-                      Mọi gợi ý, xếp hạng hay điểm số chỉ mang tính chất hỗ trợ quyết định (Decision Support). 
-                      <span className="text-amber-300 font-semibold"> Admin/Quản lý vẫn là người đưa ra quyết định duyệt sơ đồ cắt cuối cùng</span> dựa trên kinh nghiệm và thực tế sản xuất.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {activeTab === "labor" && <LaborTab />}
+          {activeTab === "materials" && <MaterialsTab />}
+          {activeTab === "score" && <ScoreTab context={scoreContext} />}
+          {activeTab === "payments" && <PaymentsTab />}
         </>
       )}
+    </div>
+  );
+}
+
+function SetupTab({
+  kerf,
+  safeMargin,
+  minScrap,
+  minReusable,
+  setKerf,
+  setSafeMargin,
+  setMinScrap,
+  setMinReusable,
+}: {
+  kerf: number;
+  safeMargin: number;
+  minScrap: number;
+  minReusable: number;
+  setKerf: (value: number) => void;
+  setSafeMargin: (value: number) => void;
+  setMinScrap: (value: number) => void;
+  setMinReusable: (value: number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <NumberCard
+        icon={<Ruler className="h-6 w-6 text-blue-400" />}
+        title="Độ hở lưỡi cưa"
+        desc="Phần nhôm bị hao sau mỗi nhát cắt, thường gọi là kerf."
+        value={kerf}
+        onChange={setKerf}
+        min={0}
+        max={20}
+      />
+      <NumberCard
+        icon={<ShieldAlert className="h-6 w-6 text-red-400" />}
+        title="Lề an toàn"
+        desc="Phần chừa ở hai đầu thanh phôi để kẹp máy và tránh cắt sát biên."
+        value={safeMargin}
+        onChange={setSafeMargin}
+        min={0}
+        max={100}
+      />
+      <NumberCard
+        icon={<Trash2 className="h-6 w-6 text-amber-400" />}
+        title="Ngưỡng phế liệu tối đa"
+        desc="Phần dư nhỏ hơn ngưỡng này được xem là tận dụng gần hết phôi."
+        value={minScrap}
+        onChange={setMinScrap}
+        min={0}
+        max={500}
+      />
+      <NumberCard
+        icon={<Recycle className="h-6 w-6 text-emerald-400" />}
+        title="Tối thiểu tái sử dụng"
+        desc="Phần dư lớn hơn hoặc bằng ngưỡng này được giữ lại làm phôi dư."
+        value={minReusable}
+        onChange={setMinReusable}
+        min={100}
+        max={5000}
+      />
+    </div>
+  );
+}
+
+function LaborTab() {
+  return (
+    <RuleTabShell
+      icon={<Calculator className="h-6 w-6 text-emerald-400" />}
+      title="Quy tắc tính tiền nhân công"
+      subtitle="Nhân công được tách riêng khỏi lợi nhuận để báo giá nhìn đúng nghiệp vụ hơn."
+      refs={[
+        { label: "Helper công thức", path: "FE/src/lib/quote-pricing.ts", note: "Tính gia công, kính/tấm, lắp đặt và khảo sát." },
+        { label: "Trang lập BOM", path: "FE/src/app/admin/don-hang/[id]/bom/page.tsx", note: "Hiển thị breakdown nhân công trước khi lưu báo giá." },
+        { label: "Trang báo giá", path: "FE/src/app/admin/don-hang/[id]/bao-gia/page.tsx", note: "Đọc lại breakdown để in/gửi báo giá." },
+      ]}
+    >
+      <FormulaBlock
+        title="Công thức tổng"
+        formula="Nhân công = Gia công xưởng + Xử lý kính/tấm + Lắp đặt + Khảo sát/di chuyển"
+        rows={[
+          ["Gia công xưởng", "Tổng mét dài thanh nhôm x 32.000đ/m"],
+          ["Xử lý kính/tấm", "Tổng diện tích kính/tấm x 25.000đ/m²"],
+          ["Lắp đặt", "max(diện tích công trình, diện tích kính) x 120.000đ/m²"],
+          ["Khảo sát / di chuyển", "150.000đ nếu đơn có phạm vi sản xuất"],
+          ["Tổng báo giá", "(Tổng vật tư + Tổng nhân công) x (1 + % lợi nhuận)"],
+        ]}
+      />
+      <ExplainCard tone="emerald" title="Ý nghĩa khi vấn đáp">
+        Phần nhân công không còn là một số m² chung chung. Hệ thống tách theo công đoạn thực tế của xưởng: cắt/gia công nhôm, xử lý kính hoặc tấm, lắp đặt tại công trình và chi phí khảo sát/di chuyển.
+      </ExplainCard>
+    </RuleTabShell>
+  );
+}
+
+function MaterialsTab() {
+  return (
+    <RuleTabShell
+      icon={<Package className="h-6 w-6 text-sky-400" />}
+      title="Quy tắc tính tiền vật tư"
+      subtitle="Vật tư được tính từ master-data, sau đó đóng băng đơn giá vào BOM để giữ lịch sử báo giá."
+      refs={[
+        { label: "Backend đơn hàng", path: "BE/src/modules/orders/orders.service.ts", note: "Tính đơn giá từ vật tư master khi tạo/sửa BOM." },
+        { label: "Schema đơn hàng", path: "BE/src/modules/orders/orders.schema.ts", note: "Chặn payload không hợp lệ từ frontend." },
+        { label: "Trang vật tư", path: "FE/src/app/admin/vat-tu/page.tsx", note: "Quản lý giá nhập, giá bán, chiều dài mặc định." },
+        { label: "Trang BOM", path: "FE/src/app/admin/don-hang/[id]/bom/page.tsx", note: "Tạm tính dòng vật tư trước khi lưu." },
+      ]}
+    >
+      <FormulaBlock
+        title="Công thức theo loại vật tư"
+        formula="Thành tiền dòng = Đơn giá đã đóng băng x Số lượng"
+        rows={[
+          ["Giá gốc", "Ưu tiên dongiaban, nếu chưa có thì dùng dongianhap"],
+          ["Thanh nhôm", "Đơn giá = giá gốc x chiều dài cắt / chiều dài mặc định"],
+          ["Kính / tấm", "Đơn giá = giá gốc x rộng x cao / 1.000.000"],
+          ["Theo món", "Đơn giá = giá gốc"],
+          ["Đóng băng giá", "Lưu vào chitietdh.dongiadongbang và chitietdh.thanhtien"],
+        ]}
+      />
+      <ExplainCard tone="sky" title="Điểm quan trọng">
+        Backend vẫn là nơi tính lại đơn giá từ master-data khi cần, nên báo giá không phụ thuộc hoàn toàn vào số frontend gửi lên. Khi đã lưu BOM, đơn giá dòng được đóng băng để sau này giá vật tư thay đổi vẫn không làm lệch đơn cũ.
+      </ExplainCard>
+    </RuleTabShell>
+  );
+}
+
+function ScoreTab({ context }: { context: { kerf: number; safeMargin: number; minScrap: number; minReusable: number; smallScrapMinScore: number } }) {
+  return (
+    <RuleTabShell
+      icon={<Scissors className="h-6 w-6 text-orange-400" />}
+      title="Quy tắc score tối ưu cắt phôi"
+      subtitle={`Đang dùng kerf ${context.kerf} mm, lề an toàn ${context.safeMargin} mm, phế liệu < ${context.minScrap} mm, tái sử dụng >= ${context.minReusable} mm.`}
+      refs={[
+        { label: "Thuật toán backend", path: "BE/src/modules/cutting-plans/cutting-plans.service.ts", note: "scoreRemainder, scoreCandidateBar, planCuts." },
+        { label: "Màn tối ưu cắt", path: "FE/src/app/admin/toi-uu-cat/[mapc]/page.tsx", note: "Hiển thị sơ đồ, metric và score tham khảo." },
+        { label: "Màn đề xuất cắt", path: "FE/src/app/admin/de-xuat-cat/page.tsx", note: "So sánh score cũ/mới khi thợ gửi đề xuất." },
+        { label: "Cấu hình rules", path: "BE/src/modules/rules/rules.service.ts", note: "Lưu BLADE_KERF, SAFE_MARGIN, MIN_SCRAP, MIN_REUSABLE_LENGTH." },
+      ]}
+    >
+      <FormulaBlock
+        title="Công thức score"
+        formula="Score = Điểm phần dư + Điểm dọn kho + Điểm gom mảnh - Điểm phạt rủi ro - Tie-break phần dư"
+        rows={[
+          ["Phế liệu nhỏ", `Nếu phần dư < ${context.minScrap} mm: 1200 - phần_dư x 0.02`],
+          ["Phôi dư tái sử dụng", `Nếu phần dư >= ${context.minReusable} mm: 700 + min(phần_dư / 25, 350)`],
+          ["Phôi dư lỡ cỡ", `Từ ${context.minScrap} đến dưới ${context.minReusable} mm: -850 - ratio x 450`],
+          ["Ưu tiên dọn kho", "Dùng phôi cũ CON_DU: cộng thêm 120 điểm"],
+          ["Gom mảnh", "Nếu phần dư còn chứa được mảnh BOM tiếp theo: cộng thêm 240 điểm"],
+          ["Bảo vệ cây dài", "Phạt 6000 điểm nếu dùng cây dài duy nhất trong kho không hợp lý"],
+          ["Tie-break", "Trừ phần_dư x 0.01 để ưu tiên phương án khít hơn"],
+        ]}
+      />
+      <div className="overflow-hidden rounded-xl border border-white/10">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-white/5 text-gray-300">
+            <tr>
+              <th className="p-3">Loại phần dư</th>
+              <th className="p-3">Điều kiện</th>
+              <th className="p-3">Ý nghĩa</th>
+              <th className="p-3 text-right">Tác động</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5 text-gray-400">
+            <tr>
+              <td className="p-3 font-bold text-emerald-300">Phế liệu nhỏ</td>
+              <td className="p-3 font-mono">&lt; {context.minScrap} mm</td>
+              <td className="p-3">Tận dụng gần hết cây phôi.</td>
+              <td className="p-3 text-right text-emerald-300">+1200 đến +{context.smallScrapMinScore}</td>
+            </tr>
+            <tr>
+              <td className="p-3 font-bold text-sky-300">Tái sử dụng</td>
+              <td className="p-3 font-mono">&gt;= {context.minReusable} mm</td>
+              <td className="p-3">Giữ lại làm phôi dư cho đơn sau.</td>
+              <td className="p-3 text-right text-sky-300">+700 đến +1050</td>
+            </tr>
+            <tr>
+              <td className="p-3 font-bold text-amber-300">Lỡ cỡ</td>
+              <td className="p-3 font-mono">{context.minScrap} - {context.minReusable - 1} mm</td>
+              <td className="p-3">Khó dùng lại, dễ làm chật kho.</td>
+              <td className="p-3 text-right text-red-300">-850 đến -1300</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </RuleTabShell>
+  );
+}
+
+function PaymentsTab() {
+  return (
+    <RuleTabShell
+      icon={<CreditCard className="h-6 w-6 text-violet-400" />}
+      title="Quy tắc thanh toán, duyệt giá và hoàn thành"
+      subtitle="Các bước tiền và trạng thái được tách khỏi email để tránh hiểu nhầm: email là gửi báo giá/biên nhận, không phải thanh toán."
+      refs={[
+        { label: "Thanh toán backend", path: "BE/src/modules/payments/payments.service.ts", note: "Tính đã trả, còn nợ, chống thanh toán vượt tổng." },
+        { label: "Schema thanh toán", path: "BE/src/modules/payments/payments.schema.ts", note: "Loại giao dịch và phương thức thanh toán." },
+        { label: "Email báo giá", path: "BE/src/modules/emails/emails.routes.ts", note: "Gửi email rồi đánh dấu báo giá đã gửi." },
+        { label: "Duyệt giá đơn", path: "BE/src/modules/orders/orders.service.ts", note: "Chỉ duyệt giá sau khi đã gửi báo giá." },
+        { label: "Hoàn thành cắt", path: "BE/src/modules/cutting-plans/cutting-plans.service.ts", note: "Trừ kho trong completePlan, không trừ kho lúc tạo sơ đồ." },
+      ]}
+    >
+      <FormulaBlock
+        title="Quy tắc nghiệp vụ"
+        formula="Trạng thái thanh toán = tổng giao dịch hợp lệ so với tổng giá trị đơn hàng"
+        rows={[
+          ["Gửi báo giá", "Email ghi nhận baogia_gui_luc và baogia_email, mở khóa bước duyệt giá"],
+          ["Duyệt giá", "Chỉ cho duyệt khi khách đã nhận/xác nhận báo giá"],
+          ["Đặt cọc", "Giao dịch DAT_COC chuyển đơn sang trạng thái đã cọc"],
+          ["Hoàn tất", "Khi tổng đã trả >= tonggiatri, giao dịch hiệu lực là HOAN_TAT"],
+          ["Chống vượt tiền", "Backend không cho ghi nhận số tiền lớn hơn công nợ còn lại"],
+          ["Trừ kho", "Không trừ kho khi lập sơ đồ; chỉ trừ khi thợ hoàn thành luồng completePlan"],
+        ]}
+      />
+      <ExplainCard tone="violet" title="Có thể nâng tiếp">
+        Có thể thêm VietQR ở bước báo giá hoặc thanh toán. QR nên sinh theo mã đơn, số tiền cọc/còn lại và nội dung chuyển khoản; sau đó vẫn ghi nhận là chuyển khoản nếu chưa tích hợp webhook ngân hàng.
+      </ExplainCard>
+    </RuleTabShell>
+  );
+}
+
+function RuleTabShell({ icon, title, subtitle, refs, children }: { icon: ReactNode; title: string; subtitle: string; refs: CodeRef[]; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <section className="space-y-5 rounded-2xl border border-white/5 bg-[#0a0a0c] p-6">
+        <div className="flex items-start gap-4">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">{icon}</div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-100">{title}</h2>
+            <p className="mt-1 text-sm leading-relaxed text-gray-400">{subtitle}</p>
+          </div>
+        </div>
+        {children}
+      </section>
+
+      <aside className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-6">
+        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-gray-400">
+          <FolderCode className="h-4 w-4 text-blue-400" />
+          Thư mục code liên quan
+        </div>
+        <div className="mt-4 space-y-3">
+          {refs.map((ref) => (
+            <div key={ref.path} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="text-sm font-bold text-gray-100">{ref.label}</div>
+              <div className="mt-1 break-all rounded-lg bg-black/30 px-2 py-1.5 font-mono text-xs text-blue-300">{ref.path}</div>
+              <p className="mt-2 text-xs leading-relaxed text-gray-500">{ref.note}</p>
+            </div>
+          ))}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function FormulaBlock({ title, formula, rows }: { title: string; formula: string; rows: Array<[string, string]> }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="flex items-center text-base font-bold text-gray-100">
+          <HelpCircle className="mr-2 h-4 w-4 text-blue-400" />
+          {title}
+        </h3>
+        <div className="mt-3 rounded-xl border border-white/10 bg-[#121214] p-4 text-center font-mono text-sm font-bold text-blue-300">{formula}</div>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-white/10">
+        <table className="w-full text-left text-sm">
+          <tbody className="divide-y divide-white/5">
+            {rows.map(([label, value]) => (
+              <tr key={label} className="hover:bg-white/[0.02]">
+                <td className="w-[220px] p-3 font-bold text-gray-200">{label}</td>
+                <td className="p-3 leading-relaxed text-gray-400">{value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ExplainCard({ tone, title, children }: { tone: "emerald" | "sky" | "violet"; title: string; children: ReactNode }) {
+  const toneClass = {
+    emerald: "border-emerald-500/15 bg-emerald-500/10 text-emerald-200",
+    sky: "border-sky-500/15 bg-sky-500/10 text-sky-200",
+    violet: "border-violet-500/15 bg-violet-500/10 text-violet-200",
+  }[tone];
+
+  return (
+    <div className={`flex items-start rounded-xl border p-4 text-sm ${toneClass}`}>
+      <Info className="mr-3 mt-0.5 h-5 w-5 shrink-0" />
+      <div>
+        <div className="font-bold">{title}</div>
+        <div className="mt-1 leading-relaxed opacity-90">{children}</div>
+      </div>
     </div>
   );
 }
@@ -334,7 +497,7 @@ function NumberCard({
   min,
   max,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   desc: string;
   value: number;
@@ -343,12 +506,12 @@ function NumberCard({
   max: number;
 }) {
   return (
-    <div className="bg-[#0a0a0c] border border-white/10 rounded-2xl p-6 shadow-lg">
-      <div className="flex items-start mb-6">
-        <div className="p-3 bg-white/5 rounded-xl mr-4 border border-white/10">{icon}</div>
+    <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-6 shadow-lg">
+      <div className="mb-6 flex items-start">
+        <div className="mr-4 rounded-xl border border-white/10 bg-white/5 p-3">{icon}</div>
         <div>
           <h3 className="text-lg font-bold text-gray-200">{title}</h3>
-          <p className="text-sm text-gray-400 mt-1">{desc}</p>
+          <p className="mt-1 text-sm text-gray-400">{desc}</p>
         </div>
       </div>
       <div className="relative">
@@ -358,11 +521,15 @@ function NumberCard({
           aria-label={title}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="bg-white/5 border border-white/10 text-3xl font-bold text-white rounded-xl w-full p-4 pr-16 focus:ring-2 focus:ring-blue-500 outline-none"
+          className="w-full rounded-xl border border-white/10 bg-white/5 p-4 pr-16 text-3xl font-bold text-white outline-none focus:ring-2 focus:ring-blue-500"
           min={min}
           max={max}
         />
         <span className="absolute right-6 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-500">mm</span>
+      </div>
+      <div className="mt-3 flex items-center text-xs text-gray-500">
+        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-emerald-400" />
+        Lưu vào bảng quy tắc qua API /api/admin/rules
       </div>
     </div>
   );

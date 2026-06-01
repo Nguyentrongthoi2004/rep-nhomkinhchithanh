@@ -70,6 +70,7 @@ export default function WorkerTasksPage() {
   const [completionNote, setCompletionNote] = useState("");
   const [rejectReason, setRejectReason] = useState<(typeof REJECT_REASONS)[number]["value"]>("DANG_BAN");
   const [rejectNote, setRejectNote] = useState("");
+  const [focusMapc, setFocusMapc] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,11 +88,25 @@ export default function WorkerTasksPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mapc = Number(params.get("mapc") || 0);
+    setFocusMapc(Number.isFinite(mapc) && mapc > 0 ? mapc : null);
+  }, []);
+
   const buckets = useMemo(() => ({
     CHO_THUC_HIEN: tasks.filter((t) => t.trangthai === "CHO_THUC_HIEN"),
     DANG_THUC_HIEN: tasks.filter((t) => t.trangthai === "DANG_THUC_HIEN"),
     HOAN_THANH: tasks.filter((t) => t.trangthai === "HOAN_THANH"),
   }), [tasks]);
+
+  useEffect(() => {
+    if (!focusMapc || tasks.length === 0) return;
+    const focusedTask = tasks.find((task) => task.mapc === focusMapc);
+    if (!focusedTask) return;
+    setTab(focusedTask.trangthai);
+    setExpanded(focusedTask.mapc);
+  }, [focusMapc, tasks]);
 
   const updateStatus = async (mapc: number, trangthai: TaskStatus) => {
     setBusyId(mapc);

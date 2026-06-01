@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, ReceiptText, Save, Search, WalletCards, X } from "lucide-react";
+import { Filter, Loader2, Plus, ReceiptText, RotateCcw, Save, Search, SlidersHorizontal, WalletCards, X } from "lucide-react";
 import { apiData, apiJson } from "@/lib/api";
 import { formatOrderStatus } from "@/lib/order-status";
 import { ListPagination } from "@/components/admin/ListPagination";
@@ -27,6 +27,9 @@ type OrderPayment = {
   conno: number;
   giaodich: PaymentRow[];
 };
+
+type DebtFilter = "all" | "debt" | "paid" | "unpaid" | "blocked";
+type SortMode = "newest" | "debt_desc" | "paid_desc" | "value_desc";
 
 const money = (value: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
 const moneyPlain = (value: number) => `${new Intl.NumberFormat("vi-VN").format(value || 0)} đ`;
@@ -93,6 +96,14 @@ export default function PaymentsPage() {
   const [receiptEmail, setReceiptEmail] = useState("");
   const [notice, setNotice] = useState<{ type: "ok" | "warn"; text: string } | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [debtFilter, setDebtFilter] = useState<DebtFilter>("all");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [methodFilter, setMethodFilter] = useState("ALL");
+  const [transactionFilter, setTransactionFilter] = useState("ALL");
+  const [minDebt, setMinDebt] = useState("");
+  const [maxDebt, setMaxDebt] = useState("");
+  const [sortMode, setSortMode] = useState<SortMode>("newest");
+  const [showFilters, setShowFilters] = useState(true);
   const [page, setPage] = useState(1);
 
   const updateAmountInput = (raw: string) => {
@@ -118,15 +129,57 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, timeFilter]);
+  }, [debtFilter, maxDebt, methodFilter, minDebt, search, sortMode, statusFilter, timeFilter, transactionFilter]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((row) => {
-      const text = `DH-${row.madh} ${row.khachhang?.hoten || ""} ${row.khachhang?.sdt || ""} ${row.khachhang?.email || ""} ${row.khachhang?.diachi || ""} ${formatOrderStatus(row.trangthai)}`.toLowerCase();
-      return (!q || text.includes(q)) && matchesTimeFilter(getPaymentFilterDate(row), timeFilter);
+    const min = parseCurrencyInput(minDebt).value;
+    const max = parseCurrencyInput(maxDebt).value;
+    const result = rows.filter((row) => {
+      const latest = row.giaodich[0];
+      const text = [
+        `DH-${row.madh}`,
+        row.khachhang?.hoten || "",
+        row.khachhang?.sdt || "",
+        row.khachhang?.email || "",
+        row.khachhang?.diachi || "",
+        formatOrderStatus(row.trangthai),
+        latest ? `${formatTransactionType(latest.loaigd)} ${formatPaymentMethod(latest.phuongthuc)} ${latest.ghichu || ""}` : "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesDebt =
+        debtFilter === "all" ||
+        (debtFilter === "debt" && row.conno > 0 && !["KHAO_SAT", "BAO_GIA_NHAP", "DA_HUY"].includes(row.trangthai)) ||
+        (debtFilter === "paid" && row.conno <= 0 && row.tonggiatri > 0) ||
+        (debtFilter === "unpaid" && row.dathanhtoan <= 0 && row.tonggiatri > 0) ||
+        (debtFilter === "blocked" && ["KHAO_SAT", "BAO_GIA_NHAP", "DA_HUY"].includes(row.trangthai));
+      const matchesStatus = statusFilter === "ALL" || row.trangthai === statusFilter;
+      const matchesMethod = methodFilter === "ALL" || row.giaodich.some((payment) => payment.phuongthuc === methodFilter);
+      const matchesTransaction = transactionFilter === "ALL" || row.giaodich.some((payment) => payment.loaigd === transactionFilter);
+      const matchesMin = !minDebt.trim() || row.conno >= min;
+      const matchesMax = !maxDebt.trim() || row.conno <= max;
+
+      return (
+        (!q || text.includes(q)) &&
+        matchesTimeFilter(getPaymentFilterDate(row), timeFilter) &&
+        matchesDebt &&
+        matchesStatus &&
+        matchesMethod &&
+        matchesTransaction &&
+        matchesMin &&
+        matchesMax
+      );
     });
-  }, [rows, search, timeFilter]);
+
+    return [...result].sort((a, b) => {
+      if (sortMode === "debt_desc") return b.conno - a.conno;
+      if (sortMode === "paid_desc") return b.dathanhtoan - a.dathanhtoan;
+      if (sortMode === "value_desc") return b.tonggiatri - a.tonggiatri;
+      return new Date(getPaymentFilterDate(b)).getTime() - new Date(getPaymentFilterDate(a)).getTime();
+    });
+  }, [debtFilter, maxDebt, methodFilter, minDebt, rows, search, sortMode, statusFilter, timeFilter, transactionFilter]);
 
   const pagedRows = useMemo(() => paginate(filtered, page, DEFAULT_PAGE_SIZE), [filtered, page]);
 
@@ -138,6 +191,30 @@ export default function PaymentsPage() {
     }),
     [rows],
   );
+  const filteredTotals = useMemo(
+    () => ({
+      revenue: filtered.reduce((sum, row) => sum + row.tonggiatri, 0),
+      paid: filtered.reduce((sum, row) => sum + row.dathanhtoan, 0),
+      debt: filtered.reduce((sum, row) => sum + row.conno, 0),
+    }),
+    [filtered],
+  );
+
+  const orderStatuses = useMemo(() => [...new Set(rows.map((row) => row.trangthai))].sort(), [rows]);
+  const transactionTypes = useMemo(() => [...new Set(rows.flatMap((row) => row.giaodich.map((payment) => payment.loaigd)))].sort(), [rows]);
+  const paymentMethods = useMemo(() => [...new Set(rows.flatMap((row) => row.giaodich.map((payment) => payment.phuongthuc)))].sort(), [rows]);
+
+  const resetFilters = () => {
+    setSearch("");
+    setTimeFilter("all");
+    setDebtFilter("all");
+    setStatusFilter("ALL");
+    setMethodFilter("ALL");
+    setTransactionFilter("ALL");
+    setMinDebt("");
+    setMaxDebt("");
+    setSortMode("newest");
+  };
 
   const selectedOrder = useMemo(() => rows.find((row) => row.madh === form.madh) ?? null, [form.madh, rows]);
   const openPaymentModal = () => {
@@ -273,6 +350,81 @@ export default function PaymentsPage() {
           <TimeFilterButton active={timeFilter === "month"} onClick={() => setTimeFilter("month")}>Tháng này</TimeFilterButton>
           <TimeFilterButton active={timeFilter === "year"} onClick={() => setTimeFilter("year")}>Năm này</TimeFilterButton>
         </div>
+      </div>
+
+      <section className="rounded-2xl border border-white/5 bg-[#0a0a0c] p-5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2 text-sm font-bold text-gray-200">
+            <Filter className="h-4 w-4 text-emerald-300" />
+            Bộ lọc nâng cao
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowFilters((value) => !value)}
+            className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold text-gray-200 hover:bg-white/10"
+          >
+            <SlidersHorizontal className="mr-2 h-4 w-4" />
+            {showFilters ? "Thu gọn" : "Mở rộng"}
+          </button>
+        </div>
+
+        {showFilters && (
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <TimeFilterButton active={debtFilter === "all"} onClick={() => setDebtFilter("all")}>Tất cả công nợ</TimeFilterButton>
+              <TimeFilterButton active={debtFilter === "debt"} onClick={() => setDebtFilter("debt")}>Còn nợ</TimeFilterButton>
+              <TimeFilterButton active={debtFilter === "paid"} onClick={() => setDebtFilter("paid")}>Đã tất toán</TimeFilterButton>
+              <TimeFilterButton active={debtFilter === "unpaid"} onClick={() => setDebtFilter("unpaid")}>Chưa thu đồng nào</TimeFilterButton>
+              <TimeFilterButton active={debtFilter === "blocked"} onClick={() => setDebtFilter("blocked")}>Chưa đủ điều kiện thu</TimeFilterButton>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <PaymentFilterSelect label="Trạng thái đơn" value={statusFilter} onChange={setStatusFilter}>
+                <option value="ALL">Tất cả</option>
+                {orderStatuses.map((status) => (
+                  <option key={status} value={status}>{formatOrderStatus(status)}</option>
+                ))}
+              </PaymentFilterSelect>
+              <PaymentFilterSelect label="Loại giao dịch" value={transactionFilter} onChange={setTransactionFilter}>
+                <option value="ALL">Tất cả</option>
+                {transactionTypes.map((type) => (
+                  <option key={type} value={type}>{formatTransactionType(type)}</option>
+                ))}
+              </PaymentFilterSelect>
+              <PaymentFilterSelect label="Phương thức" value={methodFilter} onChange={setMethodFilter}>
+                <option value="ALL">Tất cả</option>
+                {paymentMethods.map((method) => (
+                  <option key={method} value={method}>{formatPaymentMethod(method)}</option>
+                ))}
+              </PaymentFilterSelect>
+              <PaymentFilterSelect label="Sắp xếp" value={sortMode} onChange={(value) => setSortMode(value as SortMode)}>
+                <option value="newest">Mới cập nhật</option>
+                <option value="debt_desc">Nợ cao nhất</option>
+                <option value="paid_desc">Đã thu cao nhất</option>
+                <option value="value_desc">Giá trị đơn cao nhất</option>
+              </PaymentFilterSelect>
+              <AmountFilterInput label="Nợ tối thiểu" value={minDebt} onChange={(value) => setMinDebt(formatCurrencyInput(value))} />
+              <AmountFilterInput label="Nợ tối đa" value={maxDebt} onChange={(value) => setMaxDebt(formatCurrencyInput(value))} />
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold text-gray-200 hover:bg-white/10"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Xóa toàn bộ bộ lọc
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Stat label="Giá trị đang xem" value={money(filteredTotals.revenue)} />
+        <Stat label="Đã thu đang xem" value={money(filteredTotals.paid)} tone="text-emerald-300" />
+        <Stat label="Còn nợ đang xem" value={money(filteredTotals.debt)} tone="text-amber-300" />
       </div>
 
       {notice && (
@@ -545,6 +697,36 @@ function Select({ label, value, onChange, children }: { label: string; value: st
       <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-gray-100 outline-none focus:border-emerald-500">
         {children}
       </select>
+    </label>
+  );
+}
+
+function PaymentFilterSelect({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-bold uppercase tracking-wider text-gray-500">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-gray-100 outline-none focus:border-emerald-500"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function AmountFilterInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-bold uppercase tracking-wider text-gray-500">{label}</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        inputMode="numeric"
+        placeholder="VD: 5.000.000"
+        className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 font-mono text-sm text-gray-100 outline-none focus:border-emerald-500"
+      />
     </label>
   );
 }

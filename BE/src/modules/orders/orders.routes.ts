@@ -40,7 +40,7 @@ ordersRouter.post(
   "/",
   validate(createOrderSchema, "body"),
   asyncHandler(async (req, res) => {
-    sendCreated(res, await ordersService.create(req.body as CreateOrderDto));
+    sendCreated(res, await ordersService.create(req.body as CreateOrderDto, req.user!.mand));
   }),
 );
 
@@ -49,7 +49,7 @@ ordersRouter.post(
   validate(orderIdParamSchema, "params"),
   asyncHandler(async (req, res) => {
     const id = (req.params as unknown as { id: number }).id;
-    sendOk(res, await ordersService.approvePrice(id));
+    sendOk(res, await ordersService.approvePrice(id, req.user!.mand));
   }),
 );
 
@@ -69,7 +69,7 @@ ordersRouter.patch(
   validate(updateOrderSchema, "body"),
   asyncHandler(async (req, res) => {
     const id = (req.params as unknown as { id: number }).id;
-    sendOk(res, await ordersService.updateDetails(id, req.body as UpdateOrderDto));
+    sendOk(res, await ordersService.updateDetails(id, req.body as UpdateOrderDto, req.user!.mand));
   }),
 );
 

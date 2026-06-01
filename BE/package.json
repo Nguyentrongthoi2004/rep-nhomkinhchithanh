@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts",
+    "test:activity-logs": "tsx src/scripts/dev/test_activity_logs.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",

@@ -19,6 +19,11 @@ interface Order {
   chitietdh: { mactdh: number }[];
 }
 
+type OrderUrlFilters = {
+  makh?: number;
+  trangthai?: string;
+};
+
 // Trang danh sách đơn hàng quản trị: hiển thị tất cả đơn với bộ lọc trạng thái, tìm kiếm, phân trang.
 // Hỗ trợ: xem chi tiết, sửa KH, lập BOM, hủy đơn, xóa đơn
 export default function OrderListPage() {
@@ -36,6 +41,7 @@ export default function OrderListPage() {
     run: () => Promise<void>;
   } | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [urlFilters, setUrlFilters] = useState<OrderUrlFilters>({});
   const [page, setPage] = useState(1);
 
   const reloadOrders = useCallback(async () => {
@@ -54,8 +60,18 @@ export default function OrderListPage() {
   }, [reloadOrders]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const makh = Number(params.get("makh") || 0);
+    const trangthai = params.get("trangthai")?.trim() || undefined;
+    setUrlFilters({
+      makh: Number.isFinite(makh) && makh > 0 ? makh : undefined,
+      trangthai,
+    });
+  }, []);
+
+  useEffect(() => {
     setPage(1);
-  }, [searchTerm, timeFilter]);
+  }, [searchTerm, timeFilter, urlFilters.makh, urlFilters.trangthai]);
 
   const handleDeleteOrder = async (madh: number) => {
     setConfirmAction({
@@ -121,10 +137,17 @@ export default function OrderListPage() {
     const q = searchTerm.trim().toLowerCase();
     return orders.filter((o) => {
       const text = `DH-${o.madh} ${o.khachhang?.hoten || ""} ${o.khachhang?.sdt || ""} ${o.khachhang?.email || ""} ${o.khachhang?.diachi || ""}`.toLowerCase();
-      return (!q || text.includes(q)) && matchesTimeFilter(o.ngaytao, timeFilter);
+      const matchesCustomer = !urlFilters.makh || o.khachhang?.makh === urlFilters.makh;
+      const matchesStatus = !urlFilters.trangthai || o.trangthai === urlFilters.trangthai;
+      return (!q || text.includes(q)) && matchesTimeFilter(o.ngaytao, timeFilter) && matchesCustomer && matchesStatus;
     });
-  }, [orders, searchTerm, timeFilter]);
+  }, [orders, searchTerm, timeFilter, urlFilters.makh, urlFilters.trangthai]);
   const pagedOrders = useMemo(() => paginate(filteredOrders, page, DEFAULT_PAGE_SIZE), [filteredOrders, page]);
+  const activeUrlFilterLabel = urlFilters.makh
+    ? `Khách hàng #${urlFilters.makh}`
+    : urlFilters.trangthai
+      ? formatOrderStatus(urlFilters.trangthai)
+      : "";
 
   return (
     <div className="space-y-6">
@@ -177,6 +200,15 @@ export default function OrderListPage() {
           <TimeFilterButton active={timeFilter === "today"} onClick={() => setTimeFilter("today")}>Hôm nay</TimeFilterButton>
           <TimeFilterButton active={timeFilter === "month"} onClick={() => setTimeFilter("month")}>Tháng này</TimeFilterButton>
           <TimeFilterButton active={timeFilter === "year"} onClick={() => setTimeFilter("year")}>Năm này</TimeFilterButton>
+          {activeUrlFilterLabel && (
+            <Link
+              href="/admin/don-hang"
+              onClick={() => setUrlFilters({})}
+              className="rounded-lg border border-orange-500/25 bg-orange-500/10 px-3 py-2 text-xs font-bold text-orange-200 transition-colors hover:bg-orange-500/20"
+            >
+              {activeUrlFilterLabel} · bỏ lọc
+            </Link>
+          )}
         </div>
       </div>
 

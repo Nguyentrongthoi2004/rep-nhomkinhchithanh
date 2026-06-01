@@ -1,5 +1,6 @@
 import { HttpError } from "@/lib/http";
 import { supabaseAdmin } from "@/lib/supabase";
+import { activityLogsService } from "@/modules/activity-logs/activity-logs.service";
 import { notificationsService } from "@/modules/notifications/notifications.service";
 import type { CreatePaymentDto } from "./payments.schema";
 
@@ -61,7 +62,7 @@ export const paymentsService = {
   },
 
   // Ghi nhận thanh toán: kiểm tra đơn đã duyệt giá, tính công nợ, insert giao dịch, tự động chuyển trạng thái DA_COC/DA_THANH_TOAN
-  async create(dto: CreatePaymentDto) {
+  async create(dto: CreatePaymentDto, actorId?: number) {
     const { data: order, error: orderErr } = await supabaseAdmin
       .from("donhang")
       .select("madh, trangthai, tonggiatri")
@@ -70,6 +71,26 @@ export const paymentsService = {
     if (orderErr) throw HttpError.internal(orderErr.message);
     if (!order) throw HttpError.notFound(`Order ${dto.madh} not found`);
     if (order.trangthai === "DA_HUY") throw HttpError.badRequest("Không thể ghi thanh toán cho đơn đã hủy");
+
+    if (order.trangthai === "HOAN_THANH") {
+      const { data: existingPayments, error: paidErr } = await supabaseAdmin
+        .from("giaodich")
+        .select("loaigd, sotien")
+        .eq("madh", dto.madh);
+      if (paidErr) throw HttpError.internal(paidErr.message);
+      const paidSum = (existingPayments ?? []).reduce(
+        (sum, row) => sum + signedAmount(row as { loaigd: string; sotien: number | string }),
+        0,
+      );
+      const remainingDebt = Math.max(0, Number(order.tonggiatri || 0) - paidSum);
+      if (remainingDebt <= 0) {
+        throw HttpError.badRequest("Đơn hàng đã hoàn thành và đã thanh toán đủ, không thể ghi nhận thêm giao dịch");
+      }
+      if (dto.loaigd === "HUY_DON") {
+        throw HttpError.badRequest("Đơn hàng đã hoàn thành, không thể thực hiện hủy đơn");
+      }
+    }
+
     if (["KHAO_SAT", "BAO_GIA_NHAP"].includes(order.trangthai as string)) {
       throw HttpError.badRequest("Cần duyệt giá đơn hàng trước khi ghi nhận thanh toán");
     }
@@ -137,6 +158,18 @@ export const paymentsService = {
         },
       })
       .catch(() => null);
+    void activityLogsService.record({
+      userId: actorId ?? null,
+      action: "PAYMENT_RECORDED",
+      targetType: "giaodich",
+      targetId: (data as { magd?: number }).magd ?? `${dto.madh}`,
+      details: {
+        madh: dto.madh,
+        loaigd: effectiveTransactionType,
+        phuongthuc: dto.phuongthuc,
+        sotien: dto.sotien,
+      },
+    });
 
     return data;
   },

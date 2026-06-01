@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { env } from "@/config/env";
 import { HttpError } from "@/lib/http";
 import { supabaseAdmin } from "@/lib/supabase";
+import { isTerminalOrderState } from "@/modules/orders/orders.service";
 import type { CreateOrderImageDto, ReplaceOrderImageFileDto, UploadOrderImageDto, UploadOrderImageFileDto } from "./images.schema";
 
 const TABLE = "hinhanh";
@@ -137,6 +138,17 @@ async function resolveContext(dto: UploadContextDto, userId: number | undefined,
   }
 
   if (!madh) throw HttpError.badRequest("Can co ma don hang hoac ma phan cong hop le");
+
+  const { data: order, error: orderErr } = await supabaseAdmin
+    .from("donhang")
+    .select("trangthai")
+    .eq("madh", madh)
+    .maybeSingle();
+  if (orderErr) throw HttpError.internal(orderErr.message);
+  if (order && isTerminalOrderState(order.trangthai as string)) {
+    throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể tải lên hình ảnh");
+  }
+
   return { madh, mapc, masdc, maphoi };
 }
 
@@ -374,10 +386,25 @@ export const imagesService = {
   },
 
   async remove(id: number) {
-    const { data, error: readError } = await supabaseAdmin.from(TABLE).select("duongdan").eq("maha", id).maybeSingle();
+    const { data, error: readError } = await supabaseAdmin
+      .from(TABLE)
+      .select("duongdan, madh, donhang:madh(trangthai)")
+      .eq("maha", id)
+      .maybeSingle();
     if (readError) throw HttpError.internal(readError.message);
+    if (!data) throw HttpError.notFound("Không tìm thấy hình ảnh");
 
-    const path = (data as { duongdan?: string | null } | null)?.duongdan?.trim();
+    interface ImageToRemove {
+      duongdan?: string | null;
+      madh?: number | null;
+      donhang?: { trangthai: string } | null;
+    }
+    const typed = data as unknown as ImageToRemove;
+    if (typed.donhang?.trangthai && isTerminalOrderState(typed.donhang.trangthai)) {
+      throw HttpError.badRequest("Đơn hàng đã hoàn thành hoặc đã hủy, không thể xóa hình ảnh");
+    }
+
+    const path = typed.duongdan?.trim();
     if (isStoragePath(path)) {
       await removeStoragePath(path);
     }
