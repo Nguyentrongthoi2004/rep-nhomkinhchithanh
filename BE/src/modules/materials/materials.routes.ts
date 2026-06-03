@@ -63,3 +63,13 @@ materialsOptionsRouter.get(
     sendOk(res, await materialsService.listOptions());
   }),
 );
+
+export const workerMaterialsRouter = Router();
+workerMaterialsRouter.use(authMiddleware, requireRole("WORKER", "ADMIN"));
+workerMaterialsRouter.get(
+  "/",
+  asyncHandler(async (_req, res) => {
+    sendOk(res, await materialsService.listOptions());
+  }),
+);
+

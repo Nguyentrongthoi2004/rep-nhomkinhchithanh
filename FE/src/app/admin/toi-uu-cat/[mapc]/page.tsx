@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowUpDown,
   CheckCircle2,
   ChevronDown,
   Gauge,
@@ -13,10 +14,12 @@ import {
   ListChecks,
   Loader2,
   PackagePlus,
+  Pin,
   Play,
   RefreshCw,
   Ruler,
   Scissors,
+  SlidersHorizontal,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -103,6 +106,55 @@ type CuttingPlanMetrics = {
   productUtilizationRate?: number;
   materialUsageRate?: number;
   selectedReasons?: string[];
+};
+
+type ManualCutDraft = {
+  id: string;
+  label: string;
+  length: number;
+  status: string;
+  sourcePlanId: number;
+  sourceCutId: number;
+};
+
+type ManualBarDraft = {
+  id: string;
+  label: string;
+  inputLength: number;
+  sourceStatus?: string | null;
+  cuts: ManualCutDraft[];
+};
+
+type DraftMetrics = {
+  bars: number;
+  used: number;
+  input: number;
+  remainder: number;
+  awkwardBars: number;
+  reusableBars: number;
+  utilization: number;
+};
+
+type DecisionWorkspaceTab = "overview" | "decision" | "manual" | "bom" | "plans";
+
+type DecisionStrategy = "balanced" | "save-stock" | "reuse-offcut" | "site-fit";
+
+type PlanSortMode = "pinned" | "utilization" | "remainder" | "cuts" | "uid";
+
+type DecisionParams = {
+  kerf: number;
+  safeMargin: number;
+  minScrap: number;
+  minReusableLength: number;
+  strategy: DecisionStrategy;
+};
+
+const DEFAULT_DECISION_PARAMS: DecisionParams = {
+  kerf: 5,
+  safeMargin: 0,
+  minScrap: 100,
+  minReusableLength: 1500,
+  strategy: "balanced",
 };
 
 type CreatePlanResponse =
@@ -222,6 +274,12 @@ function formatPercent(value?: number | null) {
 function toPositiveInt(value: unknown, fallback: number) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return fallback;
+  return Math.ceil(number);
+}
+
+function toNonNegativeInt(value: unknown, fallback: number) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return fallback;
   return Math.ceil(number);
 }
 
@@ -402,6 +460,106 @@ function evaluateInitialPlan(plans: CuttingPlan[], warnings: string[]) {
   };
 }
 
+function buildManualDraft(plans: CuttingPlan[]): ManualBarDraft[] {
+  return plans.map((plan) => {
+    const metrics = getPlanMetrics(plan);
+    const inputLength = metrics.inputLength || plan.khothanhphoi?.chieudaihientai || 6000;
+    return {
+      id: `bar-${plan.masdc}`,
+      label: `SDC-${plan.masdc}`,
+      inputLength,
+      sourceStatus: plan.khothanhphoi?.trangthai,
+      cuts: [...(plan.chitietcat || [])]
+        .sort((a, b) => Number(a.thutucat || 0) - Number(b.thutucat || 0))
+        .map((cut) => ({
+          id: `cut-${plan.masdc}-${cut.mactc}`,
+          label: cut.chitietdh?.mota || cut.chitietdh?.vattu?.tenvt || `Nhát #${cut.thutucat}`,
+          length: Number(cut.chieudaicat || 0),
+          status: cut.trangthai,
+          sourcePlanId: plan.masdc,
+          sourceCutId: cut.mactc,
+        })),
+    };
+  });
+}
+
+function getDraftBarUsed(bar: ManualBarDraft, params: DecisionParams = DEFAULT_DECISION_PARAMS) {
+  const cutTotal = bar.cuts.reduce((sum, cut) => sum + Math.max(0, Number(cut.length || 0)), 0);
+  const kerfLoss = Math.max(0, Number(params.kerf || 0)) * bar.cuts.length;
+  return cutTotal + kerfLoss + Math.max(0, Number(params.safeMargin || 0));
+}
+
+function getDraftMetrics(
+  draft: ManualBarDraft[],
+  params: DecisionParams = DEFAULT_DECISION_PARAMS,
+): DraftMetrics {
+  const used = draft.reduce((total, bar) => total + getDraftBarUsed(bar, params), 0);
+  const input = draft.reduce((total, bar) => total + Math.max(0, Number(bar.inputLength || 0)), 0);
+  const remainder = Math.max(0, input - used);
+  const awkwardBars = draft.filter((bar) => {
+    const barUsed = getDraftBarUsed(bar, params);
+    const barRemainder = Math.max(0, bar.inputLength - barUsed);
+    return barRemainder >= params.minScrap && barRemainder < params.minReusableLength;
+  }).length;
+  const reusableBars = draft.filter((bar) => {
+    const barUsed = getDraftBarUsed(bar, params);
+    return Math.max(0, bar.inputLength - barUsed) >= params.minReusableLength;
+  }).length;
+
+  return {
+    bars: draft.length,
+    used,
+    input,
+    remainder,
+    awkwardBars,
+    reusableBars,
+    utilization: input > 0 ? (used / input) * 100 : 0,
+  };
+}
+
+function getPlanSummaryMetrics(plans: CuttingPlan[]): DraftMetrics {
+  const draft = buildManualDraft(plans);
+  return getDraftMetrics(draft);
+}
+
+function DecisionOptionCard({
+  title,
+  badge,
+  description,
+  bullets,
+  tone,
+}: {
+  title: string;
+  badge: string;
+  description: string;
+  bullets: string[];
+  tone: "emerald" | "amber" | "cyan" | "rose";
+}) {
+  const style = {
+    emerald: "border-emerald-500/25 bg-emerald-500/10 text-emerald-200",
+    amber: "border-amber-500/25 bg-amber-500/10 text-amber-200",
+    cyan: "border-cyan-500/25 bg-cyan-500/10 text-cyan-200",
+    rose: "border-rose-500/25 bg-rose-500/10 text-rose-200",
+  }[tone];
+
+  return (
+    <div className={`rounded-2xl border p-4 ${style}`}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-bold text-white">{title}</h3>
+        <span className="rounded-full border border-current/20 bg-black/20 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider">
+          {badge}
+        </span>
+      </div>
+      <p className="mt-2 text-xs leading-5 opacity-80">{description}</p>
+      <ul className="mt-3 list-disc space-y-1 pl-4 text-xs opacity-90">
+        {bullets.map((bullet) => (
+          <li key={bullet}>{bullet}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function CuttingOptimizationDetailPage() {
   const params = useParams<{ mapc: string }>();
   const mapc = useMemo(() => Number(params.mapc), [params.mapc]);
@@ -418,6 +576,12 @@ export default function CuttingOptimizationDetailPage() {
   const [planMetrics, setPlanMetrics] = useState<CuttingPlanMetrics | null>(null);
   const [expandedPlans, setExpandedPlans] = useState<Set<number>>(new Set());
   const [isBomExpanded, setIsBomExpanded] = useState<boolean | null>(null);
+  const [manualDraft, setManualDraft] = useState<ManualBarDraft[]>([]);
+  const [selectedCutId, setSelectedCutId] = useState<string | null>(null);
+  const [workspaceTab, setWorkspaceTab] = useState<DecisionWorkspaceTab>("overview");
+  const [decisionParams, setDecisionParams] = useState<DecisionParams>(DEFAULT_DECISION_PARAMS);
+  const [planSort, setPlanSort] = useState<PlanSortMode>("pinned");
+  const [pinnedPlanIds, setPinnedPlanIds] = useState<Set<number>>(new Set());
 
   const load = useCallback(async () => {
     if (!Number.isFinite(mapc) || mapc <= 0) {
@@ -435,6 +599,8 @@ export default function CuttingOptimizationDetailPage() {
       ]);
       setAssignment(assignmentRows.find((item) => item.mapc === mapc) || null);
       setPlans(planRows);
+      setManualDraft(buildManualDraft(planRows));
+      setSelectedCutId(null);
       setPlanMetrics(null);
       if (!assignmentRows.some((item) => item.mapc === mapc)) {
         setError(`Không tìm thấy phân công PC-${mapc}.`);
@@ -473,7 +639,7 @@ export default function CuttingOptimizationDetailPage() {
     setSupplementDraft(draft);
   }, [shortages]);
 
-  const bomRows = assignment?.donhang?.chitietdh || [];
+  const bomRows = useMemo(() => assignment?.donhang?.chitietdh || [], [assignment?.donhang?.chitietdh]);
 
   const bomStats = useMemo(() => {
     let totalQty = 0;
@@ -524,6 +690,8 @@ export default function CuttingOptimizationDetailPage() {
       });
       const nextPlans = Array.isArray(response) ? response : response.plans || [];
       setPlans(nextPlans);
+      setManualDraft(buildManualDraft(nextPlans));
+      setSelectedCutId(null);
       setPlanMetrics(Array.isArray(response) ? null : response.metrics || null);
     } catch (err) {
       const details = getShortageDetails(err);
@@ -568,6 +736,109 @@ export default function CuttingOptimizationDetailPage() {
       setImporting(false);
     }
   };
+
+  const currentSummaryMetrics = useMemo(() => getPlanSummaryMetrics(plans), [plans]);
+  const manualSummaryMetrics = useMemo(
+    () => getDraftMetrics(manualDraft, decisionParams),
+    [manualDraft, decisionParams],
+  );
+  const sortedPlans = useMemo(() => {
+    return [...plans].sort((a, b) => {
+      const aPinned = pinnedPlanIds.has(a.masdc) ? 1 : 0;
+      const bPinned = pinnedPlanIds.has(b.masdc) ? 1 : 0;
+      if (aPinned !== bPinned) return bPinned - aPinned;
+
+      const aMetrics = getPlanMetrics(a);
+      const bMetrics = getPlanMetrics(b);
+      switch (planSort) {
+        case "utilization":
+          return Number(bMetrics.utilization || 0) - Number(aMetrics.utilization || 0);
+        case "remainder":
+          return Number(bMetrics.remainder || 0) - Number(aMetrics.remainder || 0);
+        case "cuts":
+          return Number(bMetrics.cutsCount || 0) - Number(aMetrics.cutsCount || 0);
+        case "uid":
+          return Number(a.khothanhphoi?.maphoi || 0) - Number(b.khothanhphoi?.maphoi || 0);
+        case "pinned":
+        default:
+          return Number(a.masdc || 0) - Number(b.masdc || 0);
+      }
+    });
+  }, [pinnedPlanIds, planSort, plans]);
+
+  const moveSelectedCut = useCallback((targetBarId: string) => {
+    if (!selectedCutId || !targetBarId) return;
+    setManualDraft((current) => {
+      let selectedCut: ManualCutDraft | null = null;
+      const withoutCut = current.map((bar) => {
+        const nextCuts = bar.cuts.filter((cut) => {
+          if (cut.id === selectedCutId) {
+            selectedCut = cut;
+            return false;
+          }
+          return true;
+        });
+        return { ...bar, cuts: nextCuts };
+      });
+      if (!selectedCut) return current;
+      return withoutCut.map((bar) => {
+        if (bar.id !== targetBarId) return bar;
+        return { ...bar, cuts: [...bar.cuts, selectedCut as ManualCutDraft] };
+      });
+    });
+    setSelectedCutId(null);
+  }, [selectedCutId]);
+
+  const updateManualCutLength = useCallback((cutId: string, length: number) => {
+    setManualDraft((current) =>
+      current.map((bar) => ({
+        ...bar,
+        cuts: bar.cuts.map((cut) => (cut.id === cutId ? { ...cut, length } : cut)),
+      })),
+    );
+  }, []);
+
+  const togglePinnedPlan = useCallback((masdc: number) => {
+    setPinnedPlanIds((current) => {
+      const next = new Set(current);
+      if (next.has(masdc)) {
+        next.delete(masdc);
+      } else {
+        next.add(masdc);
+      }
+      return next;
+    });
+  }, []);
+
+  const addManualBar = useCallback(() => {
+    setManualDraft((current) => [
+      ...current,
+      {
+        id: `draft-${Date.now()}`,
+        label: `Nháp ${current.length + 1}`,
+        inputLength: 6000,
+        sourceStatus: "MOI",
+        cuts: [],
+      },
+    ]);
+  }, []);
+
+  const removeManualBar = useCallback((barId: string) => {
+    setManualDraft((current) => {
+      const target = current.find((bar) => bar.id === barId);
+      if (!target || target.cuts.length > 0 || current.length <= 1) return current;
+      return current.filter((bar) => bar.id !== barId);
+    });
+  }, []);
+
+  const resetManualDraft = useCallback(() => {
+    setManualDraft(buildManualDraft(plans));
+    setSelectedCutId(null);
+  }, [plans]);
+
+  const updateDecisionParam = useCallback(<K extends keyof DecisionParams>(key: K, value: DecisionParams[K]) => {
+    setDecisionParams((current) => ({ ...current, [key]: value }));
+  }, []);
 
   if (loading) {
     return (
@@ -644,7 +915,42 @@ export default function CuttingOptimizationDetailPage() {
         </div>
       </section>
 
-      {warnings.length > 0 && (
+      <section className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-2 shadow-[0_18px_80px_rgba(0,0,0,0.22)]">
+        <div className="grid gap-1 rounded-xl bg-black/25 p-1 md:grid-cols-5">
+          {[
+            { id: "overview", label: "Tổng quan", meta: `PC-${assignment.mapc}`, icon: ListChecks },
+            { id: "decision", label: "Cảnh báo & quyết định", meta: `${warnings.length} cảnh báo`, icon: AlertTriangle },
+            { id: "manual", label: "Mô phỏng chỉnh tay", meta: `${manualSummaryMetrics.bars} nháp`, icon: SlidersHorizontal },
+            { id: "bom", label: "BOM cần cắt", meta: `${bomRows.length} dòng`, icon: Ruler },
+            { id: "plans", label: "Sơ đồ đã lưu", meta: `${plans.length} sơ đồ`, icon: Scissors },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const active = workspaceTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setWorkspaceTab(tab.id as DecisionWorkspaceTab)}
+                className={`flex min-h-[64px] items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${
+                  active
+                    ? "border-cyan-400/40 bg-zinc-800/80 text-white shadow-[0_0_24px_rgba(34,211,238,0.08)]"
+                    : "border-transparent bg-transparent text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/70 hover:text-zinc-200"
+                }`}
+              >
+                <Icon className={`h-4 w-4 shrink-0 ${active ? "text-cyan-300" : "text-zinc-500"}`} />
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-black">{tab.label}</span>
+                  <span className="mt-1 block truncate text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    {tab.meta}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {warnings.length > 0 && (workspaceTab === "overview" || workspaceTab === "decision") && (
         <section className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-300" />
@@ -660,13 +966,13 @@ export default function CuttingOptimizationDetailPage() {
         </section>
       )}
 
-      {errorMsg && (
+      {errorMsg && (workspaceTab === "overview" || workspaceTab === "decision") && (
         <section className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm font-semibold text-rose-100">
           {errorMsg}
         </section>
       )}
 
-      {shortages.length > 0 && (
+      {shortages.length > 0 && (workspaceTab === "overview" || workspaceTab === "decision") && (
         <section className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -764,7 +1070,37 @@ export default function CuttingOptimizationDetailPage() {
         </section>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+      {workspaceTab === "overview" && planMetrics && (
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_80px_rgba(0,0,0,0.22)]">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                <TrendingUp className="h-5 w-5 text-emerald-300" />
+                Metrics lần tạo gần nhất
+              </h2>
+              <p className="mt-1 text-xs text-zinc-500">Dải KPI đọc nhanh để quyết định giữ, chỉnh tay hay tạo lại sơ đồ.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWorkspaceTab("manual")}
+              className="rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-100 hover:bg-cyan-500/15"
+            >
+              Mở mô phỏng
+            </button>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3 2xl:grid-cols-6">
+            <Metric label="Tổng chiều dài cần cắt" value={formatMm(planMetrics.totalRequiredLength)} />
+            <Metric label="Hao hụt kerf" value={formatMm(planMetrics.totalKerfLoss)} tone="warn" />
+            <Metric label="Phôi dư tái dùng" value={formatMm(planMetrics.totalReusableRemainder)} tone="good" />
+            <Metric label="Phế liệu" value={formatMm(planMetrics.totalScrapLength)} tone="warn" />
+            <Metric label="Tỷ lệ thành phẩm" value={formatPercent(planMetrics.productUtilizationRate)} tone="good" />
+            <Metric label="Tỷ lệ tiêu hao" value={formatPercent(planMetrics.materialUsageRate)} />
+          </div>
+        </section>
+      )}
+
+      <div className={workspaceTab === "overview" ? "grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]" : "space-y-6"}>
+        {workspaceTab === "overview" && (
         <div className="space-y-6">
           <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
             <h2 className="flex items-center gap-2 text-lg font-bold text-white">
@@ -813,35 +1149,36 @@ export default function CuttingOptimizationDetailPage() {
             </div>
           </section>
 
-          {planMetrics && (
+          {false && planMetrics && (
             <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
               <h2 className="flex items-center gap-2 text-lg font-bold text-white">
                 <TrendingUp className="h-5 w-5 text-emerald-300" />
                 Metrics lần tạo gần nhất
               </h2>
               <div className="mt-4 grid gap-3">
-                <Metric label="Tổng chiều dài cần cắt" value={formatMm(planMetrics.totalRequiredLength)} />
-                <Metric label="Hao hụt kerf" value={formatMm(planMetrics.totalKerfLoss)} tone="warn" />
+                <Metric label="Tổng chiều dài cần cắt" value={formatMm(planMetrics!.totalRequiredLength)} />
+                <Metric label="Hao hụt kerf" value={formatMm(planMetrics!.totalKerfLoss)} tone="warn" />
                 <Metric
                   label="Phần dư tái sử dụng"
-                  value={formatMm(planMetrics.totalReusableRemainder)}
+                  value={formatMm(planMetrics!.totalReusableRemainder)}
                   tone="good"
                 />
-                <Metric label="Phế liệu" value={formatMm(planMetrics.totalScrapLength)} tone="warn" />
+                <Metric label="Phế liệu" value={formatMm(planMetrics!.totalScrapLength)} tone="warn" />
                 <Metric
                   label="Tỷ lệ thành phẩm"
-                  value={formatPercent(planMetrics.productUtilizationRate)}
+                  value={formatPercent(planMetrics!.productUtilizationRate)}
                   tone="good"
                 />
-                <Metric label="Tỷ lệ tiêu hao" value={formatPercent(planMetrics.materialUsageRate)} />
+                <Metric label="Tỷ lệ tiêu hao" value={formatPercent(planMetrics!.materialUsageRate)} />
               </div>
             </section>
           )}
         </div>
+        )}
 
         <div className="space-y-6">
           {/* Decision Support Card */}
-          {(() => {
+          {(workspaceTab === "overview" || workspaceTab === "decision") && (() => {
             const evalResult = evaluateInitialPlan(plans, warnings);
             return (
               <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5 space-y-4">
@@ -957,6 +1294,455 @@ export default function CuttingOptimizationDetailPage() {
             );
           })()}
 
+          {(workspaceTab === "overview" || workspaceTab === "decision") && plans.length > 0 && (
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                    <SlidersHorizontal className="h-5 w-5 text-cyan-300" />
+                    Trợ lý tối ưu nhanh
+                  </h2>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Chọn một hướng xử lý để mở mô phỏng với bộ thông số phù hợp, không lưu DB.
+                  </p>
+                </div>
+                <span className="rounded-full border border-zinc-800 bg-black/25 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                  UI draft
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 xl:grid-cols-3">
+                {[
+                  {
+                    title: "Giảm dư lỡ cỡ",
+                    desc: "Tăng ngưỡng phôi tái dùng, ưu tiên gom phần dư thành đoạn dễ nhập kho.",
+                    params: { ...DEFAULT_DECISION_PARAMS, safeMargin: 10, minScrap: 200, minReusableLength: 1800, strategy: "reuse-offcut" as DecisionStrategy },
+                    tone: "border-amber-500/25 bg-amber-500/10 text-amber-100",
+                  },
+                  {
+                    title: "Ép hiệu suất",
+                    desc: "Giữ biên thấp, dùng để thử phương án cần tiết kiệm thanh nguồn tối đa.",
+                    params: { ...DEFAULT_DECISION_PARAMS, safeMargin: 0, minScrap: 80, minReusableLength: 1200, strategy: "save-stock" as DecisionStrategy },
+                    tone: "border-emerald-500/25 bg-emerald-500/10 text-emerald-100",
+                  },
+                  {
+                    title: "Theo công trình",
+                    desc: "Dành cho trường hợp cần nắn nhát cắt theo hướng lắp đặt hoặc tổ thi công.",
+                    params: { ...DEFAULT_DECISION_PARAMS, safeMargin: 20, strategy: "site-fit" as DecisionStrategy },
+                    tone: "border-cyan-500/25 bg-cyan-500/10 text-cyan-100",
+                  },
+                ].map((preset) => (
+                  <button
+                    key={preset.title}
+                    type="button"
+                    onClick={() => {
+                      setDecisionParams(preset.params);
+                      setWorkspaceTab("manual");
+                    }}
+                    className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-white/20 ${preset.tone}`}
+                  >
+                    <div className="text-sm font-black text-white">{preset.title}</div>
+                    <p className="mt-2 text-xs leading-5 opacity-80">{preset.desc}</p>
+                    <div className="mt-3 text-[10px] font-black uppercase tracking-wider opacity-70">Mở mô phỏng</div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <Metric
+                  label="Tận dụng hiện tại"
+                  value={formatPercent(currentSummaryMetrics.utilization)}
+                  tone={currentSummaryMetrics.utilization >= 70 ? "good" : "warn"}
+                />
+                <Metric
+                  label="Thanh dư tái dùng"
+                  value={`${currentSummaryMetrics.reusableBars}`}
+                  tone={currentSummaryMetrics.reusableBars > 0 ? "good" : undefined}
+                />
+                <Metric
+                  label="Dư lỡ cỡ"
+                  value={`${currentSummaryMetrics.awkwardBars}`}
+                  tone={currentSummaryMetrics.awkwardBars > 0 ? "warn" : "good"}
+                />
+                <Metric
+                  label="Cảnh báo"
+                  value={`${warnings.length}`}
+                  tone={warnings.length ? "warn" : "good"}
+                />
+              </div>
+            </section>
+          )}
+
+          {plans.length > 0 && workspaceTab === "decision" && (
+            <>
+              <section className="hidden">
+                <div className="grid gap-1 rounded-xl bg-black/25 p-1 sm:grid-cols-3">
+                  {[
+                    { id: "decision", label: "So sánh phương án", meta: `${currentSummaryMetrics.bars} thanh` },
+                    { id: "manual", label: "Mô phỏng chỉnh tay", meta: `${manualSummaryMetrics.bars} nháp` },
+                    { id: "params", label: "Thông số đánh giá", meta: `${decisionParams.kerf} mm kerf` },
+                  ].map((tab) => {
+                    const active = workspaceTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setWorkspaceTab(tab.id as DecisionWorkspaceTab)}
+                        className={`rounded-xl border px-4 py-3 text-left transition ${
+                          active
+                            ? "border-cyan-400/40 bg-cyan-500/15 text-white shadow-[0_0_24px_rgba(34,211,238,0.08)]"
+                            : "border-transparent bg-transparent text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/70 hover:text-zinc-200"
+                        }`}
+                      >
+                        <div className="text-xs font-black">{tab.label}</div>
+                        <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">{tab.meta}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {workspaceTab === "decision" && (
+                <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                    <SlidersHorizontal className="h-5 w-5 text-cyan-300" />
+                    Bàn quyết định phương án
+                  </h2>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    So sánh hướng xử lý trước khi giao xuống xưởng, thay vì chỉ xem một điểm tối ưu đơn lẻ.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-black/25 px-3 py-2 text-right text-xs text-zinc-400">
+                  <div>Hiện tại: <strong className="text-cyan-300">{formatPercent(currentSummaryMetrics.utilization)}</strong></div>
+                  <div>Nháp tay: <strong className="text-emerald-300">{formatPercent(manualSummaryMetrics.utilization)}</strong></div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 xl:grid-cols-3">
+                <DecisionOptionCard
+                  title="Giữ sơ đồ hệ thống"
+                  badge="Nhanh"
+                  tone={warnings.length ? "amber" : "emerald"}
+                  description="Dùng ngay các sơ đồ đã lưu cho worker nếu rủi ro nghiệp vụ thấp."
+                  bullets={[
+                    `${currentSummaryMetrics.bars} thanh nguồn, tận dụng ${formatPercent(currentSummaryMetrics.utilization)}.`,
+                    currentSummaryMetrics.awkwardBars > 0
+                      ? `${currentSummaryMetrics.awkwardBars} thanh có phần dư lỡ cỡ cần xem lại.`
+                      : "Không phát hiện phần dư lỡ cỡ theo ngưỡng tham khảo.",
+                    warnings.length ? "Có cảnh báo nghiệp vụ, nên kiểm tra trước khi giao." : "Phù hợp khi cần thi công nhanh.",
+                  ]}
+                />
+                <DecisionOptionCard
+                  title="Chỉnh tay theo công trình"
+                  badge="Kiểm soát"
+                  tone="cyan"
+                  description="Thử gom/tách nhát cắt theo thực tế công trình, hướng lắp đặt hoặc thói quen tổ thợ."
+                  bullets={[
+                    `Nháp hiện có ${manualSummaryMetrics.bars} thanh, tận dụng ${formatPercent(manualSummaryMetrics.utilization)}.`,
+                    `${manualSummaryMetrics.reusableBars} thanh tạo phôi dư tái dùng, ${manualSummaryMetrics.awkwardBars} thanh dư lỡ cỡ.`,
+                    "Không ghi DB, dùng để so sánh và ra quyết định trước khi cần backend lưu chính thức.",
+                  ]}
+                />
+                <DecisionOptionCard
+                  title="Tạo lại tự động"
+                  badge="Làm mới"
+                  tone={warnings.some((item) => item.toLowerCase().includes("hoàn thành")) ? "rose" : "amber"}
+                  description="Chạy lại tối ưu khi kho đã thay đổi hoặc phương án hiện tại tạo nhiều phần dư khó dùng."
+                  bullets={[
+                    "Phù hợp sau khi nhập bổ sung phôi hoặc dọn kho phôi dư.",
+                    "Không nên tạo lại khi sơ đồ đã hoàn thành hoặc đang cắt.",
+                    "Luôn kiểm tra cảnh báo nghiệp vụ trước khi bấm tạo lại.",
+                  ]}
+                />
+              </div>
+                </section>
+              )}
+            </>
+          )}
+
+          {manualDraft.length > 0 && workspaceTab === "manual" && (
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                    <SlidersHorizontal className="h-5 w-5 text-emerald-300" />
+                    Chỉnh tay bản nháp
+                  </h2>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                    Chọn một nhát cắt, sau đó bấm “Chuyển vào thanh này” ở thanh khác để thử phương án thủ công. Bản nháp không sửa sơ đồ chính thức.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={addManualBar}
+                    className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/15"
+                  >
+                    Thêm thanh nháp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetManualDraft}
+                    className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-bold text-zinc-200 hover:border-zinc-500"
+                  >
+                    Hoàn tác nháp
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <Metric label="Thanh nháp" value={`${manualSummaryMetrics.bars}`} />
+                <Metric label="Đã dùng" value={formatMm(manualSummaryMetrics.used)} tone="good" />
+                <Metric label="Tổng phôi" value={formatMm(manualSummaryMetrics.input)} />
+                <Metric label="Phần dư" value={formatMm(manualSummaryMetrics.remainder)} tone="warn" />
+                <Metric label="Tỷ lệ dùng" value={formatPercent(manualSummaryMetrics.utilization)} tone="good" />
+              </div>
+
+              {selectedCutId && (
+                <div className="mt-4 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-4 py-3 text-xs font-semibold text-cyan-100">
+                  Đã chọn một nhát cắt. Bấm “Chuyển vào thanh này” trên thanh đích để thử đổi phương án.
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                {manualDraft.map((bar) => {
+                  const barUsed = getDraftBarUsed(bar, decisionParams);
+                  const barRemainder = Math.max(0, bar.inputLength - barUsed);
+                  const barOverload = barUsed > bar.inputLength;
+                  const barPercent = bar.inputLength > 0 ? Math.min(100, (barUsed / bar.inputLength) * 100) : 0;
+                  const isAwkward = barRemainder >= decisionParams.minScrap && barRemainder < decisionParams.minReusableLength;
+
+                  return (
+                    <div
+                      key={bar.id}
+                      className={`rounded-2xl border p-4 ${
+                        barOverload
+                          ? "border-rose-500/30 bg-rose-500/10"
+                          : isAwkward
+                            ? "border-amber-500/25 bg-amber-500/5"
+                            : "border-zinc-800 bg-black/20"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-bold text-white">{bar.label}</h3>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            Dùng {formatMm(barUsed)} / {formatMm(bar.inputLength)}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {selectedCutId && (
+                            <button
+                              type="button"
+                              onClick={() => moveSelectedCut(bar.id)}
+                              className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2.5 py-1.5 text-[10px] font-black text-cyan-200 hover:bg-cyan-500/15"
+                            >
+                              Chuyển vào thanh này
+                            </button>
+                          )}
+                          {bar.cuts.length === 0 && manualDraft.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeManualBar(bar.id)}
+                              className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-black text-rose-200 hover:bg-rose-500/15"
+                            >
+                              Xóa thanh
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-3">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                          Chiều dài thanh nháp
+                        </label>
+                        <input
+                          value={bar.inputLength}
+                          onChange={(event) => {
+                            const nextLength = toPositiveInt(event.target.value, 6000);
+                            setManualDraft((current) =>
+                              current.map((item) =>
+                                item.id === bar.id ? { ...item, inputLength: nextLength } : item,
+                              ),
+                            );
+                          }}
+                          className="mt-1 w-32 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-bold text-white"
+                          inputMode="numeric"
+                        />
+                      </div>
+
+                      <div className="mt-4 h-9 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
+                        <div className="flex h-full">
+                          <div className={`${barOverload ? "bg-rose-500" : "bg-emerald-500"}`} style={{ width: `${barPercent}%` }} />
+                          <div className={isAwkward ? "bg-amber-800/70" : "bg-zinc-800/80"} style={{ width: `${Math.max(0, 100 - barPercent)}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {bar.cuts.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-zinc-800 px-3 py-4 text-center text-xs text-zinc-500">
+                            Thanh nháp đang trống.
+                          </div>
+                        ) : (
+                          bar.cuts.map((cut) => (
+                            <div
+                              key={cut.id}
+                              className={`grid w-full grid-cols-[minmax(0,1fr)_132px] items-center gap-2 rounded-xl border px-2.5 py-2 text-xs transition ${
+                                selectedCutId === cut.id
+                                  ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-100"
+                                  : "border-zinc-800 bg-zinc-950/70 text-zinc-300 hover:border-zinc-700"
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCutId(selectedCutId === cut.id ? null : cut.id)}
+                                className="min-w-0 truncate text-left font-bold"
+                                title="Chọn nhát cắt để chuyển sang thanh khác"
+                              >
+                                {cut.label}
+                              </button>
+                              <div className="grid grid-cols-[28px_minmax(0,1fr)_28px] items-center overflow-hidden rounded-lg border border-zinc-700 bg-black/25">
+                                <button
+                                  type="button"
+                                  onClick={() => updateManualCutLength(cut.id, Math.max(1, Number(cut.length || 0) - 1))}
+                                  className="h-8 border-r border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                                  title="Giảm 1 mm"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  value={cut.length}
+                                  onChange={(event) =>
+                                    updateManualCutLength(cut.id, toPositiveInt(event.target.value, cut.length || 1))
+                                  }
+                                  onFocus={() => setSelectedCutId(cut.id)}
+                                  inputMode="numeric"
+                                  className="h-8 min-w-0 bg-transparent px-2 text-right font-mono font-bold text-cyan-300 outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => updateManualCutLength(cut.id, Math.max(1, Number(cut.length || 0) + 1))}
+                                  className="h-8 border-l border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                                  title="Tăng 1 mm"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="mt-3 rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-xs text-zinc-400">
+                        {barOverload ? (
+                          <span className="font-bold text-rose-300">Quá chiều dài thanh, cần chuyển bớt nhát cắt.</span>
+                        ) : isAwkward ? (
+                          <span className="font-bold text-amber-300">Dư lỡ cỡ {formatMm(barRemainder)}, nên cân nhắc gom lại.</span>
+                        ) : (
+                          <span className="font-bold text-emerald-300">Phần dư {formatMm(barRemainder)} ổn theo ngưỡng tham khảo.</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {plans.length > 0 && workspaceTab === "manual" && (
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                    <SlidersHorizontal className="h-5 w-5 text-amber-300" />
+                    Thông số mô phỏng quyết định
+                  </h2>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                    Chỉnh cách hệ đánh giá bản nháp: hao hụt lưỡi cưa, biên an toàn và ngưỡng phân loại phần dư. Chỉ dùng để mô phỏng trên màn hình này.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDecisionParams(DEFAULT_DECISION_PARAMS)}
+                  className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-bold text-zinc-200 hover:border-zinc-500"
+                >
+                  Khôi phục mặc định
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  { key: "kerf", label: "Kerf lưỡi cưa", suffix: "mm", fallback: DEFAULT_DECISION_PARAMS.kerf },
+                  { key: "safeMargin", label: "Biên an toàn", suffix: "mm/thanh", fallback: DEFAULT_DECISION_PARAMS.safeMargin },
+                  { key: "minScrap", label: "Ngưỡng phế liệu", suffix: "mm", fallback: DEFAULT_DECISION_PARAMS.minScrap },
+                  { key: "minReusableLength", label: "Ngưỡng phôi tái dùng", suffix: "mm", fallback: DEFAULT_DECISION_PARAMS.minReusableLength },
+                ].map((field) => (
+                  <label key={field.key} className="rounded-2xl border border-zinc-800 bg-black/20 p-4">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{field.label}</span>
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        value={decisionParams[field.key as keyof DecisionParams] as number}
+                        onChange={(event) => {
+                          const value = field.key === "safeMargin"
+                            ? toNonNegativeInt(event.target.value, field.fallback)
+                            : toPositiveInt(event.target.value, field.fallback);
+                          updateDecisionParam(field.key as keyof DecisionParams, value as never);
+                        }}
+                        inputMode="numeric"
+                        className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-lg font-black text-white outline-none focus:border-cyan-400/70"
+                      />
+                      <span className="shrink-0 text-xs font-bold text-zinc-500">{field.suffix}</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-zinc-800 bg-black/20 p-4">
+                <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Chiến lược ưu tiên</div>
+                <div className="mt-3 grid gap-2 md:grid-cols-4">
+                  {[
+                    { id: "balanced", label: "Cân bằng", desc: "Giữ tỷ lệ dùng tốt và ít rủi ro." },
+                    { id: "save-stock", label: "Tiết kiệm thanh", desc: "Ưu tiên giảm số thanh nguồn." },
+                    { id: "reuse-offcut", label: "Dọn phôi dư", desc: "Ưu tiên tạo phần dư dễ nhập kho." },
+                    { id: "site-fit", label: "Theo công trình", desc: "Ưu tiên bản nháp chỉnh tay." },
+                  ].map((strategy) => {
+                    const active = decisionParams.strategy === strategy.id;
+                    return (
+                      <button
+                        key={strategy.id}
+                        type="button"
+                        onClick={() => updateDecisionParam("strategy", strategy.id as DecisionStrategy)}
+                        className={`rounded-xl border p-3 text-left transition ${
+                          active
+                            ? "border-amber-400/40 bg-amber-500/15 text-white"
+                            : "border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:border-zinc-700"
+                        }`}
+                      >
+                        <div className="text-xs font-black">{strategy.label}</div>
+                        <div className="mt-1 text-[10px] leading-4 text-zinc-500">{strategy.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <Metric label="Nháp đang dùng" value={formatPercent(manualSummaryMetrics.utilization)} tone="good" />
+                <Metric label="Hao hụt/biên" value={formatMm(Math.max(0, manualSummaryMetrics.used - manualDraft.reduce((total, bar) => total + bar.cuts.reduce((sum, cut) => sum + Math.max(0, Number(cut.length || 0)), 0), 0)))} tone="warn" />
+                <Metric label="Phần dư nháp" value={formatMm(manualSummaryMetrics.remainder)} tone="warn" />
+                <Metric label="Dư tái dùng" value={`${manualSummaryMetrics.reusableBars} thanh`} tone="good" />
+                <Metric label="Dư lỡ cỡ" value={`${manualSummaryMetrics.awkwardBars} thanh`} tone={manualSummaryMetrics.awkwardBars ? "warn" : "good"} />
+              </div>
+
+              <div className="mt-4 rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-xs leading-5 text-cyan-100">
+                Các thông số này không sửa cấu hình backend, không lưu DB và không thay đổi sơ đồ chính thức. Nó giúp admin thử nhiều kịch bản trước khi quyết định có cần tạo lại hoặc yêu cầu backend lưu một bản chỉnh tay chính thức.
+              </div>
+            </section>
+          )}
+
+          {workspaceTab === "bom" && (
           <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-lg font-bold text-white">
@@ -1030,7 +1816,9 @@ export default function CuttingOptimizationDetailPage() {
               </div>
             )}
           </section>
+          )}
 
+          {workspaceTab === "plans" && (
           <section id="saved-plans-section" className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -1053,7 +1841,48 @@ export default function CuttingOptimizationDetailPage() {
               </div>
             ) : (
               <div className="mt-5 space-y-5">
-                {plans.map((plan) => {
+                <div className="rounded-2xl border border-zinc-800 bg-black/20 p-3">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold text-zinc-400">
+                      <ArrowUpDown className="h-4 w-4 text-cyan-300" />
+                      Sắp xếp / ghim để so sánh nhanh
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: "pinned", label: "Mặc định" },
+                        { id: "utilization", label: "Tỷ lệ dùng" },
+                        { id: "remainder", label: "Phần dư" },
+                        { id: "cuts", label: "Số nhát" },
+                        { id: "uid", label: "UID phôi" },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setPlanSort(item.id as PlanSortMode)}
+                          className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                            planSort === item.id
+                              ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-100"
+                              : "border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedPlans(new Set(pinnedPlanIds));
+                          setPlanSort("pinned");
+                        }}
+                        className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-500/15"
+                      >
+                        Mở pin ({pinnedPlanIds.size})
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {sortedPlans.map((plan) => {
                   const metrics = getPlanMetrics(plan);
                   const usedPercent =
                     metrics.utilization == null
@@ -1061,9 +1890,17 @@ export default function CuttingOptimizationDetailPage() {
                       : Math.max(0, Math.min(100, metrics.utilization));
                   const remainderPercent = metrics.utilization == null ? 0 : Math.max(0, 100 - usedPercent);
                   const isExpanded = expandedPlans.has(plan.masdc);
+                  const isPinned = pinnedPlanIds.has(plan.masdc);
 
                   return (
-                    <article key={plan.masdc} className="rounded-2xl border border-zinc-800 bg-black/25 p-4">
+                    <article
+                      key={plan.masdc}
+                      className={`rounded-2xl border p-4 ${
+                        isPinned
+                          ? "border-amber-500/35 bg-amber-500/10"
+                          : "border-zinc-800 bg-black/25"
+                      }`}
+                    >
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1085,6 +1922,19 @@ export default function CuttingOptimizationDetailPage() {
                           <p className="mt-1 text-sm text-zinc-500">Mã phân công PC-{plan.mapc}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => togglePinnedPlan(plan.masdc)}
+                            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                              isPinned
+                                ? "border-amber-400/40 bg-amber-500/15 text-amber-100"
+                                : "border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-amber-500/50 hover:text-amber-100"
+                            }`}
+                            title={isPinned ? "Bỏ ghim sơ đồ này" : "Ghim sơ đồ này lên đầu"}
+                          >
+                            <Pin className="h-3.5 w-3.5" />
+                            {isPinned ? "Đã pin" : "Pin"}
+                          </button>
                           <span
                             className={`w-fit rounded-xl border px-3 py-2 text-xs font-bold ${planStatusClass(
                               plan.trangthai,
@@ -1233,6 +2083,7 @@ export default function CuttingOptimizationDetailPage() {
               </div>
             )}
           </section>
+          )}
         </div>
       </div>
 

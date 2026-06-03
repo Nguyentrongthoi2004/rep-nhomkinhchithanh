@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   Package,
   Search,
@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { apiJson } from "@/lib/api";
+import { WorkerViewContext } from "../context";
 
 interface KhoPhoiItem {
   maphoi: number;
@@ -28,11 +29,13 @@ interface KhoPhoiItem {
 type StatusFilter = "ALL" | "MOI" | "CON_DU" | "BO_DI";
 
 export default function WorkerKhoPage() {
+  const { viewMode } = useContext(WorkerViewContext);
   const [items, setItems] = useState<KhoPhoiItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [errorMsg, setErrorMsg] = useState("");
+  const [visibleLimit, setVisibleLimit] = useState(24);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selected, setSelected] = useState<KhoPhoiItem | null>(null);
@@ -66,6 +69,13 @@ export default function WorkerKhoPage() {
       return uid.includes(s) || (x.vattu?.tenvt || "").toLowerCase().includes(s);
     });
   }, [items, searchTerm, statusFilter]);
+
+  useEffect(() => {
+    setVisibleLimit(viewMode === "pc" ? 60 : 18);
+  }, [searchTerm, statusFilter, viewMode]);
+
+  const visibleItems = useMemo(() => filtered.slice(0, visibleLimit), [filtered, visibleLimit]);
+  const canLoadMore = visibleLimit < filtered.length;
 
   const totals = useMemo(() => {
     return {
@@ -108,10 +118,8 @@ export default function WorkerKhoPage() {
   };
 
   return (
-    <div className="space-y-4 pb-4">
-      {/* Đầu trang */}
-      <section className="relative overflow-hidden rounded-3xl admin-metal-panel border border-white/10 px-5 py-5">
-        <div className="admin-metal-shine" />
+    <div className={`mx-auto space-y-4 pb-28 ${viewMode === "pc" ? "w-full max-w-[1120px] px-6 pt-7" : "px-4 pt-5"}`}>
+      <section className={`relative overflow-hidden border border-slate-800 bg-[#0d1118] px-5 py-5 shadow-sm ${viewMode === "pc" ? "rounded-2xl" : "rounded-3xl"}`}>
         <div className="relative z-10 flex items-start justify-between gap-3">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 flex items-center gap-1.5">
@@ -135,7 +143,7 @@ export default function WorkerKhoPage() {
       {/* Tìm kiếm và bộ lọc */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search className="w-4.5 h-4.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -154,7 +162,12 @@ export default function WorkerKhoPage() {
       )}
 
       {/* Danh sách kho */}
-      <div className="space-y-2.5">
+      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500">
+        <span>Đang hiển thị {Math.min(visibleLimit, filtered.length)} / {filtered.length} phôi</span>
+        {filtered.length > 0 && <span>{statusFilter === "ALL" ? "Tất cả trạng thái" : statusFilter}</span>}
+      </div>
+
+      <div className={`grid gap-3 ${viewMode === "pc" ? "grid-cols-2" : "grid-cols-1"}`}>
         {loading ? (
           <div className="py-16 flex justify-center text-slate-400">
             <Loader2 className="w-8 h-8 animate-spin" />
@@ -164,7 +177,7 @@ export default function WorkerKhoPage() {
             Không có phôi khớp bộ lọc hiện tại.
           </div>
         ) : (
-          filtered.map((it) => {
+          visibleItems.map((it) => {
             const isScrap = it.trangthai === "BO_DI";
             const isNew = it.trangthai === "MOI";
             return (
@@ -213,6 +226,16 @@ export default function WorkerKhoPage() {
           })
         )}
       </div>
+
+      {canLoadMore && !loading && (
+        <button
+          type="button"
+          onClick={() => setVisibleLimit((value) => value + (viewMode === "pc" ? 60 : 18))}
+          className="h-12 w-full rounded-2xl border border-sky-400/25 bg-sky-400/10 text-sm font-black text-sky-200 transition-colors hover:bg-sky-400/15"
+        >
+          Xem thêm phôi
+        </button>
+      )}
 
       {/* Hộp thoại chi tiết */}
       {isModalOpen && selected && (

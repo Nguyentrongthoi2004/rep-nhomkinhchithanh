@@ -23,6 +23,7 @@ import { imagesRouter, workerImagesRouter } from "@/modules/images/images.routes
 import {
   materialsOptionsRouter,
   materialsRouter,
+  workerMaterialsRouter,
 } from "@/modules/materials/materials.routes";
 import {
   ordersListRouter,
@@ -82,3 +83,4 @@ apiRouter.use("/worker/notifications", notificationsRouter);
 apiRouter.use("/worker/raw-stock", workerRawStockRouter);
 apiRouter.use("/worker/tasks", workerTasksRouter);
 apiRouter.use("/worker/performance", workerDashboardRouter);
+apiRouter.use("/worker/materials", workerMaterialsRouter);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   User2,
@@ -17,6 +17,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { WorkerViewContext } from "../context";
 
 type Profile = {
   hoten?: string;
@@ -26,6 +27,7 @@ type Profile = {
 };
 
 export default function WorkerCaNhanPage() {
+  const { viewMode } = useContext(WorkerViewContext);
   const supabase = useMemo(() => createClient(), []);
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -118,10 +120,9 @@ export default function WorkerCaNhanPage() {
     .toUpperCase();
 
   return (
-    <div className="space-y-4 pb-4 px-5 pt-6">
+    <div className={`mx-auto pb-28 ${viewMode === "pc" ? "grid w-full max-w-[1080px] grid-cols-12 gap-5 px-6 pt-7" : "space-y-4 px-5 pt-6"}`}>
       {/* Khối hồ sơ cá nhân */}
-      <section className="relative overflow-hidden rounded-3xl bg-linear-to-br from-[#12141a] to-[#0a0a0c] border border-white/10 px-5 py-6 shadow-xl">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+      <section className={`relative overflow-hidden border border-slate-800 bg-[#0d1118] px-5 py-6 shadow-sm ${viewMode === "pc" ? "col-span-5 rounded-2xl" : "rounded-3xl"}`}>
         <div className="relative z-10 flex items-center gap-4">
           <div className="relative shrink-0 w-16 h-16 rounded-2xl bg-linear-to-br from-sky-400/30 to-sky-700/30 border border-sky-400/30 flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_10px_30px_-16px_rgba(56,189,248,0.4)]">
             <span className="text-xl font-extrabold text-white">{initials}</span>
@@ -149,7 +150,7 @@ export default function WorkerCaNhanPage() {
       </section>
 
       {/* Đổi mật khẩu */}
-      <section className="rounded-3xl border border-white/10 bg-[#0c0d11]/85 p-5">
+      <section className={`border border-slate-800 bg-[#0d1118] p-5 ${viewMode === "pc" ? "col-span-7 rounded-2xl" : "rounded-3xl"}`}>
         <div className="flex items-center gap-2 mb-4">
           <div className="w-9 h-9 rounded-xl bg-amber-400/15 border border-amber-300/25 flex items-center justify-center">
             <KeyRound className="w-4 h-4 text-amber-300" />
@@ -226,15 +227,35 @@ export default function WorkerCaNhanPage() {
         </form>
       </section>
 
+      {viewMode === "pc" ? (
+        <section className="col-span-5 rounded-2xl border border-slate-800 bg-[#0d1118] p-5">
+          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Trạng thái tài khoản</h3>
+          <div className="mt-4 grid gap-3">
+            <ProfileStatusItem label="Vai trò" value={profile.vaitro || "WORKER"} tone="text-sky-300" />
+            <ProfileStatusItem label="Bảo mật" value="Đăng nhập hợp lệ" tone="text-emerald-300" />
+            <ProfileStatusItem label="Kênh làm việc" value="Worker console" tone="text-cyan-300" />
+          </div>
+        </section>
+      ) : null}
+
       {/* Đăng xuất */}
       <button
         onClick={handleLogout}
         disabled={loggingOut}
-        className="w-full h-12 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 disabled:opacity-60 text-rose-300 font-semibold border border-rose-500/20 transition-colors flex items-center justify-center gap-2"
+        className={`h-12 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 disabled:opacity-60 text-rose-300 font-semibold border border-rose-500/20 transition-colors flex items-center justify-center gap-2 ${viewMode === "pc" ? "col-span-7" : "w-full"}`}
       >
         {loggingOut ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogOut className="w-4 h-4" />}
         Đăng xuất
       </button>
+    </div>
+  );
+}
+
+function ProfileStatusItem({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <div className="rounded-2xl border border-white/5 bg-black/15 px-4 py-3">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
+      <div className={`mt-1 text-sm font-black ${tone}`}>{value}</div>
     </div>
   );
 }

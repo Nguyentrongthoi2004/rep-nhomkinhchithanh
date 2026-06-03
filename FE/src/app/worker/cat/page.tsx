@@ -1,7 +1,7 @@
-/* eslint-disable @next/next/no-img-element */
+﻿/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { AlertTriangle, ArrowLeft, Camera, Check, Eye, Gauge, ImageIcon, Loader2, RefreshCw, Ruler, Scissors, X, Zap } from "lucide-react";
 import Link from "next/link";
@@ -11,6 +11,7 @@ import { fileToCompressedImage } from "@/lib/image-upload";
 import { calculateCuttingPlanMetrics } from "@/lib/cuttingMetrics";
 import WorkerProposalsList from "@/components/worker/WorkerProposalsList";
 import ProposalSubmitModal from "@/components/worker/ProposalSubmitModal";
+import { WorkerViewContext } from "../context";
 
 type CutDetail = {
   mactc: number;
@@ -116,6 +117,7 @@ function getPlanMetrics(plan: CuttingPlan) {
 // Trang cắt phôi của thợ: hiển thị sơ đồ cắt được giao, xác nhận hoàn thành từng sơ đồ, báo sự cố cắt hỏng.
 // Thiết kế ưu tiên điện thoại cho thợ dùng tại xưởng.
 function WorkerCatPageInner() {
+  const { viewMode } = useContext(WorkerViewContext);
   const searchParams = useSearchParams();
   const mapcFilter = Number(searchParams.get("mapc") || "0");
   const reportIntent = searchParams.get("report") === "1";
@@ -410,9 +412,8 @@ function WorkerCatPageInner() {
   };
 
   return (
-    <div className="mx-auto max-w-md space-y-4 px-4 pt-5 pb-28">
-      <section className="relative overflow-hidden rounded-3xl admin-metal-panel border border-white/10 px-5 py-4">
-        <div className="admin-metal-shine" />
+    <div className={`mx-auto space-y-4 pb-28 ${viewMode === "pc" ? "w-full max-w-[1120px] px-6 pt-7" : "max-w-md px-4 pt-5"}`}>
+      <section className={`relative overflow-hidden border border-slate-800 bg-[#0d1118] px-5 py-4 shadow-sm ${viewMode === "pc" ? "rounded-2xl" : "rounded-3xl"}`}>
         <div className="relative z-10 flex items-start justify-between gap-3">
           <div>
             <Link
@@ -425,12 +426,12 @@ function WorkerCatPageInner() {
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 flex items-center gap-1.5">
               <Scissors className="w-3.5 h-3.5 text-amber-300" /> Máy cắt
             </div>
-            <h2 className="text-xl font-extrabold brand-name mt-1 leading-tight">Sơ đồ cắt được giao</h2>
+            <h2 className={`${viewMode === "pc" ? "text-2xl text-white" : "text-xl brand-name"} font-extrabold mt-1 leading-tight`}>Sơ đồ cắt được giao</h2>
             <p className="text-xs text-slate-400 mt-1">Chọn đúng UID phôi, cắt theo thứ tự và báo sự cố ngay khi thấy lỗi.</p>
           </div>
           <button
             onClick={load}
-            className="w-11 h-11 rounded-2xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-200"
+            className="w-11 h-11 rounded-xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-200"
             title="Tải lại"
             aria-label="Tải lại"
           >
@@ -460,9 +461,10 @@ function WorkerCatPageInner() {
               type="button"
               onClick={openCompletionPhoto}
               disabled={!cuttingProgress.ready || busyId === mapcFilter}
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600"
+              className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600"
             >
-              <Camera className="mr-2 h-4 w-4" /> Chụp hoàn thành
+              <Camera className="mr-2 h-4 w-4" />
+              <span className="whitespace-nowrap">Chụp ảnh</span>
             </button>
           </div>
         </section>
@@ -476,7 +478,7 @@ function WorkerCatPageInner() {
               {completionImages.length} ảnh
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {completionImages.map((image) => {
               const viewUrl = imageDisplayUrl(image);
               return (
@@ -484,16 +486,18 @@ function WorkerCatPageInner() {
                   key={image.maha}
                   type="button"
                   onClick={() => setSelectedImage(image)}
-                  className="overflow-hidden rounded-xl border border-white/10 bg-black/20 text-left"
+                  className="group overflow-hidden rounded-2xl border border-emerald-500/20 bg-[#081512] text-left transition-colors hover:border-emerald-400/40"
                 >
-                  {viewUrl ? (
-                    <img src={viewUrl} alt={image.mota || "Ảnh hoàn thành công trình"} className="h-24 w-full object-cover" />
-                  ) : (
-                    <div className="flex h-24 items-center justify-center bg-black/40 px-3 text-center text-[11px] font-semibold text-slate-500">Ảnh không tải được</div>
-                  )}
-                  <div className="p-2 text-[11px] text-slate-300">
-                    <div className="font-bold text-emerald-200">{IMAGE_TYPE_LABEL[image.loaianh]}</div>
-                    <div className="mt-1 truncate">{formatDateTime(image.thoigian)}</div>
+                  <div className="relative aspect-video overflow-hidden bg-black">
+                    {viewUrl ? (
+                      <img src={viewUrl} alt={image.mota || "Ảnh hoàn thành công trình"} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center bg-black/40 px-3 text-center text-[11px] font-semibold text-slate-500">Ảnh không tải được</div>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/85 to-transparent p-3">
+                      <div className="text-xs font-black text-white">{IMAGE_TYPE_LABEL[image.loaianh]}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-emerald-100/80">{formatDateTime(image.thoigian)}</div>
+                    </div>
                   </div>
                 </button>
               );
@@ -502,7 +506,7 @@ function WorkerCatPageInner() {
         </section>
       )}
 
-      <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0a0a0c] border border-white/10 rounded-2xl">
+      <div className={`grid grid-cols-2 gap-1.5 border border-slate-800 bg-[#0b0e13] ${viewMode === "pc" ? "max-w-xl rounded-xl p-1" : "rounded-2xl p-1"}`}>
         <button
           onClick={() => setTab("SO_DO")}
           className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl text-[12px] font-bold border transition-colors ${
@@ -523,7 +527,7 @@ function WorkerCatPageInner() {
 
       {errorMsg && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-300">{errorMsg}</div>}
 
-      <div className="space-y-3">
+      <div className={tab === "SO_DO" && viewMode === "pc" ? "grid grid-cols-2 gap-4 2xl:grid-cols-3" : "space-y-3"}>
         {tab === "DE_XUAT" ? (
           <>
             <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-xs leading-relaxed text-cyan-100 mb-3">
@@ -561,7 +565,7 @@ function WorkerCatPageInner() {
             const latestCutImage = planCutImages[0];
             const isConfirmed = isDone && planCutImages.length > 0;
             return (
-              <div key={plan.masdc} className={`rounded-2xl border p-4 ${isScrap ? "border-red-500/30 bg-red-500/5" : isDone ? "border-emerald-500/20 bg-emerald-500/5" : "border-white/10 bg-[#10131a]/90"}`}>
+              <div key={plan.masdc} className={`rounded-2xl border p-4 ${isScrap ? "border-red-500/30 bg-red-500/5" : isDone ? "border-emerald-500/20 bg-emerald-500/5" : "border-slate-800 bg-[#0d1118]"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap gap-1.5">
