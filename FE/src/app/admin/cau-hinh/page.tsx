@@ -422,7 +422,7 @@ function ScoreTab({ context }: { context: { kerf: number; safeMargin: number; mi
         
         <div className="space-y-4 pl-3 border-l-2 border-indigo-500/30">
           <div className="text-xs leading-relaxed">
-            <strong className="text-gray-200">1. "Sau khi cắt nhát này, khúc phôi thừa còn lại có dùng được không?"</strong>
+            <strong className="text-gray-200">1. &quot;Sau khi cắt nhát này, khúc phôi thừa còn lại có dùng được không?&quot;</strong>
             <p className="text-gray-400 mt-1">
               • Thừa rất ít (dưới {context.minScrap}mm): Tốt vì phần vụn không đáng kể, tận dụng tối đa phôi (cộng nhiều điểm).<br />
               • Thừa đủ dài (trên {context.minReusable}mm): Cũng tốt vì có thể thu hồi làm phôi dư cho đơn sau (cộng điểm trung bình).<br />
@@ -430,21 +430,49 @@ function ScoreTab({ context }: { context: { kerf: number; safeMargin: number; mi
             </p>
           </div>
           <div className="text-xs leading-relaxed">
-            <strong className="text-gray-200">2. "Thanh phôi này có phải hàng đang tồn kho cũ không?"</strong>
+            <strong className="text-gray-200">2. &quot;Thanh phôi này có phải hàng đang tồn kho cũ không?&quot;</strong>
             <p className="text-gray-400 mt-1">
               • Ưu tiên dùng các thanh phôi dư lẻ (CON_DU) trước phôi nguyên mới để dọn sạch kho cũ và giải phóng mặt bằng xưởng (cộng thêm 120 điểm).
             </p>
           </div>
           <div className="text-xs leading-relaxed">
-            <strong className="text-gray-200">3. "Sau khi cắt mảnh này, thanh phôi có còn chứa được mảnh tiếp theo không?"</strong>
+            <strong className="text-gray-200">3. &quot;Sau khi cắt mảnh này, thanh phôi có còn chứa được mảnh tiếp theo không?&quot;</strong>
             <p className="text-gray-400 mt-1">
               • Nhìn trước danh sách (Look-ahead): Nếu phần dư sau cắt vẫn chứa được mảnh cắt tiếp theo trong hàng đợi, ưu tiên xếp để gom cụm gọn gàng (cộng thêm 240 điểm).
             </p>
           </div>
           <div className="text-xs leading-relaxed">
-            <strong className="text-gray-200">4. "Thanh phôi này có phải cây duy nhất đủ dài cho một mảnh dài phía sau không?"</strong>
+            <strong className="text-gray-200">4. &quot;Thanh phôi này có phải cây duy nhất đủ dài cho một mảnh dài phía sau không?&quot;</strong>
             <p className="text-gray-400 mt-1">
               • Bảo tồn phôi dài: Nếu đây là thanh phôi duy nhất đủ dài để gánh mảnh lớn tương lai, thuật toán sẽ giữ lại và cấm băm nhỏ nó cho các mảnh ngắn (phạt nặng 6000 điểm).
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-[#0a0a0c] p-6 space-y-4">
+        <h3 className="flex items-center text-base font-bold text-emerald-400">
+          <ShieldAlert className="mr-2 h-5 w-5 text-emerald-400" />
+          3 Nguyên tắc cốt lõi khi Vấn đáp / Phản biện
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
+          <div className="space-y-2">
+            <span className="font-bold text-gray-200">1. Tránh tranh chấp phôi (Concurrency)</span>
+            <p className="text-gray-400 leading-relaxed">
+              Hệ thống lọc bỏ toàn bộ các thanh phôi đang nằm trong sơ đồ cắt khác có trạng thái <code className="text-blue-300">CHO_DUYET</code> hoặc <code className="text-gray-300">DANG_CAT</code>. Điều này đảm bảo hai thợ máy cưa khác nhau không bao giờ bị trùng phôi hoặc cắt nhầm thanh của nhau tại cùng một thời điểm.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <span className="font-bold text-gray-200">2. Biên kẹp máy & Hao hụt lưỡi cưa</span>
+            <p className="text-gray-400 leading-relaxed">
+              • <strong>Biên kẹp máy (Safe Margin):</strong> Chỉ trừ đúng một lần <code className="text-amber-300">2 x {context.safeMargin} mm</code> lúc bắt đầu thanh phôi để giữ khoảng cách kẹp đầu cưa.<br />
+              • <strong>Mạch cưa (Blade Kerf):</strong> Mỗi nhát cắt sẽ tự động cộng thêm <code className="text-red-300">{context.kerf} mm</code> hao tổn do lưỡi cưa nghiền nhôm thành bột cưa.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <span className="font-bold text-gray-200">3. Thời điểm thực tế trừ kho phôi</span>
+            <p className="text-gray-400 leading-relaxed">
+              Tuyệt đối không trừ kho khi bấm &quot;Tối ưu cắt&quot; hay tạo sơ đồ cắt nháp. Số lượng và chiều dài của thanh phôi trong kho chỉ thực tế thay đổi khi thợ bấm <strong>&quot;Xác nhận hoàn thành cắt&quot; (completePlan)</strong> hoặc khi Admin phê duyệt <strong>&quot;Cắt bỏ đoạn lỗi phôi&quot; (Trim phôi)</strong>.
             </p>
           </div>
         </div>
