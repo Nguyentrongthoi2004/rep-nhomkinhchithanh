@@ -23,7 +23,7 @@ import {
   Eye,
   X,
 } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiData, apiJson, imageDisplayUrl } from "@/lib/api";
 import { ConfirmDialog, InlineNotice, type NoticeState } from "@/components/admin/Feedback";
 
@@ -222,6 +222,26 @@ export default function RawMaterialInventoryPage() {
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<KhoPhoiType | null>(null);
   const [detailStock, setDetailStock] = useState<KhoPhoiType | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
+  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [scannerError, setScannerError] = useState<string | null>(null);
+  const [manualUidInput, setManualUidInput] = useState("");
+  interface ScannerType {
+    isScanning: boolean;
+    stop: () => Promise<void>;
+    start: (
+      cameraSource: string | { facingMode: string } | Record<string, never>,
+      config: {
+        fps: number;
+        qrbox: (width: number, height: number) => { width: number; height: number };
+      },
+      successCallback: (decodedText: string) => void,
+      errorCallback: (errorMessage: string) => void
+    ) => Promise<unknown>;
+  }
+
+  const scannerRef = useRef<ScannerType | null>(null);
   const [stockImages, setStockImages] = useState<StockImage[]>([]);
   const [stockImagesLoading, setStockImagesLoading] = useState(false);
   const [stockImageError, setStockImageError] = useState("");
@@ -441,6 +461,322 @@ export default function RawMaterialInventoryPage() {
       }
     };
 
+    const lookupAndOpenStock = async (maphoiId: number) => {
+      setLoading(true);
+      try {
+        const found = inventory.find((item) => item.maphoi === maphoiId);
+        if (found) {
+          openStockDetail(found);
+          setNotice({ tone: "ok", text: `Đã tìm thấy phôi UID-${maphoiId.toString().padStart(5, "0")}!` });
+          return;
+        }
+
+        const res = await apiData<KhoPhoiType>(`/api/admin/raw-stock/${maphoiId}`);
+        if (res && res.maphoi) {
+          const formatted = { ...res, khothanhphoi_uid: "" };
+          openStockDetail(formatted);
+          setNotice({ tone: "ok", text: `Đã tìm thấy phôi UID-${maphoiId.toString().padStart(5, "0")} từ máy chủ!` });
+        } else {
+          setNotice({ tone: "warn", text: `Không tìm thấy phôi UID-${maphoiId.toString().padStart(5, "0")} trong kho.` });
+        }
+      } catch (err: unknown) {
+        console.error(err);
+        setNotice({
+          tone: "error",
+          text: `Lỗi truy xuất phôi UID-${maphoiId.toString().padStart(5, "0")}: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleScanSuccess = async (
+      text: string,
+      scannerInstance: { isScanning: boolean; stop: () => Promise<void> },
+    ) => {
+      if (scannerInstance && scannerInstance.isScanning) {
+        try {
+          await scannerInstance.stop();
+        } catch (e) {
+          console.error("Không dừng được scanner:", e);
+        }
+      }
+      setIsScannerOpen(false);
+
+      const trimmed = text.trim();
+      const match = trimmed.match(/UID-(\d+)/i) || trimmed.match(/^(\d+)$/);
+      if (!match) {
+        setNotice({ tone: "error", text: `Định dạng mã quét không hợp lệ: "${trimmed}". Cần có định dạng UID-xxxxx.` });
+        return;
+      }
+
+      const maphoiId = parseInt(match[1], 10);
+      await lookupAndOpenStock(maphoiId);
+    };
+
+    const handleManualSearch = async (e: React.FormEvent) => {
+      e.preventDefault();
+      const val = manualUidInput.trim();
+      if (!val) return;
+
+      const match = val.match(/UID-(\d+)/i) || val.match(/^(\d+)$/);
+      if (!match) {
+        alert("Vui lòng nhập đúng định dạng mã, ví dụ: UID-00012 hoặc số 12");
+        return;
+      }
+
+      const maphoiId = parseInt(match[1], 10);
+      setIsScannerOpen(false);
+      setManualUidInput("");
+      await lookupAndOpenStock(maphoiId);
+    };
+
+    useEffect(() => {
+      if (!isScannerOpen) {
+        setCameras([]);
+        setActiveCameraId(null);
+        setScannerError(null);
+
+        const stopScanner = async () => {
+          if (scannerRef.current) {
+            if (scannerRef.current.isScanning) {
+              try {
+                await scannerRef.current.stop();
+              } catch (e) {
+                console.warn("Lỗi dừng scanner:", e);
+              }
+            }
+            scannerRef.current = null;
+          }
+        };
+        void stopScanner();
+        return;
+      }
+
+      let isMounted = true;
+      let scannerInstance: ScannerType | null = null;
+
+      /** Helper: liệt kê camera mà KHÔNG chiếm luồng phần cứng */
+      const listCamerasSafe = async (): Promise<Array<{ id: string; label: string }>> => {
+        try {
+          const raw = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = raw
+            .filter((d) => d.kind === "videoinput" && d.deviceId)
+            .map((d) => ({ id: d.deviceId, label: d.label || "" }));
+          if (videoDevices.length > 0 && videoDevices[0].label) return videoDevices;
+
+          // Nếu label trống → chưa được cấp quyền, xin quyền rồi thử lại
+          const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          // Giải phóng luồng ngay lập tức để camera không bị khóa
+          tempStream.getTracks().forEach((t) => t.stop());
+          // Chờ phần cứng thực sự giải phóng
+          await new Promise((r) => setTimeout(r, 300));
+
+          const raw2 = await navigator.mediaDevices.enumerateDevices();
+          return raw2
+            .filter((d) => d.kind === "videoinput" && d.deviceId)
+            .map((d) => ({ id: d.deviceId, label: d.label || "" }));
+        } catch {
+          return [];
+        }
+      };
+
+      /** Helper: thử start scanner với 1 nguồn, trả true nếu thành công */
+      let lastErrorName = "";
+      const tryStart = async (
+        scanner: ScannerType,
+        source: string | { facingMode: string },
+      ): Promise<boolean> => {
+        try {
+          // Đảm bảo scanner đã dừng trước khi start
+          if (scanner.isScanning) {
+            try { await scanner.stop(); } catch { /* ignore */ }
+            await new Promise((r) => setTimeout(r, 200));
+          }
+          if (!isMounted) return false;
+
+          await scanner.start(
+            source,
+            {
+              fps: 10,
+              qrbox: (width: number, height: number) => {
+                const size = Math.min(width, height) * 0.75;
+                return { width: size, height: size };
+              },
+            },
+            (decodedText: string) => {
+              void handleScanSuccess(decodedText, scanner);
+            },
+            () => {},
+          );
+          return true;
+        } catch (e) {
+          console.warn("tryStart fail:", source, e);
+          const errStr = String(e);
+          if (errStr.includes("NotReadableError")) lastErrorName = "NotReadableError";
+          else if (errStr.includes("NotAllowedError")) lastErrorName = "NotAllowedError";
+          else if (errStr.includes("NotFoundError")) lastErrorName = "NotFoundError";
+          else lastErrorName = errStr.substring(0, 60);
+          return false;
+        }
+      };
+
+      const initAndStart = async () => {
+        // Settle delay — React Strict Mode double-render
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        if (!isMounted) return;
+
+        try {
+          const { Html5Qrcode } = await import("html5-qrcode");
+          if (!isMounted) return;
+
+          // 1. Tạo hoặc tái sử dụng scanner instance
+          if (!scannerRef.current) {
+            scannerRef.current = new Html5Qrcode("qr-reader-target") as unknown as ScannerType;
+          }
+          scannerInstance = scannerRef.current;
+
+          // 2. Nếu đang chạy, dừng trước
+          if (scannerInstance.isScanning) {
+            try { await scannerInstance.stop(); } catch { /* ignore */ }
+            await new Promise((r) => setTimeout(r, 200));
+          }
+          if (!isMounted) return;
+
+          // 3. Liệt kê camera an toàn (không chiếm luồng)
+          const devices = await listCamerasSafe();
+          if (!isMounted) return;
+
+          const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+            navigator.userAgent,
+          );
+
+          // 4. Xây dựng danh sách nguồn thử theo thứ tự ưu tiên
+          const sources: Array<string | { facingMode: string }> = [];
+
+          if (activeCameraId) {
+            // Người dùng đã chọn camera cụ thể
+            sources.push(activeCameraId);
+          } else if (devices.length > 0) {
+            if (isMobile) {
+              // Ưu tiên camera sau trên mobile
+              const backCam = devices.find(
+                (d) => d.label && /back|rear|sau|environment/i.test(d.label),
+              );
+              if (backCam) {
+                sources.push(backCam.id);
+              } else {
+                sources.push({ facingMode: "environment" });
+              }
+              // Fallback: camera trước
+              const frontCam = devices.find(
+                (d) => d.label && /front|user|trước/i.test(d.label),
+              );
+              if (frontCam) sources.push(frontCam.id);
+              else sources.push({ facingMode: "user" });
+            } else {
+              // PC: dùng device ID trực tiếp — luôn hoạt động
+              for (const d of devices) {
+                sources.push(d.id);
+              }
+            }
+          } else {
+            // Không liệt kê được → thử facingMode cuối cùng
+            if (isMobile) {
+              sources.push({ facingMode: "environment" });
+              sources.push({ facingMode: "user" });
+            } else {
+              sources.push({ facingMode: "user" });
+              sources.push({ facingMode: "environment" });
+            }
+          }
+
+          // 5. Thử từng nguồn cho đến khi thành công
+          let started = false;
+          for (const src of sources) {
+            if (!isMounted) return;
+            started = await tryStart(scannerInstance, src);
+            if (started) break;
+            // Chờ camera release trước khi thử nguồn tiếp theo
+            await new Promise((r) => setTimeout(r, 300));
+          }
+
+          // 6. Kiểm tra kết quả
+          if (!isMounted) {
+            if (scannerInstance.isScanning) {
+              try { await scannerInstance.stop(); } catch { /* ignore */ }
+            }
+            return;
+          }
+
+          if (!started) {
+            if (lastErrorName === "NotReadableError") {
+              setScannerError(
+                "Camera đang bị chiếm bởi ứng dụng khác hoặc driver camera bị lỗi (NotReadableError). " +
+                "Hãy thử: (1) Đóng các ứng dụng dùng camera (Zoom, Teams, OBS...), " +
+                "(2) Vào Device Manager → Camera → Click phải → Disable rồi Enable lại, " +
+                "(3) Khởi động lại máy tính.",
+              );
+            } else if (lastErrorName === "NotAllowedError") {
+              setScannerError(
+                "Trình duyệt bị chặn quyền camera. Nhấp vào biểu tượng ổ khóa 🔒 trên thanh địa chỉ → Cho phép Camera → Tải lại trang.",
+              );
+            } else if (lastErrorName === "NotFoundError") {
+              setScannerError(
+                "Không tìm thấy camera trên thiết bị này. Vui lòng kiểm tra xem webcam đã được kết nối và bật chưa.",
+              );
+            } else {
+              setScannerError(
+                `Không thể kết nối camera (${lastErrorName || "unknown"}). Vui lòng kiểm tra kết nối thiết bị và đảm bảo trình duyệt có quyền camera.`,
+              );
+            }
+            return;
+          }
+
+          setScannerError(null);
+
+          // 7. Cập nhật danh sách camera cho dropdown chọn
+          if (devices.length > 0) {
+            setCameras(devices);
+          } else {
+            // Thử lại sau khi đã được cấp quyền
+            try {
+              const devicesAfter = await listCamerasSafe();
+              if (isMounted && devicesAfter.length > 0) {
+                setCameras(devicesAfter);
+              }
+            } catch { /* ignore */ }
+          }
+
+        } catch (err: unknown) {
+          if (!isMounted) return;
+          console.warn("Lỗi không xử lý được khi khởi tạo scanner:", err);
+          setScannerError(
+            "Không thể kết nối camera. Vui lòng kiểm tra kết nối thiết bị và đảm bảo trình duyệt có quyền camera.",
+          );
+        }
+      };
+
+      void initAndStart();
+
+      return () => {
+        isMounted = false;
+        if (scannerInstance) {
+          const stopOnCleanup = async () => {
+            if (scannerInstance && scannerInstance.isScanning) {
+              try {
+                await scannerInstance.stop();
+              } catch (e) {
+                console.warn("Lỗi dừng camera trong cleanup:", e);
+              }
+            }
+          };
+          void stopOnCleanup();
+        }
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isScannerOpen, activeCameraId]);
+
     const handleCreate = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!createForm.mavt) return setNotice({ tone: "warn", text: "Vui lòng chọn vật tư." });
@@ -528,6 +864,7 @@ export default function RawMaterialInventoryPage() {
           <div className="flex flex-wrap gap-2 sm:gap-3 justify-end">
             <button
               type="button"
+              onClick={() => setIsScannerOpen(true)}
               title="Quét nhập kho"
               aria-label="Quét nhập kho"
               className="bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 px-4 py-2.5 rounded-lg flex items-center font-medium transition-colors"
@@ -1276,6 +1613,18 @@ export default function RawMaterialInventoryPage() {
                     Ảnh xác nhận cắt phôi được gom theo UID ở đây để chủ xưởng kiểm nhanh thanh nào đã cắt,
                     phôi nào còn dư. Ảnh toàn công trình vẫn xem thuận tiện hơn ở chi tiết đơn hàng.
                   </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4 flex flex-col items-center text-center">
+                    <p className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-3">Mã QR Định Danh Phôi</p>
+                    <div className="bg-white p-2 rounded-xl inline-block shadow-lg">
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${stockUid(detailStock.maphoi)}&color=0f172a&margin=10`} 
+                        alt={`QR Code ${stockUid(detailStock.maphoi)}`} 
+                        className="w-32 h-32"
+                      />
+                    </div>
+                    <p className="mt-3 font-mono text-xs font-bold text-cyan-300 tracking-widest">{stockUid(detailStock.maphoi)}</p>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -1726,6 +2075,146 @@ export default function RawMaterialInventoryPage() {
             setDeleteTarget(null);
           }}
         />
+
+        {isScannerOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+            <style>{`
+              @keyframes scan {
+                0% { top: 5%; }
+                50% { top: 95%; }
+                100% { top: 5%; }
+              }
+              .scan-line {
+                position: absolute;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background-color: rgba(34, 211, 238, 0.8);
+                box-shadow: 0 0 8px rgba(34, 211, 238, 0.8);
+                animation: scan 2.5s linear infinite;
+              }
+            `}</style>
+            <div className="flex max-h-[95vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#121214] shadow-2xl">
+              
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/10 bg-[#0a0a0c] px-5 py-4">
+                <div className="flex items-center space-x-2 text-cyan-300">
+                  <QrCode className="h-5 w-5 animate-pulse" />
+                  <h3 className="text-lg font-bold text-white">Quét Mã QR Tìm Phôi</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsScannerOpen(false)}
+                  className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                  aria-label="Đóng máy quét"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Main Content */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                
+                {/* Error/Notice Banner */}
+                {scannerError ? (
+                  <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-300 leading-relaxed space-y-2">
+                    <div>{scannerError}</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScannerError(null);
+                        setActiveCameraId(null);
+                        setIsScannerOpen(false);
+                        setTimeout(() => setIsScannerOpen(true), 400);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/20 border border-red-500/30 px-3 py-1.5 text-[11px] font-bold text-red-200 hover:bg-red-500/30 transition-colors"
+                    >
+                      🔄 Thử lại
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 text-center">
+                    Cấp quyền camera và đưa mã QR của phôi (UID-xxxxx) vào trung tâm khung hình.
+                  </p>
+                )}
+
+                {/* Scanner Camera View */}
+                <div className="relative mx-auto w-full aspect-square max-w-[280px] overflow-hidden rounded-xl border border-white/10 bg-black">
+                  <div id="qr-reader-target" className="h-full w-full" />
+                  
+                  {/* Overlay decorative corners for scanner */}
+                  <div className="pointer-events-none absolute inset-0 border-[3px] border-transparent">
+                    <div className="absolute top-4 left-4 h-6 w-6 border-t-[3px] border-l-[3px] border-cyan-400 rounded-tl-md"></div>
+                    <div className="absolute top-4 right-4 h-6 w-6 border-t-[3px] border-r-[3px] border-cyan-400 rounded-tr-md"></div>
+                    <div className="absolute bottom-4 left-4 h-6 w-6 border-b-[3px] border-l-[3px] border-cyan-400 rounded-bl-md"></div>
+                    <div className="absolute bottom-4 right-4 h-6 w-6 border-b-[3px] border-r-[3px] border-cyan-400 rounded-br-md"></div>
+                  </div>
+                  
+                  {/* Scanning scan line animation */}
+                  {!scannerError && (
+                    <div className="scan-line"></div>
+                  )}
+                </div>
+
+                {/* Camera Selection */}
+                {cameras.length > 1 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-gray-500 font-bold uppercase tracking-wider">Chọn Camera</label>
+                    <select
+                      value={activeCameraId || ""}
+                      onChange={(e) => setActiveCameraId(e.target.value || null)}
+                      className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="">Camera Mặc định (Ưu tiên camera sau)</option>
+                      {cameras.map((cam) => (
+                        <option key={cam.id} value={cam.id}>
+                          {cam.label || `Camera ${cameras.indexOf(cam) + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Divider */}
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-white/5"></div>
+                  <span className="flex-shrink mx-4 text-[10px] text-gray-500 font-bold uppercase tracking-widest">Hoặc Nhập Thủ Công</span>
+                  <div className="flex-grow border-t border-white/5"></div>
+                </div>
+
+                {/* Fallback Manual Input form */}
+                <form onSubmit={handleManualSearch} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={manualUidInput}
+                    onChange={(e) => setManualUidInput(e.target.value)}
+                    placeholder="Ví dụ: UID-00012 hoặc 12"
+                    className="flex-1 bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-4 py-2 rounded-lg text-sm transition-colors"
+                  >
+                    Tìm
+                  </button>
+                </form>
+
+              </div>
+              
+              {/* Footer */}
+              <div className="bg-[#0a0a0c] border-t border-white/5 px-5 py-3.5 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsScannerOpen(false)}
+                  className="bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 font-medium px-4 py-2 rounded-lg text-xs transition-colors"
+                >
+                  Đóng
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
 
     </div>
   );
