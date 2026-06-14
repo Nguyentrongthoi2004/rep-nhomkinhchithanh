@@ -396,6 +396,60 @@ function ScoreTab({ context }: { context: { kerf: number; safeMargin: number; mi
           </tbody>
         </table>
       </div>
+
+      <div className="rounded-2xl border border-indigo-500/20 bg-[#0c0d12] p-6 space-y-4 shadow-lg">
+        <h3 className="flex items-center text-base font-bold text-indigo-300">
+          <HelpCircle className="mr-2 h-5 w-5 text-indigo-400" />
+          Giải thích trực quan: Chiến lược xếp mảnh cắt vào cây phôi (Scored Greedy + Look-ahead)
+        </h3>
+        <p className="text-sm text-gray-300 leading-relaxed">
+          Bài toán đặt ra là: Lập phương án cắt danh sách mảnh cắt nhôm từ các cây phôi nhôm có sẵn sao cho tổng hao hụt nhôm và không gian lưu trữ phôi dư tối ưu nhất.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-2">
+            <span className="font-bold text-gray-300 font-sans">Cách ngây thơ (FFD thuần túy)</span>
+            <p className="leading-relaxed text-gray-400">
+              Cứ thấy cây phôi nào còn đủ chiều dài thì xếp nhát cắt vào — nhanh nhưng dễ sinh ra nhiều thanh nhôm thừa lỡ cỡ không sử dụng lại được.
+            </p>
+          </div>
+          <div className="rounded-xl border border-indigo-500/10 bg-indigo-500/[0.02] p-4 space-y-2">
+            <span className="font-bold text-indigo-300 font-sans">Cách tối ưu (Scored Greedy + Look-ahead)</span>
+            <p className="leading-relaxed text-indigo-400">
+              Trước khi quyết định xếp một mảnh cắt vào cây phôi nhôm nào, thuật toán sẽ chấm điểm (score) bằng cách trả lời 4 câu hỏi:
+            </p>
+          </div>
+        </div>
+        
+        <div className="space-y-4 pl-3 border-l-2 border-indigo-500/30">
+          <div className="text-xs leading-relaxed">
+            <strong className="text-gray-200">1. "Sau khi cắt nhát này, khúc phôi thừa còn lại có dùng được không?"</strong>
+            <p className="text-gray-400 mt-1">
+              • Thừa rất ít (dưới {context.minScrap}mm): Tốt vì phần vụn không đáng kể, tận dụng tối đa phôi (cộng nhiều điểm).<br />
+              • Thừa đủ dài (trên {context.minReusable}mm): Cũng tốt vì có thể thu hồi làm phôi dư cho đơn sau (cộng điểm trung bình).<br />
+              • Thừa lỡ cỡ ở giữa: Rất xấu vì bỏ đi thì phí mà giữ lại thì chật kho không dùng được (phạt điểm rất nặng).
+            </p>
+          </div>
+          <div className="text-xs leading-relaxed">
+            <strong className="text-gray-200">2. "Thanh phôi này có phải hàng đang tồn kho cũ không?"</strong>
+            <p className="text-gray-400 mt-1">
+              • Ưu tiên dùng các thanh phôi dư lẻ (CON_DU) trước phôi nguyên mới để dọn sạch kho cũ và giải phóng mặt bằng xưởng (cộng thêm 120 điểm).
+            </p>
+          </div>
+          <div className="text-xs leading-relaxed">
+            <strong className="text-gray-200">3. "Sau khi cắt mảnh này, thanh phôi có còn chứa được mảnh tiếp theo không?"</strong>
+            <p className="text-gray-400 mt-1">
+              • Nhìn trước danh sách (Look-ahead): Nếu phần dư sau cắt vẫn chứa được mảnh cắt tiếp theo trong hàng đợi, ưu tiên xếp để gom cụm gọn gàng (cộng thêm 240 điểm).
+            </p>
+          </div>
+          <div className="text-xs leading-relaxed">
+            <strong className="text-gray-200">4. "Thanh phôi này có phải cây duy nhất đủ dài cho một mảnh dài phía sau không?"</strong>
+            <p className="text-gray-400 mt-1">
+              • Bảo tồn phôi dài: Nếu đây là thanh phôi duy nhất đủ dài để gánh mảnh lớn tương lai, thuật toán sẽ giữ lại và cấm băm nhỏ nó cho các mảnh ngắn (phạt nặng 6000 điểm).
+            </p>
+          </div>
+        </div>
+      </div>
+
       <ExplainCard tone="sky" title="Ràng buộc vật lý bài toán cắt một chiều (1D-CSP)">
         Tổng chiều dài các đoạn cắt + (Số nhát cắt x {context.kerf} mm) + (2 x {context.safeMargin} mm biên kẹp đầu cưa) phải nhỏ hơn hoặc bằng Chiều dài gốc của thanh phôi vật lý. Thuật toán sẽ báo lỗi thiếu phôi nếu có bất kỳ chi tiết đơn lẻ nào vượt quá chiều dài khả dụng tối đa này.
       </ExplainCard>

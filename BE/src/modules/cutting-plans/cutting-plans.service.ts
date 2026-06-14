@@ -307,6 +307,11 @@ function getInsufficientStockShortages(error: unknown): StockShortage[] | null {
   return details.shortages;
 }
 
+// Ý TƯỞNG THUẬT TOÁN TỐI ƯU CẮT PHÔI NHÔM (Scored Greedy + Look-ahead):
+// CÂU HỎI 1: "Sau khi cắt nhát này, khúc phôi thừa còn lại có dùng được không?"
+// - Thừa rất ít (dưới scrapThreshold ~ 100mm): Rất tốt (tận dụng tối đa phôi, phần vụn bỏ đi không đáng kể).
+// - Thừa đủ dài (trên minReusableLength ~ 1500mm): Rất tốt (nhập kho tái sử dụng được sau này).
+// - Thừa lỡ cỡ ở giữa: Rất xấu (bỏ thì phí, giữ chật kho không dùng được), phạt điểm nặng.
 function scoreRemainder(remainder: number, scrapThreshold: number, minReusableLength: number) {
   if (remainder < scrapThreshold) {
     return {
@@ -394,11 +399,15 @@ function scoreCandidateBar(
   score += remainderScore.score;
   reasons.push(remainderScore.label);
 
+  // CÂU HỎI 2: "Thanh phôi này có phải hàng đang tồn kho cũ không?"
+  // Ưu tiên dùng phôi dư lẻ (CON_DU) trước phôi mới để dọn sạch kho cũ.
   if (candidate.stock.trangthai === "CON_DU") {
     score += 120;
     reasons.push("Ưu tiên dùng phôi dư phù hợp trước phôi mới");
   }
 
+  // CÂU HỎI 3: "Sau khi cắt mảnh này, phôi có còn chứa được mảnh tiếp theo không?"
+  // Nhìn trước (Look-ahead) danh sách mảnh cắt để tăng điểm gom cụm tối ưu, tránh mở phôi mới.
   const sameMaterialRemaining = remainingPieces.filter((rp) => rp.mavt === piece.mavt);
   const nextPieceFitsRemainder = sameMaterialRemaining.some((rp) => projectedRemainder >= rp.length + kerf);
   if (nextPieceFitsRemainder) {
@@ -406,6 +415,8 @@ function scoreCandidateBar(
     reasons.push("Phần dư sau cắt vẫn chứa được đoạn còn lại trong BOM");
   }
 
+  // CÂU HỎI 4: "Cây phôi này có phải cây duy nhất đủ dài cho một mảnh dài phía sau không?"
+  // Bảo tồn phôi dài: Nếu đây là phôi duy nhất đủ dài để gánh mảnh lớn tương lai, cấm băm nhỏ nó.
   for (const futurePiece of sameMaterialRemaining) {
     const futureNeeded = futurePiece.length + kerf;
     const isFutureLonger = futurePiece.length > piece.length;
